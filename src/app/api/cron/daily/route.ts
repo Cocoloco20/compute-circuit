@@ -62,8 +62,13 @@ export async function GET(req: NextRequest) {
   }
 
   const results: SubResult[] = []
+  // Daily: prices (~5s) + 8-K filings (~3s incremental)
+  results.push(await call('prices', '/api/cron/prices'))
   results.push(await call('8k-tracker', '/api/cron/8k-tracker'))
+  // Weekly: fundamentals (Tuesdays = day 2) + 13F holdings (Sundays = day 0)
+  if (day === 2) results.push(await call('fundamentals', '/api/cron/fundamentals'))
   if (day === 0) results.push(await call('13f-tracker', '/api/cron/13f-tracker'))
+  // Monthly: VC portfolio scraper (1st of month)
   if (date === 1) results.push(await call('portfolio-scraper', '/api/cron/portfolio-scraper'))
 
   return NextResponse.json({

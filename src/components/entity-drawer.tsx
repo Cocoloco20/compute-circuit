@@ -9,7 +9,7 @@
  */
 
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow, Holding } from '@/types/db'
+import type { Flow, Holding, Fundamental } from '@/types/db'
 import { getLogoUrl } from '@/lib/logo'
 import type { SelectedRef } from './compute-graph'
 
@@ -105,6 +105,9 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
         </div>
       )}
 
+      <MarketData company={company} />
+      <Fundamentals companyId={id} data={data} />
+
       {company.thesis && <Section title="Thesis">{company.thesis}</Section>}
       {company.notes && <Section title="Notes">{company.notes}</Section>}
 
@@ -140,6 +143,109 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
       <FlowList title={`Out (${outFlows.length})`} flows={outFlows} data={data} direction="out" />
       <FlowList title={`In (${inFlows.length})`}  flows={inFlows}  data={data} direction="in"  />
     </>
+  )
+}
+
+function MarketData({ company }: { company: GraphData['companies'][number] }) {
+  if (company.last_price == null) return null
+  const change = company.prev_close != null ? company.last_price - company.prev_close : null
+  const changePct = change != null && company.prev_close != null && company.prev_close !== 0
+    ? (change / company.prev_close) * 100
+    : null
+  const positive = change != null && change >= 0
+  return (
+    <Section title="Market data">
+      <div className="space-y-1.5">
+        <div className="flex items-baseline gap-3">
+          <span className="font-mono text-xl text-white">
+            {company.price_currency === 'USD' ? '$' : ''}
+            {company.last_price.toFixed(2)}
+            {company.price_currency && company.price_currency !== 'USD' && (
+              <span className="ml-1 text-xs text-zinc-500">{company.price_currency}</span>
+            )}
+          </span>
+          {change != null && (
+            <span className={'font-mono text-xs ' + (positive ? 'text-emerald-400' : 'text-red-400')}>
+              {positive ? '+' : ''}{change.toFixed(2)}
+              {changePct != null && (
+                <span className="ml-1">({positive ? '+' : ''}{changePct.toFixed(2)}%)</span>
+              )}
+            </span>
+          )}
+        </div>
+        {(company.fifty_two_week_low != null && company.fifty_two_week_high != null) && (
+          <div className="text-[10px] text-zinc-500">
+            52w range: ${company.fifty_two_week_low.toFixed(2)} – ${company.fifty_two_week_high.toFixed(2)}
+          </div>
+        )}
+        {company.price_updated_at && (
+          <div className="text-[10px] text-zinc-600">
+            Yahoo · {new Date(company.price_updated_at).toLocaleString()}
+          </div>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+const METRIC_LABELS: Record<string, string> = {
+  revenue: 'Revenue',
+  gross_profit: 'Gross profit',
+  operating_income: 'Operating income',
+  net_income: 'Net income',
+  operating_cash_flow: 'Op. cash flow',
+  capex: 'Capex',
+  rd_expense: 'R&D',
+  cash: 'Cash',
+}
+const METRIC_ORDER = ['revenue', 'gross_profit', 'operating_income', 'net_income', 'operating_cash_flow', 'capex', 'rd_expense', 'cash']
+
+function fmtBigDollar(n: number): string {
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}k`
+  return `$${n.toLocaleString()}`
+}
+
+function Fundamentals({ companyId, data }: { companyId: string; data: GraphData }) {
+  const mine = data.fundamentals.filter(f => f.company_id === companyId)
+  if (mine.length === 0) return null
+  // Pick the most-recent value per metric (TTM-like — companyfacts already aggregates).
+  const latestPerMetric = new Map<string, Fundamental>()
+  for (const f of mine) {
+    const cur = latestPerMetric.get(f.metric)
+    if (!cur || f.period > cur.period) latestPerMetric.set(f.metric, f)
+  }
+  const rows = METRIC_ORDER
+    .map(m => latestPerMetric.get(m))
+    .filter((f): f is Fundamental => !!f)
+  if (rows.length === 0) return null
+  // Revenue is the headline; compute margin % off it if present.
+  const revenue = latestPerMetric.get('revenue')?.value ?? null
+  return (
+    <Section title="Fundamentals">
+      <ul className="space-y-1">
+        {rows.map((f) => {
+          const margin = revenue && f.metric !== 'revenue' && f.metric !== 'cash'
+            ? (f.value / revenue) * 100
+            : null
+          return (
+            <li key={f.metric} className="flex items-baseline justify-between text-xs">
+              <span className="text-zinc-400">{METRIC_LABELS[f.metric] ?? f.metric}</span>
+              <span className="font-mono text-zinc-200">
+                {fmtBigDollar(f.value)}
+                {margin != null && (
+                  <span className="ml-2 text-[10px] text-zinc-500">{margin.toFixed(0)}%</span>
+                )}
+              </span>
+            </li>
+          )
+        })}
+      </ul>
+      <div className="mt-1 text-[10px] text-zinc-600">
+        SEC XBRL · period {rows[0].period}
+      </div>
+    </Section>
   )
 }
 

@@ -53,7 +53,26 @@ export interface Company {
   cusip: string | null // CUSIP for 13F holdings join (companies.cusip → holdings.cusip)
   discovered_via: string | null  // null = manual seed; otherwise investor.id of the scraper
   discovered_at: string | null
+  // Market snapshot (refreshed daily by /api/cron/prices)
+  last_price: number | null
+  prev_close: number | null
+  fifty_two_week_high: number | null
+  fifty_two_week_low: number | null
+  price_currency: string | null
+  price_updated_at: string | null
   created_at: string
+  updated_at: string
+}
+
+export interface Fundamental {
+  id: string
+  company_id: string
+  period: string        // YYYY-MM-DD (period-end)
+  period_type: string   // 'TTM' | 'Q' | 'FY'
+  metric: string        // 'revenue' | 'gross_profit' | 'operating_income' | 'net_income' | 'capex' | 'fcf'
+  value: number         // raw dollars
+  unit: string
+  source: string
   updated_at: string
 }
 
@@ -125,6 +144,7 @@ export interface Database {
       investors: { Row: Investor; Insert: Omit<Investor, 'created_at' | 'cik' | 'files_13f'> & { created_at?: string; cik?: string | null; files_13f?: boolean }; Update: Partial<Investor> }
       companies: { Row: Company; Insert: Omit<Company, 'created_at' | 'updated_at' | 'cusip' | 'cik' | 'discovered_via' | 'discovered_at'> & { created_at?: string; updated_at?: string; cusip?: string | null; cik?: string | null; discovered_via?: string | null; discovered_at?: string | null }; Update: Partial<Company> }
       holdings: { Row: Holding; Insert: Omit<Holding, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Holding> }
+      fundamentals: { Row: Fundamental; Insert: Omit<Fundamental, 'id' | 'updated_at'> & { id?: string; updated_at?: string }; Update: Partial<Fundamental> }
       company_backers: { Row: CompanyBacker; Insert: CompanyBacker; Update: Partial<CompanyBacker> }
       flows: { Row: Flow; Insert: Partial<Pick<Flow, 'id' | 'created_at' | 'note'>> & Omit<Flow, 'id' | 'created_at' | 'note'> & { note?: string | null }; Update: Partial<Flow> }
       bottlenecks: { Row: Bottleneck; Insert: Omit<Bottleneck, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Bottleneck> }

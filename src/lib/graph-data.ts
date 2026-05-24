@@ -9,6 +9,7 @@ import type {
   BottleneckBeneficiary,
   Signal,
   Holding,
+  Fundamental,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -27,6 +28,7 @@ export interface GraphData {
   signals: Signal[]               // recent only — last 365 days
   signalCompanies: SignalCompanyLink[]
   holdings: Holding[]             // 13F holdings matched to our companies only
+  fundamentals: Fundamental[]     // XBRL metrics, last 2 years per company
 }
 
 /**
@@ -73,7 +75,17 @@ export async function fetchGraph(): Promise<GraphData> {
     .order('value_usd', { ascending: false })
     .limit(500)
 
-  const errors = [l, i, c, b, f, bn, bb, s, sc, h].map(r => r.error).filter(Boolean)
+  // Fundamentals: last 2 years per company. We have ~32 public cos × ~12 metrics × ~8 periods
+  // = ~3000 rows max, but most cos won't have all metrics — typically ~1000 rows.
+  const twoYearsAgo = new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const fnd = await sb
+    .from('fundamentals')
+    .select('*')
+    .gte('period', twoYearsAgo)
+    .order('period', { ascending: false })
+    .limit(2000)
+
+  const errors = [l, i, c, b, f, bn, bb, s, sc, h, fnd].map(r => r.error).filter(Boolean)
   if (errors.length > 0) {
     throw new Error('Supabase fetch failed: ' + errors.map(e => e!.message).join('; '))
   }
@@ -88,5 +100,6 @@ export async function fetchGraph(): Promise<GraphData> {
     signals,
     signalCompanies: (sc.data ?? []) as SignalCompanyLink[],
     holdings: (h.data ?? []) as Holding[],
+    fundamentals: (fnd.data ?? []) as Fundamental[],
   }
 }
