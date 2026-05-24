@@ -33,6 +33,7 @@ export interface Company {
   thesis: string | null
   share: number | null
   notes: string | null
+  cik: string | null // SEC Central Index Key — populated by CIK backfill
   created_at: string
   updated_at: string
 }
@@ -80,6 +81,8 @@ export interface Signal {
   headline: string
   impact: string | null
   url: string | null
+  accession_number: string | null // SEC filings only; unique
+  form_type: string | null        // '8-K' | '10-Q' | '10-K' | '13F' ...
   created_at: string
 }
 
