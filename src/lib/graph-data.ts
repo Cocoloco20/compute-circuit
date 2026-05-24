@@ -7,7 +7,13 @@ import type {
   Flow,
   Bottleneck,
   BottleneckBeneficiary,
+  Signal,
 } from '@/types/db'
+
+export interface SignalCompanyLink {
+  signal_id: string
+  company_id: string
+}
 
 export interface GraphData {
   layers: Layer[]
@@ -17,6 +23,8 @@ export interface GraphData {
   flows: Flow[]
   bottlenecks: Bottleneck[]
   bottleneckBeneficiaries: BottleneckBeneficiary[]
+  signals: Signal[]               // recent only — last 365 days
+  signalCompanies: SignalCompanyLink[]
 }
 
 /**
@@ -29,7 +37,10 @@ export interface GraphData {
  */
 export async function fetchGraph(): Promise<GraphData> {
   const sb = supabaseServer()
-  const [l, i, c, b, f, bn, bb] = await Promise.all([
+  // Cap signals to the last 365 days so the initial payload stays small even
+  // as filings accumulate. Full history is still in Postgres for ad-hoc queries.
+  const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const [l, i, c, b, f, bn, bb, s, sc] = await Promise.all([
     sb.from('layers').select('*').order('order_index'),
     sb.from('investors').select('*').order('name'),
     sb.from('companies').select('*').order('name'),
@@ -37,8 +48,10 @@ export async function fetchGraph(): Promise<GraphData> {
     sb.from('flows').select('*'),
     sb.from('bottlenecks').select('*'),
     sb.from('bottleneck_beneficiaries').select('*'),
+    sb.from('signals').select('*').gte('date', yearAgo).order('date', { ascending: false }),
+    sb.from('signal_companies').select('*'),
   ])
-  const errors = [l, i, c, b, f, bn, bb].map(r => r.error).filter(Boolean)
+  const errors = [l, i, c, b, f, bn, bb, s, sc].map(r => r.error).filter(Boolean)
   if (errors.length > 0) {
     throw new Error('Supabase fetch failed: ' + errors.map(e => e!.message).join('; '))
   }
@@ -50,5 +63,7 @@ export async function fetchGraph(): Promise<GraphData> {
     flows: (f.data ?? []) as Flow[],
     bottlenecks: (bn.data ?? []) as Bottleneck[],
     bottleneckBeneficiaries: (bb.data ?? []) as BottleneckBeneficiary[],
+    signals: (s.data ?? []) as Signal[],
+    signalCompanies: (sc.data ?? []) as SignalCompanyLink[],
   }
 }
