@@ -1,101 +1,44 @@
-import Image from "next/image";
+/**
+ * Top-level server component. Fetches the entire graph from Supabase in one
+ * round trip (parallel reads inside fetchGraph) and hands the result to the
+ * client-side 3D component.
+ *
+ * Why server-fetch and not an API route?
+ *   - No client-side fetch waterfall — HTML ships with data already on the page.
+ *   - The graph is small (KB, not MB) so streaming it inline is faster.
+ *   - When mutations land in Phase 2+, those go via Route Handlers / Server
+ *     Actions; this page stays read-only.
+ *
+ * force-dynamic = always run on request, never pre-render. Avoids build-time
+ * Supabase calls that fail when env vars aren't wired yet (first Vercel deploy).
+ */
 
-export default function Home() {
-  return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-8 row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="https://nextjs.org/icons/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-semibold">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li>Save and see your changes instantly.</li>
-        </ol>
+import { fetchGraph } from '@/lib/graph-data'
+import ComputeGraph from '@/components/compute-graph'
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="https://nextjs.org/icons/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:min-w-44"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+export const dynamic = 'force-dynamic'
+
+export default async function Page() {
+  let data
+  try {
+    data = await fetchGraph()
+  } catch (err) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#05060a] p-8 text-zinc-200">
+        <div className="max-w-lg space-y-3 text-sm">
+          <h1 className="text-base font-semibold text-red-400">Couldn&apos;t load graph data</h1>
+          <p className="text-zinc-400">
+            Supabase fetch failed. Check that{' '}
+            <code className="text-zinc-200">NEXT_PUBLIC_SUPABASE_URL</code> and{' '}
+            <code className="text-zinc-200">NEXT_PUBLIC_SUPABASE_ANON_KEY</code> are set in this
+            environment, and that the migration has been applied.
+          </p>
+          <pre className="overflow-x-auto rounded border border-zinc-800 bg-zinc-950 p-3 text-xs text-zinc-400">
+            {err instanceof Error ? err.message : String(err)}
+          </pre>
         </div>
       </main>
-      <footer className="row-start-3 flex gap-6 flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="https://nextjs.org/icons/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
-  );
+    )
+  }
+  return <ComputeGraph data={data} />
 }
