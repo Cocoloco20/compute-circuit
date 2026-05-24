@@ -29,7 +29,7 @@ import type { Database } from '@/types/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 120 // EDGAR sequential pass for ~30 CIKs ≈ 30 × 150ms + network ≈ <60s
+export const maxDuration = 60 // Vercel Hobby plan max — sequential pass for ~30 CIKs at 150ms each ≈ 5s
 
 interface SignalInsertResult {
   id: string

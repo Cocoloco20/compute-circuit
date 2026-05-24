@@ -28,7 +28,7 @@ import type { Database } from '@/types/db'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
-export const maxDuration = 300
+export const maxDuration = 60 // Vercel Hobby plan max — first-time backfill may need a manual second pass
 
 interface Investor13F {
   id: string
