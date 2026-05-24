@@ -103,12 +103,30 @@ export async function GET(req: NextRequest) {
         continue
       }
 
+      // Aggregate duplicate CUSIPs — large filers (BlackRock, Coatue) split the
+      // same security across multiple sub-accounts (insurance arm, holding co,
+      // separately-managed funds). Each appears as its own row in the 13F.
+      // Our unique index is (investor, period, cusip), so we must combine
+      // them before upserting or Postgres throws "command cannot affect row
+      // a second time".
+      const byCusipInFiling = new Map<string, ParsedHolding>()
+      for (const h of holdings) {
+        const existing = byCusipInFiling.get(h.cusip)
+        if (existing) {
+          existing.shares = (existing.shares ?? 0) + (h.shares ?? 0)
+          existing.valueUsd = (existing.valueUsd ?? 0) + (h.valueUsd ?? 0)
+        } else {
+          byCusipInFiling.set(h.cusip, { ...h })
+        }
+      }
+      const aggregated = Array.from(byCusipInFiling.values())
+
       // Shape rows and detect CUSIP backfills along the way.
-      const rows = holdings.map((h) => {
+      const rows = aggregated.map((h) => {
         const co = matchHolding(h)
         if (co && !co.cusip) {
           cusipBackfills.push({ id: co.id, cusip: h.cusip })
-          co.cusip = h.cusip // mutate local map so a second match doesn't double-write
+          co.cusip = h.cusip
           byCusip.set(h.cusip, co)
         }
         return {
