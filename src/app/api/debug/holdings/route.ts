@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server'
+import { NextResponse } from 'next/server'
 import { supabaseServer } from '@/lib/supabase/server'
 
 // Temporary debug route — returns raw holdings values to verify the 1000x
@@ -7,7 +7,14 @@ import { supabaseServer } from '@/lib/supabase/server'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
-export async function GET(req: NextRequest) {
+interface RowShape {
+  investor_id: string
+  cusip: string
+  value_usd: number | string | null
+  shares: number | string | null
+}
+
+export async function GET() {
   const sb = supabaseServer()
   const h = await sb
     .from('holdings')
@@ -16,9 +23,10 @@ export async function GET(req: NextRequest) {
     .limit(5)
   if (h.error) return NextResponse.json({ error: h.error.message }, { status: 500 })
 
+  const rows = (h.data ?? []) as unknown as RowShape[]
   return NextResponse.json({
     note: 'raw from supabase-js server-side',
-    rows: (h.data ?? []).map((r: any) => ({
+    rows: rows.map((r) => ({
       investor_id: r.investor_id,
       cusip: r.cusip,
       value_usd_raw: r.value_usd,
