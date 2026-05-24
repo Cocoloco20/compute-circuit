@@ -74,11 +74,6 @@ interface FlowAnim {
 
 // ---------- helpers ----------
 
-function logoUrl(domain: string | null | undefined): string | null {
-  if (!domain) return null
-  return `https://logo.clearbit.com/${domain}?size=128`
-}
-
 // Place N items evenly around a circle at given y, with optional angle offset
 // so different layers don't all stack their nodes at the same angles.
 function ringPosition(index: number, total: number, radius: number, y: number, offset = 0): NodePosition {
@@ -228,87 +223,166 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
     scene.add(layerGroup)
 
     // ----- nodes -----
-    const nodeMeshes: THREE.Mesh[] = []
-    const textureLoader = new THREE.TextureLoader()
-    textureLoader.setCrossOrigin('anonymous')
+    // Two billboard sprites per node:
+    //   1) "badge" — circular Clearbit logo on a white disc with a status-colored ring
+    //   2) "label" — ticker or name in a pill below the badge
+    // Both always face the camera. Click handlers fire on either sprite via shared userData.
+    const nodeMeshes: THREE.Object3D[] = []
 
-    function makeNode(opts: {
-      id: string
-      kind: NodeKind | 'bottleneck'
-      pos: NodePosition
-      radius: number
-      domain: string | null
-      color: number
-      label: string
-    }): THREE.Mesh {
-      const geo = new THREE.SphereGeometry(opts.radius, 24, 24)
-      // Start with flat color; if logo loads we swap to a textured material
-      const mat = new THREE.MeshStandardMaterial({
-        color: opts.color,
-        metalness: 0.15,
-        roughness: 0.55,
-        emissive: opts.color,
-        emissiveIntensity: 0.18,
-      })
-      const mesh = new THREE.Mesh(geo, mat)
-      mesh.position.set(opts.pos.x, opts.pos.y, opts.pos.z)
-      mesh.userData = { kind: opts.kind, id: opts.id, label: opts.label }
-
-      const url = logoUrl(opts.domain)
-      if (url) {
-        textureLoader.load(
-          url,
-          (tex) => {
-            tex.colorSpace = THREE.SRGBColorSpace
-            mat.map = tex
-            // Soften emissive since the logo provides the color
-            mat.color.setHex(0xffffff)
-            mat.emissiveIntensity = 0.08
-            mat.needsUpdate = true
-          },
-          undefined,
-          () => { /* swallow — keep flat color */ },
-        )
-      }
-      return mesh
+    // Draw the fallback state (ring + white disc + initials). Replaced in-place
+    // when the Clearbit image loads.
+    function paintBadgeFallback(canvas: HTMLCanvasElement, ringColor: string, initials: string) {
+      const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      // Outer ring
+      ctx.fillStyle = ringColor
+      ctx.beginPath(); ctx.arc(64, 64, 62, 0, Math.PI * 2); ctx.fill()
+      // Inner white disc
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath(); ctx.arc(64, 64, 56, 0, Math.PI * 2); ctx.fill()
+      // Initials (shows until/unless Clearbit logo loads)
+      ctx.fillStyle = '#0a0a0f'
+      ctx.font = 'bold 44px ui-sans-serif, -apple-system, system-ui, sans-serif'
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle'
+      ctx.fillText(initials.slice(0, 2).toUpperCase(), 64, 68)
+    }
+    function paintBadgeLogo(canvas: HTMLCanvasElement, ringColor: string, img: HTMLImageElement) {
+      const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = ringColor
+      ctx.beginPath(); ctx.arc(64, 64, 62, 0, Math.PI * 2); ctx.fill()
+      ctx.fillStyle = '#ffffff'
+      ctx.beginPath(); ctx.arc(64, 64, 56, 0, Math.PI * 2); ctx.fill()
+      // Clip the logo to the inner disc so square logos don't poke outside the ring.
+      ctx.save()
+      ctx.beginPath(); ctx.arc(64, 64, 54, 0, Math.PI * 2); ctx.clip()
+      const s = 92
+      ctx.drawImage(img, (128 - s) / 2, (128 - s) / 2, s, s)
+      ctx.restore()
     }
 
-    // Helper to dim nodes/flows that don't match the active backer filter.
-    function applyFilterToMaterial(mat: THREE.MeshStandardMaterial, matches: boolean) {
+    function makeBadge(opts: { domain: string | null; ringColor: string; initials: string; scale: number }): THREE.Sprite {
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 128
+      paintBadgeFallback(canvas, opts.ringColor, opts.initials)
+      const tex = new THREE.CanvasTexture(canvas)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.minFilter = THREE.LinearFilter
+      tex.magFilter = THREE.LinearFilter
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
+      const sprite = new THREE.Sprite(mat)
+      sprite.scale.set(opts.scale, opts.scale, 1)
+
+      if (opts.domain) {
+        const img = new Image()
+        img.crossOrigin = 'anonymous'
+        img.onload = () => { paintBadgeLogo(canvas, opts.ringColor, img); tex.needsUpdate = true }
+        img.onerror = () => { /* keep fallback initials */ }
+        img.src = `https://logo.clearbit.com/${opts.domain}?size=128`
+      }
+      return sprite
+    }
+
+    // Text labels (ticker, firm name, bottleneck name) — rendered to an offscreen
+    // canvas as a pill so they read against the dark background.
+    function makeLabel(text: string, heightUnits: number, accent = '#ffffff'): THREE.Sprite {
+      const fontSize = 36
+      const font = `700 ${fontSize}px ui-monospace, SFMono-Regular, Menlo, monospace`
+      // Measure in a throwaway context first (sizing the canvas resets state).
+      const meas = document.createElement('canvas').getContext('2d')!
+      meas.font = font
+      const w = meas.measureText(text).width
+      const padX = 18, padY = 10
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.ceil(w + padX * 2)
+      canvas.height = fontSize + padY * 2
+      const ctx = canvas.getContext('2d')!
+      ctx.font = font
+      ctx.textBaseline = 'middle'
+      ctx.textAlign = 'center'
+      // Pill background
+      ctx.fillStyle = 'rgba(10, 10, 16, 0.85)'
+      const r = canvas.height / 2
+      ctx.beginPath(); ctx.moveTo(r, 0)
+      ctx.lineTo(canvas.width - r, 0); ctx.arcTo(canvas.width, 0, canvas.width, r, r)
+      ctx.lineTo(canvas.width, canvas.height - r); ctx.arcTo(canvas.width, canvas.height, canvas.width - r, canvas.height, r)
+      ctx.lineTo(r, canvas.height); ctx.arcTo(0, canvas.height, 0, canvas.height - r, r)
+      ctx.lineTo(0, r); ctx.arcTo(0, 0, r, 0, r)
+      ctx.closePath(); ctx.fill()
+      // Subtle border
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)'
+      ctx.lineWidth = 2
+      ctx.stroke()
+      // Text
+      ctx.fillStyle = accent
+      ctx.fillText(text, canvas.width / 2, canvas.height / 2 + 1)
+
+      const tex = new THREE.CanvasTexture(canvas)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.minFilter = THREE.LinearFilter
+      tex.magFilter = THREE.LinearFilter
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
+      const sprite = new THREE.Sprite(mat)
+      const aspect = canvas.width / canvas.height
+      sprite.scale.set(heightUnits * aspect, heightUnits, 1)
+      return sprite
+    }
+
+    // Apply backer-filter dimming. Works on both SpriteMaterial and MeshStandardMaterial
+    // (they share `transparent` and `opacity`).
+    function applyFilterToMaterial(mat: THREE.Material & { opacity: number; transparent: boolean }, matches: boolean) {
       if (!filterSet) return
       mat.transparent = true
       mat.opacity = matches ? 1 : 0.18
     }
 
-    // Companies
+    // ----- companies -----
     data.companies.forEach((c) => {
       const pos = positions.companyPos.get(c.id)
       if (!pos) return
-      const radius = 0.35 + Math.min(c.weight, 10) * 0.06
-      const color = c.private ? 0x60a5fa : c.position_held ? 0xfbbf24 : 0x94a3b8
-      const node = makeNode({
-        id: c.id, kind: 'company', pos, radius, domain: c.domain, color,
-        label: `${c.name}${c.ticker ? ` · ${c.ticker}` : ''}`,
-      })
-      applyFilterToMaterial(node.material as THREE.MeshStandardMaterial, !filterSet || filterSet.companies.has(c.id))
-      scene.add(node)
-      nodeMeshes.push(node)
+      // Size by importance weight; ring color encodes status (gold=held, blue=private, slate=public).
+      const scale = 0.95 + Math.min(c.weight, 10) * 0.09
+      const ringHex = c.position_held ? '#fbbf24' : c.private ? '#60a5fa' : '#475569'
+      const initials = c.ticker ?? c.name
+
+      const badge = makeBadge({ domain: c.domain, ringColor: ringHex, initials, scale })
+      badge.position.set(pos.x, pos.y, pos.z)
+      badge.userData = { kind: 'company', id: c.id, label: `${c.name}${c.ticker ? ` · ${c.ticker}` : ''}` }
+      applyFilterToMaterial(badge.material, !filterSet || filterSet.companies.has(c.id))
+      scene.add(badge)
+      nodeMeshes.push(badge)
+
+      // Ticker pill (or first word of name for private cos)
+      const labelText = c.ticker ?? c.name.split(' ')[0]
+      const labelAccent = c.position_held ? '#fde68a' : c.private ? '#bfdbfe' : '#e2e8f0'
+      const label = makeLabel(labelText, 0.34, labelAccent)
+      label.position.set(pos.x, pos.y - scale * 0.62, pos.z)
+      label.userData = { kind: 'company', id: c.id, label: c.name }
+      applyFilterToMaterial(label.material, !filterSet || filterSet.companies.has(c.id))
+      scene.add(label)
+      nodeMeshes.push(label)
     })
 
-    // Investors
+    // ----- investors -----
     data.investors.forEach((inv) => {
       const pos = positions.investorPos.get(inv.id)
       if (!pos) return
-      const node = makeNode({
-        id: inv.id, kind: 'investor', pos, radius: 0.5, domain: inv.domain, color: 0xc084fc,
-        label: inv.name,
-      })
-      applyFilterToMaterial(node.material as THREE.MeshStandardMaterial, !filterSet || filterSet.investors.has(inv.id))
-      scene.add(node)
-      nodeMeshes.push(node)
+      const badge = makeBadge({ domain: inv.domain, ringColor: '#c084fc', initials: inv.name, scale: 1.35 })
+      badge.position.set(pos.x, pos.y, pos.z)
+      badge.userData = { kind: 'investor', id: inv.id, label: inv.name }
+      applyFilterToMaterial(badge.material, !filterSet || filterSet.investors.has(inv.id))
+      scene.add(badge)
+      nodeMeshes.push(badge)
+
+      const label = makeLabel(inv.name, 0.36, '#e9d5ff')
+      label.position.set(pos.x, pos.y - 0.95, pos.z)
+      label.userData = { kind: 'investor', id: inv.id, label: inv.name }
+      applyFilterToMaterial(label.material, !filterSet || filterSet.investors.has(inv.id))
+      scene.add(label)
+      nodeMeshes.push(label)
     })
 
-    // Bottlenecks — octahedron, glowing
+    // ----- bottlenecks (kept as glowing octahedra — they're not companies) -----
     const bottleneckMeshes: THREE.Mesh[] = []
     data.bottlenecks.forEach((b) => {
       const pos = positions.bottleneckPos.get(b.id)
@@ -328,6 +402,16 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       scene.add(mesh)
       nodeMeshes.push(mesh)
       bottleneckMeshes.push(mesh)
+
+      // Bottleneck label — short name, orange-tinted to match the severity vibe
+      const accent =
+        b.severity === 'critical' ? '#fecaca' :
+        b.severity === 'high' ? '#fed7aa' : '#fde68a'
+      const bnLabel = makeLabel(b.name, 0.32, accent)
+      bnLabel.position.set(pos.x, pos.y - 0.85, pos.z)
+      bnLabel.userData = { kind: 'bottleneck', id: b.id, label: b.name }
+      scene.add(bnLabel)
+      nodeMeshes.push(bnLabel)
     })
 
     // ----- flows: curves + particles -----
