@@ -58,11 +58,21 @@ export async function fetchGraph(): Promise<GraphData> {
   // signal_companies has thousands of rows (one per filing). The default 1000-row
   // Supabase cap silently drops links for later-alphabetical companies — so we
   // fetch only the links for our already-windowed signal IDs in a second query.
+  //
+  // CHUNK the .in() lookup: with ~900+ signals (8-Ks + news), the resulting
+  // URL exceeds Supabase REST's URL-length cap and returns 400 Bad Request.
+  // 200 IDs per chunk keeps URLs comfortably small.
   const signals = (s.data ?? []) as Signal[]
   const sigIds = signals.map(x => x.id)
-  const sc = sigIds.length > 0
-    ? await sb.from('signal_companies').select('*').in('signal_id', sigIds)
-    : { data: [], error: null }
+  let scData: SignalCompanyLink[] = []
+  let scError: { message: string } | null = null
+  for (let i = 0; i < sigIds.length; i += 200) {
+    const chunk = sigIds.slice(i, i + 200)
+    const r = await sb.from('signal_companies').select('*').in('signal_id', chunk)
+    if (r.error) { scError = r.error; break }
+    scData = scData.concat((r.data ?? []) as SignalCompanyLink[])
+  }
+  const sc = { data: scData, error: scError }
 
   // Holdings: only those matched to one of OUR companies (small subset of the
   // total holdings table — typically a few dozen rows). Full per-filer 13Fs
