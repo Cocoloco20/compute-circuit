@@ -339,7 +339,10 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
     }
 
     // ----- companies -----
+    // Discovered-via-scraper companies start with layer_id=null. Skip them in
+    // the 3D scene so the visual stays curated — they still show in drawers.
     data.companies.forEach((c) => {
+      if (!c.layer_id) return
       const pos = positions.companyPos.get(c.id)
       if (!pos) return
       // Size by importance weight; ring color encodes status (gold=held, blue=private, slate=public).
@@ -587,7 +590,11 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         <div className="pointer-events-auto font-mono text-sm">
           <span className="font-semibold text-white">Compute Circuit</span>
           <span className="ml-3 text-zinc-500">
-            {data.companies.length} cos · {data.investors.length} investors · {data.flows.length} flows · {data.bottlenecks.length} bottlenecks
+            {data.companies.filter(c => c.layer_id).length} cos
+            {data.companies.filter(c => !c.layer_id).length > 0 && (
+              <span className="text-zinc-600"> (+{data.companies.filter(c => !c.layer_id).length} unplaced)</span>
+            )}
+            <span> · {data.investors.length} investors · {data.flows.length} flows · {data.bottlenecks.length} bottlenecks</span>
           </span>
         </div>
         <button

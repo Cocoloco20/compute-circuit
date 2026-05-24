@@ -253,17 +253,48 @@ function InvestorBody({ id, data }: { id: string; data: GraphData }) {
         </Section>
       )}
 
-      <Section title={`Private portfolio (${portfolio.length})`}>
+      <PortfolioBreakdown portfolio={portfolio} />
+    </>
+  )
+}
+
+function PortfolioBreakdown({ portfolio }: { portfolio: GraphData['companies'] }) {
+  // Split into:
+  //   * Curated — already placed on a layer (rendered in the graph)
+  //   * Discovered — pulled in by the Form-D scraper, no layer yet
+  const curated = portfolio.filter(c => c.layer_id)
+  const discovered = portfolio.filter(c => !c.layer_id)
+  return (
+    <>
+      <Section title={`Curated portfolio (${curated.length})`}>
         <ul className="space-y-1">
-          {portfolio.map(c => (
+          {curated.map(c => (
             <li key={c.id} className="flex items-center justify-between text-xs">
               <span>{c.name}{c.ticker && <span className="text-zinc-500"> · {c.ticker}</span>}</span>
               <span className="text-zinc-600">{c.layer_id}</span>
             </li>
           ))}
-          {portfolio.length === 0 && <li className="text-zinc-500">No mapped private holdings.</li>}
+          {curated.length === 0 && <li className="text-zinc-500">No mapped holdings.</li>}
         </ul>
       </Section>
+
+      {discovered.length > 0 && (
+        <Section title={`Discovered via Form D (${discovered.length})`}>
+          <div className="mb-1.5 text-[10px] text-zinc-600">
+            From SEC Form D filings. Promote to graph by editing the row&apos;s layer_id.
+          </div>
+          <ul className="max-h-64 space-y-1 overflow-y-auto pr-1">
+            {discovered.slice(0, 50).map(c => (
+              <li key={c.id} className="text-xs text-zinc-400">
+                {c.name}
+              </li>
+            ))}
+            {discovered.length > 50 && (
+              <li className="text-xs text-zinc-600">+{discovered.length - 50} more…</li>
+            )}
+          </ul>
+        </Section>
+      )}
     </>
   )
 }

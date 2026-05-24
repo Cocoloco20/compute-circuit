@@ -51,6 +51,8 @@ export interface Company {
   notes: string | null
   cik: string | null  // SEC Central Index Key — populated by CIK backfill
   cusip: string | null // CUSIP for 13F holdings join (companies.cusip → holdings.cusip)
+  discovered_via: string | null  // null = manual seed; otherwise investor.id of the scraper
+  discovered_at: string | null
   created_at: string
   updated_at: string
 }
@@ -121,7 +123,7 @@ export interface Database {
     Tables: {
       layers: { Row: Layer; Insert: Layer; Update: Partial<Layer> }
       investors: { Row: Investor; Insert: Omit<Investor, 'created_at' | 'cik' | 'files_13f'> & { created_at?: string; cik?: string | null; files_13f?: boolean }; Update: Partial<Investor> }
-      companies: { Row: Company; Insert: Omit<Company, 'created_at' | 'updated_at' | 'cusip' | 'cik'> & { created_at?: string; updated_at?: string; cusip?: string | null; cik?: string | null }; Update: Partial<Company> }
+      companies: { Row: Company; Insert: Omit<Company, 'created_at' | 'updated_at' | 'cusip' | 'cik' | 'discovered_via' | 'discovered_at'> & { created_at?: string; updated_at?: string; cusip?: string | null; cik?: string | null; discovered_via?: string | null; discovered_at?: string | null }; Update: Partial<Company> }
       holdings: { Row: Holding; Insert: Omit<Holding, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Holding> }
       company_backers: { Row: CompanyBacker; Insert: CompanyBacker; Update: Partial<CompanyBacker> }
       flows: { Row: Flow; Insert: Partial<Pick<Flow, 'id' | 'created_at' | 'note'>> & Omit<Flow, 'id' | 'created_at' | 'note'> & { note?: string | null }; Update: Partial<Flow> }
