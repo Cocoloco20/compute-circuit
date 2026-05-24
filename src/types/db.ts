@@ -17,6 +17,22 @@ export interface Investor {
   name: string
   domain: string | null
   thesis: string | null
+  cik: string | null         // SEC CIK for 13F filers
+  files_13f: boolean         // does the cron pull this filer's holdings?
+  created_at: string
+}
+
+export interface Holding {
+  id: string
+  investor_id: string
+  company_id: string | null
+  cusip: string
+  issuer_name: string
+  title_of_class: string | null
+  period: string             // ISO date — quarter-end
+  shares: number | null
+  value_usd: number | null
+  accession: string
   created_at: string
 }
 
@@ -33,7 +49,8 @@ export interface Company {
   thesis: string | null
   share: number | null
   notes: string | null
-  cik: string | null // SEC Central Index Key — populated by CIK backfill
+  cik: string | null  // SEC Central Index Key — populated by CIK backfill
+  cusip: string | null // CUSIP for 13F holdings join (companies.cusip → holdings.cusip)
   created_at: string
   updated_at: string
 }
@@ -103,8 +120,9 @@ export interface Database {
   public: {
     Tables: {
       layers: { Row: Layer; Insert: Layer; Update: Partial<Layer> }
-      investors: { Row: Investor; Insert: Omit<Investor, 'created_at'> & { created_at?: string }; Update: Partial<Investor> }
-      companies: { Row: Company; Insert: Omit<Company, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Company> }
+      investors: { Row: Investor; Insert: Omit<Investor, 'created_at' | 'cik' | 'files_13f'> & { created_at?: string; cik?: string | null; files_13f?: boolean }; Update: Partial<Investor> }
+      companies: { Row: Company; Insert: Omit<Company, 'created_at' | 'updated_at' | 'cusip' | 'cik'> & { created_at?: string; updated_at?: string; cusip?: string | null; cik?: string | null }; Update: Partial<Company> }
+      holdings: { Row: Holding; Insert: Omit<Holding, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Holding> }
       company_backers: { Row: CompanyBacker; Insert: CompanyBacker; Update: Partial<CompanyBacker> }
       flows: { Row: Flow; Insert: Partial<Pick<Flow, 'id' | 'created_at' | 'note'>> & Omit<Flow, 'id' | 'created_at' | 'note'> & { note?: string | null }; Update: Partial<Flow> }
       bottlenecks: { Row: Bottleneck; Insert: Omit<Bottleneck, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Bottleneck> }

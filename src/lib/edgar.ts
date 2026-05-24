@@ -141,3 +141,95 @@ export function filingIndexUrl(cik: string, accession: string): string {
   const accNoDashes = accession.replace(/-/g, '')
   return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/`
 }
+
+// ---------- 13F holdings ----------
+
+import { XMLParser } from 'fast-xml-parser'
+
+export interface ParsedHolding {
+  cusip: string
+  nameOfIssuer: string
+  titleOfClass: string | null
+  shares: number | null
+  valueUsd: number | null   // converted from $1000s
+}
+
+/**
+ * Find the most-recent 13F-HR for a CIK. Returns null if none on record
+ * (e.g. the filer hasn't crossed the $100M AUM threshold).
+ */
+export function findLatest13F(filings: EdgarFiling[]): EdgarFiling | null {
+  return filings.find(f => f.form === '13F-HR') ?? null
+}
+
+/**
+ * Locate the INFORMATION TABLE xml file inside a 13F filing folder.
+ * Different filers use different naming conventions, but the SEC's filing
+ * index always lists files; we filter to ones whose name looks like the
+ * holdings table.
+ */
+export async function fetchInformationTableUrl(cik: string, accession: string): Promise<string | null> {
+  const cikInt = parseInt(cik, 10)
+  const accNoDashes = accession.replace(/-/g, '')
+  const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/index.json`
+  const r = await fetch(indexUrl, { headers: { 'User-Agent': UA, Accept: 'application/json' } })
+  if (!r.ok) return null
+  const data = (await r.json()) as { directory?: { item?: Array<{ name: string; type?: string }> } }
+  const items = data.directory?.item ?? []
+  // Prefer items explicitly typed "INFORMATION TABLE"; fall back to filename heuristic.
+  const byType = items.find(i => (i.type ?? '').toUpperCase() === 'INFORMATION TABLE')
+  const byName = items.find(i => /info(rmation)?[_-]?table.*\.xml$/i.test(i.name))
+  const pick = byType ?? byName
+  if (!pick) return null
+  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/${pick.name}`
+}
+
+/**
+ * Parse the SEC 13F INFORMATION TABLE XML.
+ * The schema is rigid but uses different namespace prefixes per filer
+ * (ns1:, n1:, none) — fast-xml-parser's removeNSPrefix handles that.
+ */
+export function parseInformationTable(xml: string): ParsedHolding[] {
+  const parser = new XMLParser({
+    ignoreAttributes: true,
+    removeNSPrefix: true,
+    parseTagValue: false, // keep everything as string; we'll cast deliberately
+  })
+  const parsed = parser.parse(xml) as { informationTable?: { infoTable?: unknown } }
+  const it = parsed.informationTable?.infoTable
+  if (!it) return []
+  const rows = Array.isArray(it) ? it : [it]
+  const out: ParsedHolding[] = []
+  for (const row of rows as Array<Record<string, unknown>>) {
+    const cusip = String(row.cusip ?? '').trim()
+    if (!cusip) continue
+    const value = Number(row.value ?? 0)             // in $1000s per SEC spec
+    const shareInfo = row.shrsOrPrnAmt as Record<string, unknown> | undefined
+    const shares = shareInfo ? Number(shareInfo.sshPrnamt ?? 0) : null
+    out.push({
+      cusip,
+      nameOfIssuer: String(row.nameOfIssuer ?? '').trim(),
+      titleOfClass: row.titleOfClass ? String(row.titleOfClass) : null,
+      shares: Number.isFinite(shares) ? shares : null,
+      valueUsd: Number.isFinite(value) ? value * 1000 : null,
+    })
+  }
+  return out
+}
+
+/**
+ * High-level: fetch a 13F's full holdings list given the filer CIK + accession.
+ * Returns the parsed rows (CUSIP-keyed) plus the reportDate of the filing,
+ * which is the quarter-end period for storage.
+ */
+export async function fetch13FHoldings(cik: string, filing: EdgarFiling): Promise<{ period: string; holdings: ParsedHolding[] }> {
+  const xmlUrl = await fetchInformationTableUrl(cik, filing.accessionNumber)
+  if (!xmlUrl) return { period: filing.reportDate ?? filing.filingDate, holdings: [] }
+  const r = await fetch(xmlUrl, { headers: { 'User-Agent': UA, Accept: 'application/xml' } })
+  if (!r.ok) return { period: filing.reportDate ?? filing.filingDate, holdings: [] }
+  const xml = await r.text()
+  return {
+    period: filing.reportDate ?? filing.filingDate,
+    holdings: parseInformationTable(xml),
+  }
+}

@@ -55,16 +55,24 @@ export const layers: Layer[] = [
 
 // ============ INVESTORS ============
 
+// VC + private capital — no 13F reporting (held through funds, not registered SMAs).
+// CIK is left null; files_13f=false.
+// Institutional managers that file 13F (ARK, Coatue, plus three added below) get cik + files_13f=true.
 export const investors: Omit<Investor, 'created_at'>[] = [
-  { id: 'sequoia',       name: 'Sequoia Capital',         domain: 'sequoiacap.com',     thesis: 'Generational AI platforms; led OpenAI & xAI rounds.' },
-  { id: 'a16z',          name: 'Andreessen Horowitz',     domain: 'a16z.com',           thesis: 'Heavy backer of xAI, Mistral, and open-weight infra.' },
-  { id: 'founders-fund', name: 'Founders Fund',           domain: 'foundersfund.com',   thesis: 'Defense + frontier compute; Anduril, OpenAI, xAI.' },
-  { id: 'khosla',        name: 'Khosla Ventures',         domain: 'khoslaventures.com', thesis: 'OpenAI lead 2019; first-check labs bets.' },
-  { id: 'coatue',        name: 'Coatue Management',       domain: 'coatue.com',         thesis: 'Tech-focused crossover; Anthropic anchor investor.' },
-  { id: 'thrive',        name: 'Thrive Capital',          domain: 'thrivecap.com',      thesis: 'Concentrated AI bets — OpenAI, Scale AI tenders.' },
-  { id: 'greenoaks',     name: 'Greenoaks Capital',       domain: 'greenoaks.com',      thesis: 'Late-stage compute + apps; CoreWeave, Scale.' },
-  { id: 'softbank',      name: 'SoftBank Vision Fund',    domain: 'visionfund.com',     thesis: '$40B OpenAI 2025 lead; owns Arm; nuclear infra interest.' },
-  { id: 'ark',           name: 'ARK Invest',              domain: 'ark-invest.com',     thesis: 'Public-market AI compute; concentrated NVDA, TSM, CRWV.' },
+  { id: 'sequoia',       name: 'Sequoia Capital',         domain: 'sequoiacap.com',     thesis: 'Generational AI platforms; led OpenAI & xAI rounds.',                          cik: null,            files_13f: false },
+  { id: 'a16z',          name: 'Andreessen Horowitz',     domain: 'a16z.com',           thesis: 'Heavy backer of xAI, Mistral, and open-weight infra.',                         cik: null,            files_13f: false },
+  { id: 'founders-fund', name: 'Founders Fund',           domain: 'foundersfund.com',   thesis: 'Defense + frontier compute; Anduril, OpenAI, xAI.',                            cik: null,            files_13f: false },
+  { id: 'khosla',        name: 'Khosla Ventures',         domain: 'khoslaventures.com', thesis: 'OpenAI lead 2019; first-check labs bets.',                                     cik: null,            files_13f: false },
+  { id: 'coatue',        name: 'Coatue Management',       domain: 'coatue.com',         thesis: 'Tech-focused crossover; Anthropic anchor investor. Files 13F (Coatue Mgmt LP).', cik: '0001135730',  files_13f: true  },
+  { id: 'thrive',        name: 'Thrive Capital',          domain: 'thrivecap.com',      thesis: 'Concentrated AI bets — OpenAI, Scale AI tenders.',                             cik: null,            files_13f: false },
+  { id: 'greenoaks',     name: 'Greenoaks Capital',       domain: 'greenoaks.com',      thesis: 'Late-stage compute + apps; CoreWeave, Scale.',                                 cik: null,            files_13f: false },
+  { id: 'softbank',      name: 'SoftBank Vision Fund',    domain: 'visionfund.com',     thesis: '$40B OpenAI 2025 lead; owns Arm; nuclear infra interest.',                     cik: null,            files_13f: false },
+  { id: 'ark',           name: 'ARK Invest',              domain: 'ark-invest.com',     thesis: 'Public-market AI compute; concentrated NVDA, TSM, CRWV. ARK Investment Mgmt LLC.', cik: '0001697748', files_13f: true  },
+
+  // ---- Institutional 13F filers added in Phase 3 ----
+  { id: 'blackrock',     name: 'BlackRock',               domain: 'blackrock.com',      thesis: 'Passive whale — owns ~7-8% of every megacap. Direction-of-flow proxy.',        cik: '0001364742',    files_13f: true  },
+  { id: 'tiger-global',  name: 'Tiger Global',            domain: 'tigerglobal.com',    thesis: 'Crossover hedge fund + late-stage VC; concentrated tech bets.',                cik: '0001167483',    files_13f: true  },
+  { id: 'whale-rock',    name: 'Whale Rock Capital',      domain: 'whalerock.com',      thesis: 'AI-thematic long/short — Tom Saberhagen track record on disruptive tech.',     cik: '0001581838',    files_13f: true  },
 ]
 
 // ============ COMPANIES ============
