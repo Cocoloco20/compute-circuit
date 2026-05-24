@@ -274,7 +274,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const sprite = new THREE.Sprite(mat)
       sprite.scale.set(opts.scale, opts.scale, 1)
 
-      const url = getLogoUrl(opts.domain, 128)
+      const url = getLogoUrl(opts.domain)
       if (url) {
         const img = new Image()
         img.crossOrigin = 'anonymous'
