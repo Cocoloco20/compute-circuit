@@ -8,6 +8,7 @@ import type {
   Bottleneck,
   BottleneckBeneficiary,
   Signal,
+  Holding,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -25,6 +26,7 @@ export interface GraphData {
   bottleneckBeneficiaries: BottleneckBeneficiary[]
   signals: Signal[]               // recent only — last 365 days
   signalCompanies: SignalCompanyLink[]
+  holdings: Holding[]             // 13F holdings matched to our companies only
 }
 
 /**
@@ -60,7 +62,18 @@ export async function fetchGraph(): Promise<GraphData> {
     ? await sb.from('signal_companies').select('*').in('signal_id', sigIds)
     : { data: [], error: null }
 
-  const errors = [l, i, c, b, f, bn, bb, s, sc].map(r => r.error).filter(Boolean)
+  // Holdings: only those matched to one of OUR companies (small subset of the
+  // total holdings table — typically a few dozen rows). Full per-filer 13Fs
+  // stay queryable server-side for ad-hoc analysis.
+  const h = await sb
+    .from('holdings')
+    .select('*')
+    .not('company_id', 'is', null)
+    .order('period', { ascending: false })
+    .order('value_usd', { ascending: false })
+    .limit(500)
+
+  const errors = [l, i, c, b, f, bn, bb, s, sc, h].map(r => r.error).filter(Boolean)
   if (errors.length > 0) {
     throw new Error('Supabase fetch failed: ' + errors.map(e => e!.message).join('; '))
   }
@@ -74,5 +87,6 @@ export async function fetchGraph(): Promise<GraphData> {
     bottleneckBeneficiaries: (bb.data ?? []) as BottleneckBeneficiary[],
     signals,
     signalCompanies: (sc.data ?? []) as SignalCompanyLink[],
+    holdings: (h.data ?? []) as Holding[],
   }
 }

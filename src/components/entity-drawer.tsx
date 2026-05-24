@@ -9,9 +9,23 @@
  */
 
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow } from '@/types/db'
+import type { Flow, Holding } from '@/types/db'
 import { getLogoUrl } from '@/lib/logo'
 import type { SelectedRef } from './compute-graph'
+
+function formatUsd(n: number | null | undefined): string {
+  if (n == null) return '—'
+  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`
+  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}k`
+  return `$${n.toLocaleString()}`
+}
+function formatShares(n: number | null | undefined): string {
+  if (n == null) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M sh`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k sh`
+  return `${n.toLocaleString()} sh`
+}
 
 const FLOW_COLOR_CLASS: Record<string, string> = {
   money: 'text-emerald-400',
@@ -121,9 +135,45 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
 
       <SignalList companyId={id} data={data} />
 
+      <InstitutionalHolders companyId={id} data={data} />
+
       <FlowList title={`Out (${outFlows.length})`} flows={outFlows} data={data} direction="out" />
       <FlowList title={`In (${inFlows.length})`}  flows={inFlows}  data={data} direction="in"  />
     </>
+  )
+}
+
+function InstitutionalHolders({ companyId, data }: { companyId: string; data: GraphData }) {
+  // Group this company's holdings by investor, take the latest period per pair.
+  const matches = data.holdings.filter(h => h.company_id === companyId)
+  if (matches.length === 0) return null
+  const latestPerInvestor = new Map<string, Holding>()
+  for (const h of matches) {
+    const cur = latestPerInvestor.get(h.investor_id)
+    if (!cur || h.period > cur.period) latestPerInvestor.set(h.investor_id, h)
+  }
+  const rows = Array.from(latestPerInvestor.values()).sort((a, b) => (b.value_usd ?? 0) - (a.value_usd ?? 0))
+  const investorById = new Map(data.investors.map(i => [i.id, i]))
+  return (
+    <Section title={`Institutional holders (${rows.length})`}>
+      <ul className="space-y-1.5">
+        {rows.map((h) => {
+          const inv = investorById.get(h.investor_id)
+          return (
+            <li key={h.id} className="text-xs">
+              <div className="flex items-baseline justify-between gap-2">
+                <span className="text-zinc-200">{inv?.name ?? h.investor_id}</span>
+                <span className="font-mono text-emerald-400">{formatUsd(h.value_usd)}</span>
+              </div>
+              <div className="flex items-baseline justify-between gap-2 text-[10px] text-zinc-500">
+                <span>{formatShares(h.shares)}</span>
+                <span className="font-mono">Q-end {h.period}</span>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </Section>
   )
 }
 
@@ -165,12 +215,45 @@ function InvestorBody({ id, data }: { id: string; data: GraphData }) {
   const portfolioIds = new Set(data.backers.filter(b => b.investor_id === id).map(b => b.company_id))
   const portfolio = data.companies.filter(c => portfolioIds.has(c.id))
 
+  // 13F-derived holdings — latest period only, intersected with companies in our graph.
+  const myHoldings = data.holdings.filter(h => h.investor_id === id)
+  const latestPeriod = myHoldings.reduce<string | null>((acc, h) => (acc && acc > h.period ? acc : h.period), null)
+  const currentHoldings = myHoldings.filter(h => h.period === latestPeriod)
+  const companyById = new Map(data.companies.map(c => [c.id, c]))
+  const sorted = currentHoldings.slice().sort((a, b) => (b.value_usd ?? 0) - (a.value_usd ?? 0))
+
   return (
     <>
-      <Header domain={inv.domain} name={inv.name} sub="investor" />
+      <Header domain={inv.domain} name={inv.name} sub={inv.files_13f ? '13F filer' : 'private capital'} />
       {inv.thesis && <Section title="Thesis">{inv.thesis}</Section>}
 
-      <Section title={`Portfolio (${portfolio.length})`}>
+      {inv.files_13f && (
+        <Section title={`AI-compute 13F positions${latestPeriod ? ` · ${latestPeriod}` : ''}`}>
+          {sorted.length === 0 ? (
+            <div className="text-xs text-zinc-500">No matched positions yet — cron may not have run.</div>
+          ) : (
+            <ul className="space-y-1.5">
+              {sorted.map(h => {
+                const co = h.company_id ? companyById.get(h.company_id) : null
+                return (
+                  <li key={h.id} className="text-xs">
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="text-zinc-200">
+                        {co?.name ?? h.issuer_name}
+                        {co?.ticker && <span className="text-zinc-500"> · {co.ticker}</span>}
+                      </span>
+                      <span className="font-mono text-emerald-400">{formatUsd(h.value_usd)}</span>
+                    </div>
+                    <div className="text-[10px] text-zinc-500">{formatShares(h.shares)}</div>
+                  </li>
+                )
+              })}
+            </ul>
+          )}
+        </Section>
+      )}
+
+      <Section title={`Private portfolio (${portfolio.length})`}>
         <ul className="space-y-1">
           {portfolio.map(c => (
             <li key={c.id} className="flex items-center justify-between text-xs">
@@ -178,7 +261,7 @@ function InvestorBody({ id, data }: { id: string; data: GraphData }) {
               <span className="text-zinc-600">{c.layer_id}</span>
             </li>
           ))}
-          {portfolio.length === 0 && <li className="text-zinc-500">No mapped holdings.</li>}
+          {portfolio.length === 0 && <li className="text-zinc-500">No mapped private holdings.</li>}
         </ul>
       </Section>
     </>
