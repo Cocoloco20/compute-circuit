@@ -291,22 +291,32 @@ function SignalList({ companyId, data }: { companyId: string; data: GraphData })
   const signals = data.signals.filter(s => signalIds.has(s.id))
   if (signals.length === 0) return null
   return (
-    <Section title={`SEC filings (${signals.length})`}>
+    <Section title={`Recent activity (${signals.length})`}>
       <ul className="space-y-1.5">
-        {signals.slice(0, 8).map((s) => (
-          <li key={s.id} className="text-xs leading-snug">
-            <div className="flex items-baseline gap-2">
-              <span className="font-mono text-[10px] text-zinc-500">{s.date}</span>
-              <span className="text-[10px] uppercase text-cyan-400">{s.form_type ?? 'filing'}</span>
-              {s.url && (
-                <a href={s.url} target="_blank" rel="noreferrer" className="ml-auto text-[10px] text-zinc-500 hover:text-white">↗</a>
-              )}
-            </div>
-            <div className="text-zinc-300">{s.headline}</div>
-          </li>
-        ))}
-        {signals.length > 8 && (
-          <li className="text-xs text-zinc-500">+{signals.length - 8} older filings</li>
+        {signals.slice(0, 12).map((s) => {
+          const isNews = s.form_type === 'news'
+          const badgeColor = isNews
+            ? 'text-cyan-400'
+            : s.form_type === '8-K' ? 'text-orange-400' : 'text-zinc-400'
+          const badgeLabel = isNews ? 'NEWS' : (s.form_type ?? 'FILING')
+          return (
+            <li key={s.id} className="text-xs leading-snug">
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[10px] text-zinc-500">{s.date}</span>
+                <span className={`text-[10px] uppercase ${badgeColor}`}>{badgeLabel}</span>
+                {isNews && s.impact && (
+                  <span className="text-[10px] text-zinc-500">· {s.impact}</span>
+                )}
+                {s.url && (
+                  <a href={s.url} target="_blank" rel="noreferrer" className="ml-auto text-[10px] text-zinc-500 hover:text-white">↗</a>
+                )}
+              </div>
+              <div className={isNews ? 'text-zinc-200' : 'text-zinc-300'}>{s.headline}</div>
+            </li>
+          )
+        })}
+        {signals.length > 12 && (
+          <li className="text-xs text-zinc-500">+{signals.length - 12} older</li>
         )}
       </ul>
     </Section>

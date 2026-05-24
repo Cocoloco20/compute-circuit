@@ -66,6 +66,7 @@ export async function discoverViaFormD(opts: {
   // Dedup by CIK — same issuer often files multiple Form Ds.
   const byCik = new Map<string, DiscoveredCompany>()
   const termLower = opts.term.toLowerCase()
+  const firstWordUpper = opts.term.split(/\s+/)[0]?.toUpperCase() ?? ''
   for (const hit of hits) {
     const src = hit._source ?? {}
     const cik = src.ciks?.[0]
@@ -74,9 +75,7 @@ export async function discoverViaFormD(opts: {
     // Strip "(CIK 0001234567)" suffix that EDGAR appends.
     const name = rawName.replace(/\s*\(CIK[^)]*\)\s*$/, '').trim()
     if (!name) continue
-    // Skip the VC's OWN fund vehicles — they file Form Ds for the LP itself.
-    // Heuristic: issuer name contains the VC's name.
-    if (name.toLowerCase().includes(termLower)) continue
+    if (isLikelyVcShell(name, termLower, firstWordUpper)) continue
     if (byCik.has(cik)) continue
     byCik.set(cik, {
       name,
@@ -87,6 +86,36 @@ export async function discoverViaFormD(opts: {
     })
   }
   return Array.from(byCik.values())
+}
+
+/**
+ * Heuristic SPV / fund-vehicle filter.
+ *
+ * Catches the noise patterns observed in 2026-05 backfill:
+ *   - "Coatue CT 100 LLC"  (Coatue per-investment SPVs)
+ *   - "Coatue Asia Fund LP", "Coatue Climate Tech Fund II LP"
+ *   - "Claremount IV/V/VI/VII Associates L.P." (Thrive's fund family)
+ *   - "North River Angel Investments IX LP" (Thrive angel vehicle)
+ *   - "Lindenwood Ltd" (Greenoaks fund — won't catch w/o context, but rare)
+ *   - "Spark Capital Founders Fund III LP" etc. (Founders Fund-named co-invest vehicles)
+ *
+ * Rules:
+ *  1) Issuer name contains the VC's search term (lowercase substring) → already-VC's-own.
+ *  2) Issuer name's first word equals the VC's first word — catches "Coatue *", "Thrive *".
+ *  3) Common shell patterns: ".. Fund (II|III|...) L.P.", ".. SPV ..", ".. Holdings LLC",
+ *     ".. Feeder Fund ..", "* CT \\d+ LLC", "* Associates L.P.".
+ */
+function isLikelyVcShell(issuerName: string, vcTermLower: string, vcFirstWordUpper: string): boolean {
+  const lc = issuerName.toLowerCase()
+  if (lc.includes(vcTermLower)) return true
+  if (vcFirstWordUpper) {
+    const firstWord = issuerName.toUpperCase().split(/\s+/)[0] ?? ''
+    if (firstWord === vcFirstWordUpper) return true
+  }
+  // Common fund-vehicle suffix patterns
+  if (/\b(Fund|Feeder|SPV|Onshore|Offshore|Holdings|Holdco|Associates|Partners)\b.*\b(L\.?P\.?|LLC|Ltd)\b/i.test(issuerName)) return true
+  if (/\bCT[\s-]?(\d+|[IVXLC]+)\b/i.test(issuerName)) return true // "CT 100", "CT XXI"
+  return false
 }
 
 /** Drive Form-D discovery sequentially across N VCs with SEC-friendly spacing. */
