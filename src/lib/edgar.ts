@@ -203,7 +203,10 @@ export function parseInformationTable(xml: string): ParsedHolding[] {
   for (const row of rows as Array<Record<string, unknown>>) {
     const cusip = String(row.cusip ?? '').trim()
     if (!cusip) continue
-    const value = Number(row.value ?? 0)             // in $1000s per SEC spec
+    // Per the SEC 2022 amendment (effective Jan 2023), `value` is reported
+    // in WHOLE DOLLARS. Older filings used $1000s, but we don't backfill
+    // pre-2023 13Fs, so no conversion needed.
+    const value = Number(row.value ?? 0)
     const shareInfo = row.shrsOrPrnAmt as Record<string, unknown> | undefined
     const shares = shareInfo ? Number(shareInfo.sshPrnamt ?? 0) : null
     out.push({
@@ -211,7 +214,7 @@ export function parseInformationTable(xml: string): ParsedHolding[] {
       nameOfIssuer: String(row.nameOfIssuer ?? '').trim(),
       titleOfClass: row.titleOfClass ? String(row.titleOfClass) : null,
       shares: Number.isFinite(shares) ? shares : null,
-      valueUsd: Number.isFinite(value) ? value * 1000 : null,
+      valueUsd: Number.isFinite(value) ? value : null,
     })
   }
   return out
