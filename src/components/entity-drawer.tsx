@@ -10,6 +10,7 @@
 
 import type { GraphData } from '@/lib/graph-data'
 import type { Flow } from '@/types/db'
+import { getLogoUrl } from '@/lib/logo'
 import type { SelectedRef } from './compute-graph'
 
 const FLOW_COLOR_CLASS: Record<string, string> = {
@@ -27,9 +28,6 @@ interface Props {
   onClose: () => void
 }
 
-function logoUrl(domain: string | null | undefined): string | null {
-  return domain ? `https://logo.clearbit.com/${domain}?size=128` : null
-}
 
 export default function EntityDrawer({ selected, data, onClose }: Props) {
   const body = renderBody(selected, data)
@@ -200,7 +198,7 @@ function BottleneckBody({ id, data }: { id: string; data: GraphData }) {
 // ---------- shared bits ----------
 
 function Header({ domain, name, sub }: { domain: string | null; name: string; sub: string | null }) {
-  const url = logoUrl(domain)
+  const url = getLogoUrl(domain)
   return (
     <div className="mb-4 flex items-center gap-3">
       {url ? (

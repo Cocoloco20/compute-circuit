@@ -25,6 +25,7 @@ import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import type { Company, Flow, FlowType, NodeKind } from '@/types/db'
 import type { GraphData } from '@/lib/graph-data'
+import { getLogoUrl } from '@/lib/logo'
 import EntityDrawer from './entity-drawer'
 import CommandPalette from './command-palette'
 
@@ -273,12 +274,13 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const sprite = new THREE.Sprite(mat)
       sprite.scale.set(opts.scale, opts.scale, 1)
 
-      if (opts.domain) {
+      const url = getLogoUrl(opts.domain, 128)
+      if (url) {
         const img = new Image()
         img.crossOrigin = 'anonymous'
         img.onload = () => { paintBadgeLogo(canvas, opts.ringColor, img); tex.needsUpdate = true }
         img.onerror = () => { /* keep fallback initials */ }
-        img.src = `https://logo.clearbit.com/${opts.domain}?size=128`
+        img.src = url
       }
       return sprite
     }

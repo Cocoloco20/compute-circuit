@@ -2,8 +2,10 @@
 const nextConfig = {
   images: {
     remotePatterns: [
-      { protocol: 'https', hostname: 'logo.clearbit.com' },
-      { protocol: 'https', hostname: 'cdn.brandfetch.io' },
+      // Google faviconV2 — default logo source after Clearbit's API shutdown
+      { protocol: 'https', hostname: 't1.gstatic.com' },
+      // Optional upgrade: set NEXT_PUBLIC_LOGO_DEV_TOKEN to use logo.dev
+      { protocol: 'https', hostname: 'img.logo.dev' },
     ],
   },
   // three.js ships ESM; transpiling sidesteps a few edge cases in webpack
