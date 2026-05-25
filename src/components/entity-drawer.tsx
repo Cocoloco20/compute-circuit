@@ -15,7 +15,7 @@
 
 import { useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound, TranscriptSignal, SocialMention } from '@/types/db'
+import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound, TranscriptSignal, SocialMention, InterestSignal } from '@/types/db'
 import { computeCapexTTM } from '@/lib/capex'
 import { CPC_SUBCLASS_LABELS } from '@/lib/uspto'
 import { getLogoUrl } from '@/lib/logo'
@@ -1119,6 +1119,62 @@ function pickLatestAndPriors<T extends { snapshot_date: string }>(
   return { latest, d7: closest(target7), d30: closest(target30) }
 }
 
+function formatViews(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return n.toLocaleString()
+}
+
+function BuzzIndexChip({ rows }: { rows: InterestSignal[] }) {
+  if (rows.length === 0) return null
+  const latest = rows.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))[0]
+  if (!latest) return null
+
+  const wiki7d = latest.wikipedia_views_7d
+  const yoy = latest.wikipedia_yoy_pct
+  const trends = latest.google_trends_score
+  const trendsDelta = latest.google_trends_7d_delta
+
+  if (wiki7d == null && trends == null) return null
+
+  let deltaColor = 'text-fg-secondary'
+  if (trendsDelta != null) {
+    if (trendsDelta >= 20) deltaColor = 'text-signal-healthy'
+    else if (trendsDelta >= 5) deltaColor = 'text-signal-warn'
+    else if (trendsDelta <= -20) deltaColor = 'text-signal-alert'
+  }
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1.5 shadow-card">
+      <div className="flex items-baseline justify-between">
+        <div className="text-label text-fg-muted">Buzz</div>
+        <div className="flex items-baseline gap-1 font-mono text-xs">
+          {wiki7d != null && (
+            <span className="text-fg-primary">
+              {formatViews(wiki7d)} <span className="text-meta text-fg-muted">views/7d</span>{' '}
+              {yoy != null && <span className="text-[10px] text-fg-muted">({yoy >= 0 ? '+' : ''}{Math.round(yoy)}%)</span>}
+            </span>
+          )}
+          {wiki7d != null && trends != null && <span className="text-fg-dim mx-1">·</span>}
+          {trends != null && (
+            <span className="text-fg-primary">
+              <span className="text-meta text-fg-muted">trends</span> {trends}{' '}
+              {trendsDelta != null && (
+                <span className={`text-[10px] font-semibold ${deltaColor}`}>
+                  ({trendsDelta >= 0 ? '+' : ''}{trendsDelta})
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="mt-0.5 text-[9px] text-fg-dim font-mono">
+        Wikipedia views + Google Trends active search interest
+      </div>
+    </div>
+  )
+}
+
 function HiringPulseChip({ rows }: { rows: JobSnapshotRow[] }) {
   if (rows.length === 0) return null
   const { latest, d7, d30 } = pickLatestAndPriors(rows)
@@ -1371,15 +1427,17 @@ function SignalChips({ companyId, data }: { companyId: string; data: GraphData }
   const patents = data.patents.filter(p => p.company_id === companyId)
   const github = data.githubActivity.filter(g => g.company_id === companyId)
   const social = data.socialMentions?.filter(s => s.company_id === companyId) || []
+  const interest = data.interestSignals?.filter(i => i.company_id === companyId) || []
   const company = data.companies.find(c => c.id === companyId)
-  if (jobs.length === 0 && grid.length === 0 && patents.length === 0 && github.length === 0 && social.length === 0) return null
+  if (jobs.length === 0 && grid.length === 0 && patents.length === 0 && github.length === 0 && social.length === 0 && interest.length === 0) return null
   return (
     <div className="mb-4 grid grid-cols-1 gap-2">
-      {jobs.length    > 0 && <HiringPulseChip   rows={jobs}    />}
-      {social.length  > 0 && <BuzzChip           rows={social}  />}
-      {grid.length    > 0 && <PowerPressureChip rows={grid}    />}
-      {patents.length > 0 && <RDVelocityChip    rows={patents} />}
-      {github.length  > 0 && <GitHubActivityChip rows={github} companyName={company?.name ?? companyId} />}
+      {jobs.length     > 0 && <HiringPulseChip   rows={jobs}    />}
+      {interest.length > 0 && <BuzzIndexChip     rows={interest} />}
+      {social.length   > 0 && <BuzzChip           rows={social}  />}
+      {grid.length     > 0 && <PowerPressureChip rows={grid}    />}
+      {patents.length  > 0 && <RDVelocityChip    rows={patents} />}
+      {github.length   > 0 && <GitHubActivityChip rows={github} companyName={company?.name ?? companyId} />}
     </div>
   )
 }

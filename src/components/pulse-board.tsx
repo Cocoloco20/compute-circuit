@@ -21,7 +21,7 @@ import { useMemo, useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
 import { topCapexRunRate, type CapexRunRateRow } from '@/lib/capex'
 import type { SelectedRef } from './compute-graph'
-import type { ModelLeaderboardEntry } from '@/types/db'
+import type { ModelLeaderboardEntry, InterestSignal } from '@/types/db'
 
 interface Props {
   data: GraphData
@@ -45,6 +45,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
   const capex = useCapexRunRateTop(data)
   const leaderboardTop5 = useLeaderboardTop5(data)
   const mentions = useTopMentions24h(data)
+  const buzz = usePublicBuzz(data)
 
   // Mobile variant: no chrome, no collapsible header (the parent sheet's
   // header already supplies title + close). Just stacked sections.
@@ -62,6 +63,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
           capex={capex}
           leaderboardTop5={leaderboardTop5}
           mentions={mentions}
+          buzz={buzz}
           companies={data.companies}
           onSelect={onSelect}
         />
@@ -92,6 +94,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
             capex={capex}
             leaderboardTop5={leaderboardTop5}
             mentions={mentions}
+            buzz={buzz}
             companies={data.companies}
             onSelect={onSelect}
           />
@@ -109,6 +112,7 @@ interface PulseSectionsProps {
   funding: FundingRow[]
   hiring: HiringRow[]
   mentions: MentionRow[]
+  buzz: PublicBuzzRow[]
   gpuSpot: GpuSpotRow[]
   capex: CapexRunRateRow[]
   leaderboardTop5: ModelLeaderboardEntry[]
@@ -116,7 +120,7 @@ interface PulseSectionsProps {
   onSelect: (sel: SelectedRef) => void
 }
 
-function PulseSections({ movers, filings, news, insider, funding, hiring, mentions, gpuSpot, capex, leaderboardTop5, companies, onSelect }: PulseSectionsProps) {
+function PulseSections({ movers, filings, news, insider, funding, hiring, mentions, buzz, gpuSpot, capex, leaderboardTop5, companies, onSelect }: PulseSectionsProps) {
   return (
     <>
       <PulseSection title="Movers · 1d">
@@ -274,6 +278,43 @@ function PulseSections({ movers, filings, news, insider, funding, hiring, mentio
             }
           />
         ))}
+      </PulseSection>
+
+      <PulseSection title="Public buzz · 7d">
+        {buzz.length === 0 ? <NoData /> : buzz.map((b) => {
+          const arrow = b.trendsDelta == null ? null : b.trendsDelta > 0 ? (
+            <span className="text-signal-healthy">▲</span>
+          ) : b.trendsDelta < 0 ? (
+            <span className="text-signal-alert">▼</span>
+          ) : (
+            <span className="text-fg-dim">—</span>
+          )
+          
+          return (
+            <PulseRow
+              key={b.coId}
+              onClick={() => onSelect({ kind: 'company', id: b.coId })}
+              left={
+                <span className="text-fg-primary">
+                  {b.coTicker ?? b.coName}
+                  <span className="ml-1 font-mono text-[10px] text-fg-muted">
+                    {formatViews(b.views7d)} views
+                  </span>
+                </span>
+              }
+              right={
+                <span className="flex items-center gap-1 font-mono">
+                  {arrow}
+                  {b.trendsDelta != null && (
+                    <span className={b.trendsDelta > 0 ? 'text-signal-healthy' : b.trendsDelta < 0 ? 'text-signal-alert' : 'text-fg-secondary'}>
+                      {b.trendsDelta > 0 ? '+' : ''}{b.trendsDelta}
+                    </span>
+                  )}
+                </span>
+              }
+            />
+          )
+        })}
       </PulseSection>
 
       <PulseSection title="GPU spot · 24h">
@@ -707,6 +748,76 @@ function useTopMentions24h(data: GraphData): MentionRow[] {
     }
 
     return rows.sort((a, b) => b.total24h - a.total24h).slice(0, 5)
+  }, [data])
+}
+
+export interface PublicBuzzRow {
+  coId: string
+  coName: string
+  coTicker: string | null
+  views7d: number
+  trendsDelta: number | null
+  delta: number
+}
+
+function formatViews(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return n.toLocaleString()
+}
+
+function usePublicBuzz(data: GraphData): PublicBuzzRow[] {
+  return useMemo(() => {
+    if (!data.interestSignals || data.interestSignals.length === 0) return []
+    
+    // Group interest signals by company
+    const byCo = new Map<string, InterestSignal[]>()
+    for (const s of data.interestSignals) {
+      const arr = byCo.get(s.company_id) ?? []
+      arr.push(s)
+      byCo.set(s.company_id, arr)
+    }
+    
+    const coById = new Map(data.companies.map(c => [c.id, c]))
+    const rows: PublicBuzzRow[] = []
+    
+    for (const [coId, snaps] of byCo) {
+      const sorted = snaps.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))
+      const latest = sorted[0]
+      if (!latest || latest.wikipedia_views_7d == null) continue
+      
+      const latestMs = new Date(latest.snapshot_date).getTime()
+      const target = latestMs - 7 * 86_400_000
+      
+      // Find snapshot closest to 7 days ago
+      let prior: InterestSignal | null = null
+      let bestDelta = Infinity
+      for (const s of sorted) {
+        const d = Math.abs(new Date(s.snapshot_date).getTime() - target)
+        if (d < bestDelta) {
+          bestDelta = d
+          prior = s
+        }
+      }
+      
+      const priorViews = (prior && bestDelta < 4 * 86_400_000) ? (prior.wikipedia_views_7d ?? 0) : 0
+      const delta = latest.wikipedia_views_7d - priorViews
+      
+      const co = coById.get(coId)
+      if (!co) continue
+      
+      rows.push({
+        coId,
+        coName: co.name,
+        coTicker: co.ticker,
+        views7d: latest.wikipedia_views_7d,
+        trendsDelta: latest.google_trends_7d_delta,
+        delta
+      })
+    }
+    
+    // Sort by delta descending (largest interest growth)
+    return rows.sort((a, b) => b.delta - a.delta).slice(0, 5)
   }, [data])
 }
 
