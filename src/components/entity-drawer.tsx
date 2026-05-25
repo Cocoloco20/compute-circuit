@@ -337,6 +337,11 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
 
   return (
     <>
+      <AiThesisCard
+        thesisAi={company.thesis_ai}
+        riskAi={company.thesis_risk_ai}
+        generatedAt={company.thesis_generated_at}
+      />
       <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
         <Stat label="Layer" value={layer?.name ?? '—'} />
         <Stat label="Weight" value={String(company.weight)} />
@@ -1038,6 +1043,49 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1">
       <div className="text-label text-fg-muted">{label}</div>
       <div className="text-fg-primary">{value}</div>
+    </div>
+  )
+}
+
+// ----- AI thesis card (top of Overview tab) -----
+//
+// Pinned at the very top of the Overview tab to satisfy the core product
+// vision: "I want a nobody to get in here and know what they need to know."
+// Two fields, both Claude Sonnet 4.5-generated:
+//   * thesis_ai      — 2-sentence "what they do + why they matter"
+//   * thesis_risk_ai — 1-sentence risk or opportunity (the alpha)
+// Hidden entirely when both fields are null — no empty placeholder.
+
+function AiThesisCard({
+  thesisAi,
+  riskAi,
+  generatedAt,
+}: {
+  thesisAi: string | null
+  riskAi: string | null
+  generatedAt: string | null
+}) {
+  if (!thesisAi && !riskAi) return null
+  const dateLabel = generatedAt ? new Date(generatedAt).toISOString().slice(0, 10) : null
+  return (
+    <div className="mb-4 rounded-card border border-border-default bg-bg-surface/40 px-3 py-2 shadow-card">
+      {thesisAi && (
+        <div className="text-body text-fg-secondary">{thesisAi}</div>
+      )}
+      {riskAi && (
+        <div className="mt-2 flex items-start gap-1.5">
+          {/* Small risk-bar icon — three vertical bars, last one highlighted */}
+          <span aria-hidden="true" className="mt-[3px] inline-flex h-2.5 items-end gap-px">
+            <span className="h-1 w-[2px] rounded-sm bg-fg-dim" />
+            <span className="h-1.5 w-[2px] rounded-sm bg-fg-muted" />
+            <span className="h-2.5 w-[2px] rounded-sm bg-signal-warn" />
+          </span>
+          <span className="text-meta italic text-fg-muted">{riskAi}</span>
+        </div>
+      )}
+      {dateLabel && (
+        <div className="mt-2 text-meta text-fg-dim">AI-generated · {dateLabel}</div>
+      )}
     </div>
   )
 }

@@ -65,6 +65,11 @@ export interface Company {
   github_repo: string | null  // GitHub "owner/name" of primary OSS repo (e.g. 'openai/openai-python')
   eia_region: string | null  // EIA balancing-authority code ('PJM', 'ERCO', 'FLA', 'US48')
   assignee_name: string | null  // USPTO assignee name for patent search (e.g. 'NVIDIA Corporation')
+  // AI-generated thesis (Phase 7c). Coexists with manual `thesis` field above:
+  // analysts can write a `thesis`; the generator writes to `thesis_ai`.
+  thesis_ai: string | null
+  thesis_risk_ai: string | null
+  thesis_generated_at: string | null
   created_at: string
   updated_at: string
 }
