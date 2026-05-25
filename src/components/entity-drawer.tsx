@@ -352,6 +352,7 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
       {company.layer_id === 'labs' && (
         <ModelLeaderboardSection companyId={company.id} data={data} />
       )}
+      <ArxivOutput companyId={company.id} data={data} />
       {company.thesis && <Section title="Thesis">{company.thesis}</Section>}
       {company.notes && <Section title="Notes"><div className="whitespace-pre-line">{company.notes}</div></Section>}
       {backers.length > 0 && (
@@ -1574,3 +1575,58 @@ function FlowList({ title, flows, data, direction }: { title: string; flows: Flo
 function Empty({ msg }: { msg: string }) {
   return <div className="text-fg-muted">{msg}</div>
 }
+
+function ArxivOutput({ companyId, data }: { companyId: string; data: GraphData }) {
+  const company = data.companies.find(c => c.id === companyId)
+  if (!company || !company.arxiv_affiliation) return null
+
+  const latestSnap = data.arxivSnapshots.find(s => s.company_id === companyId)
+  const papers = data.arxivPapers.filter(p => p.company_id === companyId).slice(0, 2)
+
+  if (!latestSnap && papers.length === 0) return null
+
+  const papers30d = latestSnap ? latestSnap.papers_30d : 0
+  const yoyPct = latestSnap ? latestSnap.yoy_pct : null
+
+  return (
+    <Section title="arXiv · 30d">
+      <div className="space-y-1">
+        <div className="text-xs text-fg-secondary">
+          30d papers:{' '}
+          <span className="font-mono font-semibold text-fg-primary">{papers30d}</span>
+          {yoyPct != null && (
+            <span
+              className={`ml-1.5 font-mono text-meta ${
+                yoyPct >= 0 ? 'text-signal-healthy' : 'text-signal-alert'
+              }`}
+            >
+              ({yoyPct >= 0 ? '+' : ''}{yoyPct.toFixed(0)}% YoY)
+            </span>
+          )}
+        </div>
+        {papers.length > 0 && (
+          <div className="mt-2 space-y-1.5">
+            {papers.map((p) => (
+              <div key={p.id} className="text-xs">
+                <a
+                  href={p.url || `https://arxiv.org/abs/${p.arxiv_id}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="font-medium text-accent-primary hover:underline line-clamp-2"
+                >
+                  {p.title}
+                </a>
+                <div className="mt-0.5 font-mono text-[10px] text-fg-muted">
+                  {p.published_date} ·{' '}
+                  {p.authors && p.authors.length > 0 ? p.authors.slice(0, 3).join(', ') : 'Unknown'}
+                  {p.authors && p.authors.length > 3 && ' et al.'}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Section>
+  )
+}
+

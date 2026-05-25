@@ -72,6 +72,7 @@ export interface Company {
   thesis_generated_at: string | null
   wikipedia_slug: string | null
   google_trends_term: string | null
+  arxiv_affiliation: string | null
   created_at: string
   updated_at: string
 }
@@ -85,6 +86,31 @@ export interface InterestSignal {
   wikipedia_yoy_pct: number | null
   google_trends_score: number | null
   google_trends_7d_delta: number | null
+  created_at: string
+}
+
+export interface ArxivPaper {
+  id: string
+  company_id: string
+  arxiv_id: string
+  title: string
+  summary: string | null
+  authors: string[] | null
+  primary_category: string | null
+  published_date: string
+  url: string | null
+  created_at: string
+}
+
+export interface ArxivSnapshot {
+  id: string
+  company_id: string
+  snapshot_date: string
+  papers_30d: number
+  papers_7d: number
+  top_paper_arxiv_id: string | null
+  top_paper_title: string | null
+  yoy_pct: number | null
   created_at: string
 }
 
@@ -384,6 +410,8 @@ export interface Database {
       github_activity: { Row: GithubActivity; Insert: Omit<GithubActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GithubActivity> }
       social_mentions: { Row: SocialMention; Insert: Omit<SocialMention, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<SocialMention> }
       interest_signals: { Row: InterestSignal; Insert: Omit<InterestSignal, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<InterestSignal> }
+      arxiv_papers: { Row: ArxivPaper; Insert: Omit<ArxivPaper, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<ArxivPaper> }
+      arxiv_snapshots: { Row: ArxivSnapshot; Insert: Omit<ArxivSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<ArxivSnapshot> }
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
       gpu_spot_prices: { Row: GpuSpotPrice; Insert: Omit<GpuSpotPrice, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GpuSpotPrice> }

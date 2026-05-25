@@ -21,7 +21,7 @@ import { useMemo, useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
 import { topCapexRunRate, type CapexRunRateRow } from '@/lib/capex'
 import type { SelectedRef } from './compute-graph'
-import type { ModelLeaderboardEntry, InterestSignal } from '@/types/db'
+import type { ModelLeaderboardEntry, InterestSignal, ArxivSnapshot } from '@/types/db'
 
 interface Props {
   data: GraphData
@@ -46,6 +46,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
   const leaderboardTop5 = useLeaderboardTop5(data)
   const mentions = useTopMentions24h(data)
   const buzz = usePublicBuzz(data)
+  const arxiv = useArxivTopLabs(data)
 
   // Mobile variant: no chrome, no collapsible header (the parent sheet's
   // header already supplies title + close). Just stacked sections.
@@ -64,6 +65,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
           leaderboardTop5={leaderboardTop5}
           mentions={mentions}
           buzz={buzz}
+          arxiv={arxiv}
           companies={data.companies}
           onSelect={onSelect}
         />
@@ -93,8 +95,9 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
             gpuSpot={gpuSpot}
             capex={capex}
             leaderboardTop5={leaderboardTop5}
-            mentions={mentions}
-            buzz={buzz}
+            mentions={movers ? mentions : []}
+            buzz={movers ? buzz : []}
+            arxiv={arxiv}
             companies={data.companies}
             onSelect={onSelect}
           />
@@ -113,6 +116,7 @@ interface PulseSectionsProps {
   hiring: HiringRow[]
   mentions: MentionRow[]
   buzz: PublicBuzzRow[]
+  arxiv: ArxivTopLabRow[]
   gpuSpot: GpuSpotRow[]
   capex: CapexRunRateRow[]
   leaderboardTop5: ModelLeaderboardEntry[]
@@ -120,7 +124,7 @@ interface PulseSectionsProps {
   onSelect: (sel: SelectedRef) => void
 }
 
-function PulseSections({ movers, filings, news, insider, funding, hiring, mentions, buzz, gpuSpot, capex, leaderboardTop5, companies, onSelect }: PulseSectionsProps) {
+function PulseSections({ movers, filings, news, insider, funding, hiring, mentions, buzz, arxiv, gpuSpot, capex, leaderboardTop5, companies, onSelect }: PulseSectionsProps) {
   return (
     <>
       <PulseSection title="Movers · 1d">
@@ -157,6 +161,43 @@ function PulseSections({ movers, filings, news, insider, funding, hiring, mentio
               right={
                 <span className="font-mono text-fg-primary shrink-0">
                   Rank {m.elo_rank}
+                </span>
+              }
+            />
+          )
+        })}
+      </PulseSection>
+
+      <PulseSection title="Labs · papers 30d">
+        {arxiv.length === 0 ? <NoData /> : arxiv.map((b) => {
+          const arrow = b.delta == null ? null : b.delta > 0 ? (
+            <span className="text-signal-healthy">▲</span>
+          ) : b.delta < 0 ? (
+            <span className="text-signal-alert">▼</span>
+          ) : (
+            <span className="text-fg-dim">—</span>
+          )
+
+          return (
+            <PulseRow
+              key={b.coId}
+              onClick={() => onSelect({ kind: 'company', id: b.coId })}
+              left={
+                <span className="text-fg-primary">
+                  {b.coTicker ?? b.coName}
+                  <span className="ml-1 font-mono text-[10px] text-fg-muted">
+                    {b.papers30d} papers
+                  </span>
+                </span>
+              }
+              right={
+                <span className="flex items-center gap-1 font-mono">
+                  {arrow}
+                  {b.delta != null && b.delta !== 0 && (
+                    <span className={b.delta > 0 ? 'text-signal-healthy' : 'text-signal-alert'}>
+                      {b.delta > 0 ? '+' : ''}{b.delta}
+                    </span>
+                  )}
                 </span>
               }
             />
@@ -820,4 +861,66 @@ function usePublicBuzz(data: GraphData): PublicBuzzRow[] {
     return rows.sort((a, b) => b.delta - a.delta).slice(0, 5)
   }, [data])
 }
+
+export interface ArxivTopLabRow {
+  coId: string
+  coName: string
+  coTicker: string | null
+  papers30d: number
+  delta: number | null
+}
+
+function useArxivTopLabs(data: GraphData): ArxivTopLabRow[] {
+  return useMemo(() => {
+    if (!data.arxivSnapshots || data.arxivSnapshots.length === 0) return []
+
+    // Group snapshots by company
+    const byCo = new Map<string, ArxivSnapshot[]>()
+    for (const s of data.arxivSnapshots) {
+      const arr = byCo.get(s.company_id) ?? []
+      arr.push(s)
+      byCo.set(s.company_id, arr)
+    }
+
+    const coById = new Map(data.companies.map(c => [c.id, c]))
+    const rows: ArxivTopLabRow[] = []
+
+    for (const [coId, snaps] of byCo) {
+      const sorted = snaps.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))
+      const latest = sorted[0]
+      if (!latest) continue
+
+      const latestMs = new Date(latest.snapshot_date).getTime()
+      const target = latestMs - 7 * 86_400_000
+
+      // Find snapshot closest to 7 days ago (within 4 days)
+      let prior: ArxivSnapshot | null = null
+      let bestDelta = Infinity
+      for (const s of sorted) {
+        const d = Math.abs(new Date(s.snapshot_date).getTime() - target)
+        if (d < bestDelta) {
+          bestDelta = d
+          prior = s
+        }
+      }
+
+      const delta = (prior && bestDelta < 4 * 86_400_000) ? latest.papers_30d - prior.papers_30d : null
+
+      const co = coById.get(coId)
+      if (!co) continue
+
+      rows.push({
+        coId,
+        coName: co.name,
+        coTicker: co.ticker,
+        papers30d: latest.papers_30d,
+        delta,
+      })
+    }
+
+    // Sort by papers_30d descending
+    return rows.sort((a, b) => b.papers30d - a.papers30d).slice(0, 5)
+  }, [data])
+}
+
 
