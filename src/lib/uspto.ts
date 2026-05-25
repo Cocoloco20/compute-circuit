@@ -322,16 +322,42 @@ export async function fetchAllPatentSnapshots(
 
 // CPC subclass labels for the AI-compute domain. Kept here (not in the cron)
 // so the drawer can format `G06N` → 'ML' without round-tripping through SQL.
+//
+// Expanded after observing real cron output — added H10B (3D memory) for
+// Micron, C23C (vapor deposition) for AMAT, etc.
 export const CPC_SUBCLASS_LABELS: Record<string, string> = {
+  // Computation / AI
   G06N: 'ML',
   G06F: 'Compute arch',
-  H01L: 'Chip fab',
-  H01Q: 'Antennas',
-  G06T: 'Image processing',
+  G06T: 'Image proc',
+  G06V: 'Image recognition',
   G06Q: 'Business methods',
+
+  // Memory + storage
   G11C: 'Memory',          // SRAM/DRAM/NAND patents — Micron, KLA, AMAT
+  H10B: '3D memory',       // newer CPC for 3D NAND / HBM stacks — Micron, SK Hynix
+
+  // Networking
   H04L: 'Networking',      // Broadcom, Marvell, NVIDIA NIC patents
+  H04W: 'Wireless',        // Qualcomm modems
+  H04N: 'Video coding',    // Qualcomm, Sony video codecs
+
+  // Fab / chip physical
+  H01L: 'Chip fab',        // Intel, AMAT, TSMC physical structure
+  H10D: 'Semi devices',    // newer CPC for transistors / diodes
+  H01J: 'Electron beam',   // ASML EUV source, KLA inspection
+  H01Q: 'Antennas',
+  H10K: 'Organic semis',   // OLED, organic transistors
+
+  // Lithography / equipment
+  G03F: 'Photolithography',// ASML mask/exposure
   G02B: 'Optics',          // ASML, TSM lithography optics
-  G03F: 'Photolithography',// ASML mask/exposure patents
-  H01J: 'Electron beam',   // ASML EUV source
+  G02F: 'Optical switches',
+  C23C: 'Vapor deposition',// AMAT, Lam CVD/PVD tools
+  C30B: 'Crystal growth',  // SiC/GaN substrate growth — Wolfspeed, Coherent
+
+  // Power / energy storage
+  H02J: 'Power systems',   // VRT, ETN power distribution
+  H02M: 'Power conversion',// GaN/SiC drivers — Navitas, Wolfspeed
+  H01M: 'Batteries',
 }
