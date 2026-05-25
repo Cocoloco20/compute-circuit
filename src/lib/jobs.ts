@@ -40,16 +40,53 @@ export interface JobsSnapshot {
  *   mu, vrt, anet, eqix, dlr, amzn, msft, googl, orcl, ibm, meta-ai, groq.
  */
 export const JOB_BOARDS: Record<string, JobBoardConfig> = {
+  // ----- Foundation model labs -----
   anthropic:   { provider: 'greenhouse', slug: 'anthropic' },
   openai:      { provider: 'ashby',      slug: 'openai' },
   xai:         { provider: 'greenhouse', slug: 'xai' },
   cohere:      { provider: 'ashby',      slug: 'cohere' },
   mistral:     { provider: 'lever',      slug: 'mistral' },
+  pplx:        { provider: 'ashby',      slug: 'perplexity' },
+  reka:        { provider: 'ashby',      slug: 'reka' },
+
+  // ----- AI chip / accelerator startups -----
   sambanova:   { provider: 'greenhouse', slug: 'sambanovasystems' },
   tenstorrent: { provider: 'greenhouse', slug: 'tenstorrent' },
   cerebras:    { provider: 'greenhouse', slug: 'cerebrassystems' },
+  etched:      { provider: 'ashby',      slug: 'etched' },
+  'd-matrix':  { provider: 'ashby',      slug: 'd-matrix' },
+  lightmatter: { provider: 'greenhouse', slug: 'lightmatter' },
+
+  // ----- Inference / training infrastructure -----
   crwv:        { provider: 'greenhouse', slug: 'coreweave' },
   nbis:        { provider: 'greenhouse', slug: 'nebius' },
+  lambda:      { provider: 'ashby',      slug: 'lambda' },
+  crusoe:      { provider: 'ashby',      slug: 'crusoe' },
+  together:    { provider: 'greenhouse', slug: 'togetherai' },
+  fireworks:   { provider: 'greenhouse', slug: 'fireworksai' },
+  baseten:     { provider: 'ashby',      slug: 'baseten' },
+  modal:       { provider: 'ashby',      slug: 'modal' },
+  anyscale:    { provider: 'lever',      slug: 'anyscale' },
+  vastai:      { provider: 'greenhouse', slug: 'vastai' },
+
+  // ----- Data / ML tools / data labeling -----
+  databricks:  { provider: 'greenhouse', slug: 'databricks' },
+  scale:       { provider: 'greenhouse', slug: 'scaleai' },
+
+  // ----- Generative-media -----
+  runway:      { provider: 'ashby',      slug: 'runway' },
+  pika:        { provider: 'ashby',      slug: 'pika' },
+  suno:        { provider: 'ashby',      slug: 'suno' },
+  elevenlabs:  { provider: 'ashby',      slug: 'elevenlabs' },
+
+  // ----- Robotics + autonomy -----
+  figure:      { provider: 'greenhouse', slug: 'figure' },
+  apptronik:   { provider: 'greenhouse', slug: 'apptronik' },
+  wayve:       { provider: 'greenhouse', slug: 'wayve' },
+
+  // ----- Quantum + nuclear (downstream beneficiaries) -----
+  ionq:        { provider: 'greenhouse', slug: 'ionq' },
+  oklo:        { provider: 'greenhouse', slug: 'oklo' },
 }
 
 const UA = 'compute-circuit (research tool) luigui.h2002@gmail.com'
