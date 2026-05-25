@@ -19,6 +19,11 @@ export interface Agency {
   twitter_handle: string | null
   layer_id: string | null
   created_at: string
+  // Migration 0042 — populated for the seeded 22 agencies, nullable for any
+  // future additions until they're curated. Rendered by GlossaryView + the
+  // layer-rail tooltip on desktop.
+  description: string | null
+  recent_focus: string | null
 }
 
 export interface Layer {
@@ -26,6 +31,10 @@ export interface Layer {
   name: string
   order_index: number
   y_position: number
+  // Migration 0042 — Glossary copy + chips. Populated for all 16 layers.
+  description: string | null
+  example_companies: string[] | null
+  bottleneck_keywords: string[] | null
 }
 
 export interface Investor {

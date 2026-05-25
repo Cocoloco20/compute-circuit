@@ -31,6 +31,7 @@ import CommandPalette from './command-palette'
 import PulseBoard from './pulse-board'
 import SupplyChainStrip from './supply-chain-strip'
 import WorldMap from './world-map'
+import GlossaryView from './glossary-view'
 
 // ---------- visual constants ----------
 
@@ -186,10 +187,11 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   // Desktop layout uses `md:` breakpoints to ignore this entirely.
   const [mobileSheet, setMobileSheet] = useState<'pulse' | 'chain' | 'search' | null>(null)
 
-  // Phase 7C-lite: top-bar toggle between the 3D ecosystem graph and the
-  // 2D world map. The Pulse Board, Supply Chain Strip, ⌘K, and drawer are
-  // orthogonal to view mode — they render regardless.
-  const [viewMode, setViewMode] = useState<'graph' | 'world'>('graph')
+  // Phase 7C-lite + Glossary: top-bar toggle between the 3D ecosystem graph,
+  // the 2D world map, and the Glossary reference view. The Pulse Board,
+  // Supply Chain Strip, and ⌘K render in graph + world; Glossary takes over
+  // the full canvas + suppresses the floating panels (it's a tour, not a HUD).
+  const [viewMode, setViewMode] = useState<'graph' | 'world' | 'glossary'>('graph')
 
   const positions = useMemo(() => computePositions(data), [data])
 
@@ -773,15 +775,19 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-[#05060a] text-fg-primary">
-      {/* 3D ecosystem graph (mounts only when viewMode='graph'; the useEffect
-          above gates the THREE setup on the same flag, so toggling to 'world'
-          tears the renderer down cleanly). */}
-      {viewMode === 'graph' ? (
+      {/* Canvas — three mutually exclusive layouts. The useEffect above
+          gates the THREE setup on viewMode==='graph' so toggling away tears
+          the renderer down cleanly (no leaked GPU memory on every tab). */}
+      {viewMode === 'graph' && (
         <div ref={mountRef} className="absolute inset-0" />
-      ) : (
+      )}
+      {viewMode === 'world' && (
         <div className="absolute inset-0">
           <WorldMap data={data} onSelect={(s) => setSelected(s)} />
         </div>
+      )}
+      {viewMode === 'glossary' && (
+        <GlossaryView data={data} onSelect={(s) => setSelected(s)} />
       )}
 
       {/* ----- Top bar -----
@@ -800,18 +806,18 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           </span>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
-          {/* View toggle. Visible on every breakpoint — phones get the same
-              affordance as desktop, just smaller. Label flips to show the
-              *destination* view so the verb reads "tap to switch to X". */}
-          <button
-            type="button"
-            onClick={() => setViewMode(viewMode === 'graph' ? 'world' : 'graph')}
-            className="inline-flex min-h-11 min-w-11 items-center rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 font-mono text-xs text-fg-secondary backdrop-blur hover:border-border-strong hover:text-fg-primary"
-            aria-label={viewMode === 'graph' ? 'Switch to world map view' : 'Switch to graph view'}
-            title="Toggle 3D graph / 2D world map"
+          {/* View toggle — 3 segments. Visible on every breakpoint; the
+              active segment gets the accent color so the current view is
+              obvious without reading labels. */}
+          <div
+            className="inline-flex items-center overflow-hidden rounded-md border border-border-default bg-bg-overlay font-mono text-xs text-fg-secondary backdrop-blur"
+            role="group"
+            aria-label="View mode"
           >
-            {viewMode === 'graph' ? '🌐 World' : '📊 Graph'}
-          </button>
+            <ViewSeg active={viewMode === 'graph'}    onClick={() => setViewMode('graph')}    icon="📊" label="Graph"    aria="Switch to 3D graph view" />
+            <ViewSeg active={viewMode === 'glossary'} onClick={() => setViewMode('glossary')} icon="📖" label="Glossary" aria="Switch to Glossary reference view" />
+            <ViewSeg active={viewMode === 'world'}    onClick={() => setViewMode('world')}    icon="🌐" label="World"    aria="Switch to 2D world map view" />
+          </div>
           <button
             type="button"
             onClick={() => setPaletteOpen(true)}
@@ -840,6 +846,13 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         </div>
       )}
 
+      {/* All the floating HUD chrome (layer rail, backer filter, flow legend,
+          telemetry, pulse board, supply chain strip, mobile sheets) is
+          orthogonal to the graph/world canvas but doesn't make sense over
+          the Glossary's full-page scroll. Suppress the whole HUD in glossary
+          mode — the drawer + ⌘K still work because they're below this. */}
+      {viewMode !== 'glossary' && <>
+
       {/* ----- Layer key — left rail (top), desktop only -----
           Per-layer co count + today's signal count (8-K + news for cos in
           that layer). Hidden on phone; back at md:. */}
@@ -864,9 +877,20 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
             .filter(s => todaySignalIds.has(s.id))
             .filter(s => new Date(s.date).getTime() >= todayStart.getTime())
             .length
+          // Desktop hover tooltip on the layer name. The native `title`
+          // attribute is the cheapest way to expose layer.description here —
+          // mobile users get the same content via the Glossary tab. If the
+          // description is missing (newly-added layer not yet curated), fall
+          // back to the layer name to keep the hover affordance intact.
+          const titleText = l.description ?? l.name
           return (
             <div key={l.id} className="flex items-center justify-between">
-              <span>{l.name}</span>
+              <span
+                title={titleText}
+                className="cursor-help underline decoration-border-default decoration-dotted underline-offset-2 hover:text-fg-primary hover:decoration-border-strong"
+              >
+                {l.name}
+              </span>
               <span className="flex items-center gap-1.5">
                 {todayActive > 0 && (
                   <span className="font-mono text-meta text-signal-info">+{todayActive}</span>
@@ -968,8 +992,18 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         </MobileSheet>
       )}
 
+      </>}
+
+      {/* Drawer renders in every view mode. In glossary mode it slides over
+          the page scroll as a side panel so users can open a co's tearsheet
+          mid-tour without losing their reading position. */}
       {selected && (
-        <EntityDrawer selected={selected} data={data} onClose={() => setSelected(null)} />
+        <EntityDrawer
+          selected={selected}
+          data={data}
+          onClose={() => setSelected(null)}
+          onSelect={(s) => setSelected(s)}
+        />
       )}
       {paletteOpen && (
         <CommandPalette
@@ -1082,6 +1116,31 @@ function MobileSheet({ title, onClose, children }: MobileSheetProps) {
         </div>
       </div>
     </>
+  )
+}
+
+// ---------- View-mode segment (one tab in the top-bar 3-way toggle) ----------
+
+function ViewSeg({
+  active, onClick, icon, label, aria,
+}: { active: boolean; onClick: () => void; icon: string; label: string; aria: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={active}
+      aria-label={aria}
+      title={aria}
+      className={
+        'inline-flex min-h-11 items-center gap-1.5 border-l border-border-default px-3 py-1.5 transition-colors first:border-l-0 ' +
+        (active
+          ? 'bg-accent-primary/15 text-accent-primary'
+          : 'text-fg-secondary hover:bg-bg-hover hover:text-fg-primary')
+      }
+    >
+      <span aria-hidden="true">{icon}</span>
+      <span className="hidden sm:inline">{label}</span>
+    </button>
   )
 }
 
