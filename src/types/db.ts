@@ -113,6 +113,17 @@ export interface EiaInternationalSnapshot {
   created_at: string
 }
 
+export interface AeoProjection {
+  id: string
+  scenario: string                  // 'HIGHELDMD' | 'CB2026' | 'AEO2025REF'
+  metric: string                    // 'dc_demand_purchased' | 'dc_demand_delivered' | 'dc_demand_total_use'
+  projection_year: number
+  value_quads: number
+  value_twh: number
+  source: string                    // 'AEO 2026'
+  extracted_at: string
+}
+
 export interface InsiderTransaction {
   id: string
   company_id: string
@@ -258,6 +269,7 @@ export interface Database {
       eia_commodity_snapshots: { Row: EiaCommoditySnapshot; Insert: Omit<EiaCommoditySnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaCommoditySnapshot> }
       eia_fuelmix_snapshots: { Row: EiaFuelMixSnapshot; Insert: Omit<EiaFuelMixSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaFuelMixSnapshot> }
       eia_international_snapshots: { Row: EiaInternationalSnapshot; Insert: Omit<EiaInternationalSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaInternationalSnapshot> }
+      aeo_projections: { Row: AeoProjection; Insert: Omit<AeoProjection, 'id' | 'extracted_at'> & { id?: string; extracted_at?: string }; Update: Partial<AeoProjection> }
       company_backers: { Row: CompanyBacker; Insert: CompanyBacker; Update: Partial<CompanyBacker> }
       flows: { Row: Flow; Insert: Partial<Pick<Flow, 'id' | 'created_at' | 'note'>> & Omit<Flow, 'id' | 'created_at' | 'note'> & { note?: string | null }; Update: Partial<Flow> }
       bottlenecks: { Row: Bottleneck; Insert: Omit<Bottleneck, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Bottleneck> }

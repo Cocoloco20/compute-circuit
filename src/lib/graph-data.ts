@@ -18,6 +18,7 @@ import type {
   EiaCommoditySnapshot,
   EiaFuelMixSnapshot,
   EiaInternationalSnapshot,
+  AeoProjection,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -45,6 +46,7 @@ export interface GraphData {
   eiaCommodities: EiaCommoditySnapshot[]    // Henry Hub, coal stocks, nuke outage, ...
   eiaFuelMix: EiaFuelMixSnapshot[]          // Per-region generation mix + carbon intensity
   eiaInternational: EiaInternationalSnapshot[]  // Fab-country electricity stats
+  aeoProjections: AeoProjection[]           // AEO 2026 long-term forecast (data center demand)
   lastUpdates: {                  // GasCity-style "instrument is live" telemetry
     price: string | null          // ISO of most-recent companies.price_updated_at
     news: string | null           // most-recent signals.date where source='google-news'
@@ -146,7 +148,7 @@ export async function fetchGraph(): Promise<GraphData> {
   //   patents:     21 cos × 35 = 735
   //   jobs:        10 cos × 35 = 350
   const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const [gd, pat, jb, eiaCom, eiaFmx, eiaIntl] = await Promise.all([
+  const [gd, pat, jb, eiaCom, eiaFmx, eiaIntl, aeo] = await Promise.all([
     sb.from('grid_demand_snapshots').select('*')
       .gte('snapshot_date', thirtyFiveDaysAgo)
       .order('snapshot_date', { ascending: false }).limit(500),
@@ -167,11 +169,14 @@ export async function fetchGraph(): Promise<GraphData> {
     // International annual — pull 5 years for trend context
     sb.from('eia_international_snapshots').select('*')
       .order('snapshot_date', { ascending: false }).limit(50),
+    // AEO projections — static reference data, refreshed annually
+    sb.from('aeo_projections').select('*')
+      .order('projection_year', { ascending: true }).limit(300),
   ])
 
   // All optional signal tables — non-fatal on read error (table empty,
   // RLS denied, API key missing pre-cron).
-  for (const r of [gd, pat, jb, eiaCom, eiaFmx, eiaIntl] as Array<{ error: { message: string } | null }>) {
+  for (const r of [gd, pat, jb, eiaCom, eiaFmx, eiaIntl, aeo] as Array<{ error: { message: string } | null }>) {
     if (r.error) {
       // eslint-disable-next-line no-console
       console.warn('[graph-data] optional signal table read failed:', r.error.message)
@@ -202,6 +207,7 @@ export async function fetchGraph(): Promise<GraphData> {
     eiaCommodities: (eiaCom.data ?? []) as EiaCommoditySnapshot[],
     eiaFuelMix: (eiaFmx.data ?? []) as EiaFuelMixSnapshot[],
     eiaInternational: (eiaIntl.data ?? []) as EiaInternationalSnapshot[],
+    aeoProjections: (aeo.data ?? []) as AeoProjection[],
     lastUpdates: {
       price: ((c.data ?? []) as Company[])
         .map(co => co.price_updated_at)

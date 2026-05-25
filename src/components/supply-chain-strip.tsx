@@ -430,9 +430,74 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
                 </div>
               ))}
             </div>
+            {/* POWER tray gets the AEO 2026 long-term forecast block */}
+            {s.label === 'POWER' && <AeoForecastBlock projections={data.aeoProjections} />}
           </div>
         )
       })()}
+    </div>
+  )
+}
+
+// ---------- AEO 2026 long-term forecast block ----------
+//
+// Shown only in the POWER tray. Surfaces EIA's official AEO data center
+// purchased-electricity projection across the 3 scenarios for 2030 + 2050,
+// plus the "EIA revised UP" delta vs AEO 2025 — that's the headline.
+
+function AeoForecastBlock({ projections }: { projections: GraphData['aeoProjections'] }) {
+  const purchased = projections.filter(p => p.metric === 'dc_demand_purchased')
+  if (purchased.length === 0) return null
+  // Pivot: by scenario, latest values for 2030 + 2050
+  const byKey = (scenario: string, year: number): number | null => {
+    const r = purchased.find(p => p.scenario === scenario && p.projection_year === year)
+    return r ? r.value_twh : null
+  }
+  const ref25_2030 = byKey('AEO2025REF', 2030)
+  const cb_2030    = byKey('CB2026',     2030)
+  const ai_2030    = byKey('HIGHELDMD',  2030)
+  const ref25_2050 = byKey('AEO2025REF', 2050)
+  const cb_2050    = byKey('CB2026',     2050)
+  const ai_2050    = byKey('HIGHELDMD',  2050)
+
+  const upRev2030 = ref25_2030 && cb_2030 ? ((cb_2030 - ref25_2030) / ref25_2030) * 100 : null
+
+  return (
+    <div className="mt-3 border-t border-zinc-800 pt-2">
+      <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">
+        AEO 2026 · US DC purchased electricity (TWh)
+      </div>
+      <table className="w-full font-mono text-[10px]">
+        <thead className="text-[9px] uppercase text-zinc-600">
+          <tr>
+            <th className="text-left">scenario</th>
+            <th className="text-right">2030</th>
+            <th className="text-right">2050</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr className="text-zinc-400">
+            <td>AEO 2025 ref</td>
+            <td className="text-right">{ref25_2030?.toFixed(0) ?? '—'}</td>
+            <td className="text-right">{ref25_2050?.toFixed(0) ?? '—'}</td>
+          </tr>
+          <tr className="text-zinc-200">
+            <td>AEO 2026 baseline</td>
+            <td className="text-right">{cb_2030?.toFixed(0) ?? '—'}</td>
+            <td className="text-right">{cb_2050?.toFixed(0) ?? '—'}</td>
+          </tr>
+          <tr className="text-amber-300">
+            <td>AI bull case</td>
+            <td className="text-right">{ai_2030?.toFixed(0) ?? '—'}</td>
+            <td className="text-right">{ai_2050?.toFixed(0) ?? '—'}</td>
+          </tr>
+        </tbody>
+      </table>
+      {upRev2030 != null && (
+        <div className="mt-1 text-[10px] text-amber-200">
+          EIA revised 2030 baseline {upRev2030 >= 0 ? '+' : ''}{upRev2030.toFixed(0)}% vs AEO 2025
+        </div>
+      )}
     </div>
   )
 }
