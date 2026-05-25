@@ -36,25 +36,25 @@ export default function PulseBoard({ data, onSelect }: Props) {
   const hiring = useHiringRamps(data)
 
   return (
-    <div className="pointer-events-auto absolute right-4 top-16 z-10 w-[280px] rounded border border-zinc-800 bg-zinc-950/85 text-[11px] font-mono text-zinc-300 backdrop-blur">
+    <div className="pointer-events-auto absolute right-4 top-16 z-10 w-[320px] rounded-card border border-border-default bg-bg-overlay text-body text-fg-secondary shadow-panel backdrop-blur">
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
-        className="flex w-full items-center justify-between border-b border-zinc-800 px-3 py-2 text-left text-zinc-200 hover:bg-zinc-900/60"
+        className="flex w-full items-center justify-between border-b border-border-subtle px-4 py-3 text-left hover:bg-bg-hover/60"
       >
-        <span className="uppercase tracking-wider">Pulse Board</span>
-        <span className="text-zinc-500">{open ? '−' : '+'}</span>
+        <span className="text-label text-fg-primary">Pulse Board</span>
+        <span className="text-fg-muted">{open ? '−' : '+'}</span>
       </button>
       {open && (
-        <div className="max-h-[calc(100vh-200px)] overflow-y-auto px-3 py-2 space-y-3">
+        <div className="max-h-[calc(100vh-200px)] space-y-4 overflow-y-auto px-4 py-3">
           <PulseSection title="Movers · 1d">
             {movers.length === 0 ? <NoData /> : movers.map((m) => (
               <PulseRow
                 key={m.id}
                 onClick={() => onSelect({ kind: 'company', id: m.id })}
-                left={<span className="text-zinc-200">{m.ticker ?? m.name}</span>}
+                left={<span className="text-fg-primary">{m.ticker ?? m.name}</span>}
                 right={
-                  <span className={'font-mono ' + (m.pct >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                  <span className={'font-mono ' + (m.pct >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
                     {m.pct >= 0 ? '+' : ''}{m.pct.toFixed(2)}%
                   </span>
                 }
@@ -68,12 +68,12 @@ export default function PulseBoard({ data, onSelect }: Props) {
                 key={f.id}
                 onClick={f.coId ? () => onSelect({ kind: 'company', id: f.coId! }) : undefined}
                 left={
-                  <span className="line-clamp-2 text-zinc-200">
-                    {f.coTicker && <span className="text-orange-300">{f.coTicker} </span>}
+                  <span className="line-clamp-2 text-fg-primary">
+                    {f.coTicker && <span className="text-feed-filings">{f.coTicker} </span>}
                     {f.headline}
                   </span>
                 }
-                right={<span className="ml-2 text-zinc-500">{f.dateShort}</span>}
+                right={<span className="ml-2 text-fg-muted">{f.dateShort}</span>}
               />
             ))}
           </PulseSection>
@@ -84,12 +84,12 @@ export default function PulseBoard({ data, onSelect }: Props) {
                 key={n.id}
                 onClick={n.coId ? () => onSelect({ kind: 'company', id: n.coId! }) : undefined}
                 left={
-                  <span className="line-clamp-2 text-zinc-200">
-                    {n.coTicker && <span className="text-cyan-300">{n.coTicker} </span>}
+                  <span className="line-clamp-2 text-fg-primary">
+                    {n.coTicker && <span className="text-signal-info">{n.coTicker} </span>}
                     {n.headline}
                   </span>
                 }
-                right={<span className="ml-2 text-zinc-500">{n.dateShort}</span>}
+                right={<span className="ml-2 text-fg-muted">{n.dateShort}</span>}
               />
             ))}
           </PulseSection>
@@ -99,9 +99,9 @@ export default function PulseBoard({ data, onSelect }: Props) {
               <PulseRow
                 key={i.coId}
                 onClick={() => onSelect({ kind: 'company', id: i.coId })}
-                left={<span className="text-zinc-200">{i.coTicker ?? i.coName}</span>}
+                left={<span className="text-fg-primary">{i.coTicker ?? i.coName}</span>}
                 right={
-                  <span className={'font-mono ' + (i.netUsd >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                  <span className={'font-mono ' + (i.netUsd >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
                     {i.netUsd >= 0 ? '+' : '−'}{fmtUsd(Math.abs(i.netUsd))}
                   </span>
                 }
@@ -115,13 +115,13 @@ export default function PulseBoard({ data, onSelect }: Props) {
                 key={h.coId}
                 onClick={() => onSelect({ kind: 'company', id: h.coId })}
                 left={
-                  <span className="text-zinc-200">
+                  <span className="text-fg-primary">
                     {h.coTicker ?? h.coName}
-                    <span className="ml-1 text-zinc-500">· {h.topDept ?? '—'}</span>
+                    <span className="ml-1 text-fg-muted">· {h.topDept ?? '—'}</span>
                   </span>
                 }
                 right={
-                  <span className={'font-mono ' + (h.delta >= 0 ? 'text-pink-300' : 'text-zinc-400')}>
+                  <span className={'font-mono ' + (h.delta >= 0 ? 'text-feed-jobs' : 'text-fg-secondary')}>
                     {h.delta >= 0 ? '+' : ''}{h.delta}
                   </span>
                 }
@@ -139,7 +139,7 @@ export default function PulseBoard({ data, onSelect }: Props) {
 function PulseSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-1 text-[9px] uppercase tracking-widest text-zinc-500">{title}</div>
+      <div className="mb-1.5 text-label text-fg-muted">{title}</div>
       <div className="space-y-0.5">{children}</div>
     </div>
   )
@@ -159,8 +159,8 @@ function PulseRow({
       onClick={onClick}
       disabled={!isClickable}
       className={
-        'flex w-full items-baseline justify-between gap-1 rounded px-1 py-1 text-left ' +
-        (isClickable ? 'hover:bg-zinc-900/70 cursor-pointer' : 'cursor-default')
+        'flex w-full items-baseline justify-between gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors ' +
+        (isClickable ? 'cursor-pointer hover:bg-bg-hover/70' : 'cursor-default')
       }
     >
       <span className="flex-1 truncate">{left}</span>
@@ -170,7 +170,7 @@ function PulseRow({
 }
 
 function NoData() {
-  return <div className="px-1 py-1 text-[10px] text-zinc-600">no data yet</div>
+  return <div className="px-1 py-1 text-meta text-fg-dim">no data yet</div>
 }
 
 // ---------- derivations ----------

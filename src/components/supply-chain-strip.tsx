@@ -55,9 +55,9 @@ const TONE_DOT: Record<string, string> = {
 }
 const TONE_TEXT: Record<string, string> = {
   green:   'text-emerald-300',
-  yellow:  'text-amber-300',
+  yellow:  'text-feed-hf',
   red:     'text-red-300',
-  neutral: 'text-zinc-400',
+  neutral: 'text-fg-secondary',
 }
 const TONE_RING: Record<string, string> = {
   green:   'ring-emerald-500/30',
@@ -391,7 +391,7 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
               }
             >
               <span className={'inline-block h-1.5 w-1.5 rounded-full ' + TONE_DOT[s.worstTone]} />
-              <span className="text-zinc-200">{s.label}</span>
+              <span className="text-fg-primary">{s.label}</span>
               <span className={'text-[10px] ' + TONE_TEXT[s.worstTone]}>{s.headline}</span>
             </button>
           )
@@ -405,10 +405,10 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
         return (
           <div className="mt-1 max-h-[300px] w-[420px] overflow-y-auto rounded border border-zinc-800 bg-zinc-950/95 p-3 text-[11px] font-mono backdrop-blur">
             <div className="mb-2 flex items-baseline justify-between">
-              <span className="uppercase tracking-wider text-zinc-400">{s.emoji} {s.label} layer · {s.entries.length} series</span>
+              <span className="uppercase tracking-wider text-fg-secondary">{s.emoji} {s.label} layer · {s.entries.length} series</span>
               <button
                 onClick={() => setExpanded(null)}
-                className="text-zinc-600 hover:text-zinc-300"
+                className="text-fg-dim hover:text-fg-secondary"
               >×</button>
             </div>
             <div className="space-y-1">
@@ -416,16 +416,16 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
                 <div key={e.series_id} className="flex items-baseline justify-between gap-2 rounded px-1 py-0.5 hover:bg-zinc-900/60">
                   <span className="flex items-center gap-1.5 truncate">
                     <span className={'inline-block h-1.5 w-1.5 shrink-0 rounded-full ' + TONE_DOT[e.tone]} />
-                    <span className="text-zinc-200 truncate">{e.label}</span>
+                    <span className="text-fg-primary truncate">{e.label}</span>
                   </span>
-                  <span className="flex shrink-0 items-baseline gap-2 text-zinc-400">
+                  <span className="flex shrink-0 items-baseline gap-2 text-fg-secondary">
                     <span className={TONE_TEXT[e.tone]}>{fmtNum(e.value, e.unit)}</span>
                     {e.delta != null && (
-                      <span className={'text-[10px] ' + (e.delta >= 0 ? 'text-emerald-400' : 'text-red-400')}>
+                      <span className={'text-[10px] ' + (e.delta >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
                         {e.delta >= 0 ? '+' : ''}{e.delta.toFixed(1)}%
                       </span>
                     )}
-                    <span className="text-[9px] text-zinc-600">{e.date.slice(5)}</span>
+                    <span className="text-[9px] text-fg-dim">{e.date.slice(5)}</span>
                   </span>
                 </div>
               ))}
@@ -464,11 +464,11 @@ function AeoForecastBlock({ projections }: { projections: GraphData['aeoProjecti
 
   return (
     <div className="mt-3 border-t border-zinc-800 pt-2">
-      <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">
+      <div className="mb-1 text-[10px] uppercase tracking-widest text-fg-muted">
         AEO 2026 · US DC purchased electricity (TWh)
       </div>
       <table className="w-full font-mono text-[10px]">
-        <thead className="text-[9px] uppercase text-zinc-600">
+        <thead className="text-[9px] uppercase text-fg-dim">
           <tr>
             <th className="text-left">scenario</th>
             <th className="text-right">2030</th>
@@ -476,17 +476,17 @@ function AeoForecastBlock({ projections }: { projections: GraphData['aeoProjecti
           </tr>
         </thead>
         <tbody>
-          <tr className="text-zinc-400">
+          <tr className="text-fg-secondary">
             <td>AEO 2025 ref</td>
             <td className="text-right">{ref25_2030?.toFixed(0) ?? '—'}</td>
             <td className="text-right">{ref25_2050?.toFixed(0) ?? '—'}</td>
           </tr>
-          <tr className="text-zinc-200">
+          <tr className="text-fg-primary">
             <td>AEO 2026 baseline</td>
             <td className="text-right">{cb_2030?.toFixed(0) ?? '—'}</td>
             <td className="text-right">{cb_2050?.toFixed(0) ?? '—'}</td>
           </tr>
-          <tr className="text-amber-300">
+          <tr className="text-feed-hf">
             <td>AI bull case</td>
             <td className="text-right">{ai_2030?.toFixed(0) ?? '—'}</td>
             <td className="text-right">{ai_2050?.toFixed(0) ?? '—'}</td>
