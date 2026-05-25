@@ -9,7 +9,7 @@
  */
 
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow, Holding, Fundamental } from '@/types/db'
+import type { Flow, Holding, Fundamental, HfActivity } from '@/types/db'
 import { getLogoUrl } from '@/lib/logo'
 import type { SelectedRef } from './compute-graph'
 
@@ -107,6 +107,8 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
 
       <MarketData company={company} />
       <Fundamentals companyId={id} data={data} />
+      <InsiderFlow companyId={id} data={data} />
+      <OpenSourceFootprint companyId={id} data={data} />
 
       {company.thesis && <Section title="Thesis">{company.thesis}</Section>}
       {company.notes && <Section title="Notes">{company.notes}</Section>}
@@ -247,6 +249,124 @@ function Fundamentals({ companyId, data }: { companyId: string; data: GraphData 
       </div>
     </Section>
   )
+}
+
+function InsiderFlow({ companyId, data }: { companyId: string; data: GraphData }) {
+  const txns = data.insiders.filter(t => t.company_id === companyId)
+  if (txns.length === 0) return null
+
+  // Net $: signed by acquired/disposed. A = bought (+), D = sold (-).
+  // Focus on open-market sales/purchases (S, P) for the headline net.
+  let netSignedUsd = 0
+  let openMarketCount = 0
+  for (const t of txns) {
+    if (t.value_usd == null) continue
+    const sign = t.acquired_or_disposed === 'D' ? -1 : 1
+    if (t.transaction_code === 'S' || t.transaction_code === 'P') openMarketCount++
+    netSignedUsd += sign * t.value_usd
+  }
+  const positive = netSignedUsd >= 0
+  // Sort recent first for table
+  const recent = txns.slice().sort((a, b) => b.filing_date.localeCompare(a.filing_date)).slice(0, 6)
+
+  return (
+    <Section title={`Insider flow · 90d (${txns.length})`}>
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className={'font-mono text-sm ' + (positive ? 'text-emerald-400' : 'text-red-400')}>
+          {positive ? '+' : ''}{fmtBigDollar(Math.abs(netSignedUsd))} net
+        </span>
+        <span className="text-[10px] text-zinc-500">· {openMarketCount} open-market</span>
+      </div>
+      <ul className="space-y-1">
+        {recent.map((t) => {
+          const sold = t.acquired_or_disposed === 'D'
+          const code = t.transaction_code ?? '?'
+          const codeColor = code === 'P' ? 'text-emerald-400' : code === 'S' ? 'text-red-400' : 'text-zinc-500'
+          return (
+            <li key={t.id} className="text-xs leading-snug">
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-[10px] text-zinc-500">{t.filing_date}</span>
+                <span className={`text-[10px] uppercase ${codeColor}`}>{code}</span>
+                <span className={'font-mono ' + (sold ? 'text-red-400' : 'text-emerald-400')}>
+                  {sold ? '-' : '+'}{t.value_usd != null ? fmtBigDollar(t.value_usd) : '—'}
+                </span>
+              </div>
+              <div className="text-zinc-300">
+                {t.reporting_owner ?? 'Unknown'}
+                {t.reporting_owner_role && <span className="text-zinc-500"> · {t.reporting_owner_role}</span>}
+              </div>
+            </li>
+          )
+        })}
+        {txns.length > 6 && <li className="text-xs text-zinc-500">+{txns.length - 6} more</li>}
+      </ul>
+      <div className="mt-1 text-[10px] text-zinc-600">SEC Form 4 · last 90d</div>
+    </Section>
+  )
+}
+
+function OpenSourceFootprint({ companyId, data }: { companyId: string; data: GraphData }) {
+  // Most recent snapshot per company
+  const snaps = data.hfActivity.filter(h => h.company_id === companyId)
+  if (snaps.length === 0) return null
+  const latest: HfActivity = snaps.reduce((acc, s) => s.snapshot_date > acc.snapshot_date ? s : acc, snaps[0])
+  if (latest.model_count === 0) {
+    return (
+      <Section title="Open-source footprint">
+        <div className="text-xs text-zinc-500">
+          <code className="text-zinc-400">{latest.org_slug}</code> on Hugging Face · 0 public models
+        </div>
+      </Section>
+    )
+  }
+  const daysSinceRelease = latest.last_release_date
+    ? Math.round((Date.now() - new Date(latest.last_release_date).getTime()) / 86400_000)
+    : null
+  return (
+    <Section title="Open-source footprint">
+      <div className="space-y-1">
+        <div className="flex items-baseline justify-between text-xs">
+          <span className="text-zinc-400">Models on Hugging Face</span>
+          <span className="font-mono text-zinc-200">{latest.model_count.toLocaleString()}</span>
+        </div>
+        <div className="flex items-baseline justify-between text-xs">
+          <span className="text-zinc-400">Total downloads (30d)</span>
+          <span className="font-mono text-cyan-400">{formatCount(latest.total_downloads_30d)}</span>
+        </div>
+        {latest.top_model_id && (
+          <div className="text-xs">
+            <div className="text-zinc-500">Most downloaded</div>
+            <a
+              href={`https://huggingface.co/${latest.top_model_id}`}
+              target="_blank"
+              rel="noreferrer"
+              className="text-zinc-200 hover:text-white"
+            >
+              {latest.top_model_id} ↗
+            </a>
+            {latest.top_model_downloads != null && (
+              <span className="ml-2 font-mono text-[10px] text-zinc-500">
+                {formatCount(latest.top_model_downloads)} dl
+              </span>
+            )}
+          </div>
+        )}
+        {daysSinceRelease != null && (
+          <div className="text-[10px] text-zinc-500">
+            Last release {daysSinceRelease === 0 ? 'today' : `${daysSinceRelease}d ago`} ({latest.last_release_date})
+          </div>
+        )}
+        <div className="mt-1 text-[10px] text-zinc-600">huggingface.co/{latest.org_slug}</div>
+      </div>
+    </Section>
+  )
+}
+
+function formatCount(n: number): string {
+  if (n >= 1_000_000_000) return `${(n / 1_000_000_000).toFixed(1)}B`
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(0)}k`
+  return n.toLocaleString()
 }
 
 function InstitutionalHolders({ companyId, data }: { companyId: string; data: GraphData }) {

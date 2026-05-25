@@ -10,6 +10,8 @@ import type {
   Signal,
   Holding,
   Fundamental,
+  InsiderTransaction,
+  HfActivity,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -29,6 +31,8 @@ export interface GraphData {
   signalCompanies: SignalCompanyLink[]
   holdings: Holding[]             // 13F holdings matched to our companies only
   fundamentals: Fundamental[]     // XBRL metrics, last 2 years per company
+  insiders: InsiderTransaction[]  // Form 4 transactions, last 90 days
+  hfActivity: HfActivity[]        // latest HF snapshot per company
 }
 
 /**
@@ -95,7 +99,25 @@ export async function fetchGraph(): Promise<GraphData> {
     .order('period', { ascending: false })
     .limit(2000)
 
-  const errors = [l, i, c, b, f, bn, bb, s, sc, h, fnd].map(r => r.error).filter(Boolean)
+  // Insider transactions: last 90 days. Daily cron caps backfill at 120 XML
+  // fetches/run so this table stays manageable.
+  const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const ins = await sb
+    .from('insider_transactions')
+    .select('*')
+    .gte('filing_date', ninetyDaysAgo)
+    .order('filing_date', { ascending: false })
+    .limit(500)
+
+  // HF activity: most recent snapshot per company. With ~20 hf-tagged cos
+  // × 1 snapshot/day this is trivial.
+  const hf = await sb
+    .from('hf_activity')
+    .select('*')
+    .order('snapshot_date', { ascending: false })
+    .limit(200)
+
+  const errors = [l, i, c, b, f, bn, bb, s, sc, h, fnd, ins, hf].map(r => r.error).filter(Boolean)
   if (errors.length > 0) {
     throw new Error('Supabase fetch failed: ' + errors.map(e => e!.message).join('; '))
   }
@@ -111,5 +133,7 @@ export async function fetchGraph(): Promise<GraphData> {
     signalCompanies: (sc.data ?? []) as SignalCompanyLink[],
     holdings: (h.data ?? []) as Holding[],
     fundamentals: (fnd.data ?? []) as Fundamental[],
+    insiders: (ins.data ?? []) as InsiderTransaction[],
+    hfActivity: (hf.data ?? []) as HfActivity[],
   }
 }

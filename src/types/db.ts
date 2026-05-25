@@ -60,8 +60,43 @@ export interface Company {
   fifty_two_week_low: number | null
   price_currency: string | null
   price_updated_at: string | null
+  hf_org: string | null  // Hugging Face org slug (e.g. 'nvidia', 'meta-llama')
   created_at: string
   updated_at: string
+}
+
+export interface InsiderTransaction {
+  id: string
+  company_id: string
+  accession: string
+  filing_date: string
+  transaction_date: string | null
+  reporting_owner: string | null
+  reporting_owner_role: string | null
+  is_officer: boolean | null
+  is_director: boolean | null
+  is_ten_percent_owner: boolean | null
+  security_title: string | null
+  shares: number | null
+  price_per_share: number | null
+  value_usd: number | null
+  transaction_code: string | null    // 'S' | 'P' | 'M' | 'G' | 'F' | ...
+  acquired_or_disposed: string | null // 'A' | 'D'
+  source_url: string | null
+  created_at: string
+}
+
+export interface HfActivity {
+  id: string
+  company_id: string
+  snapshot_date: string
+  org_slug: string
+  model_count: number
+  total_downloads_30d: number
+  top_model_id: string | null
+  top_model_downloads: number | null
+  last_release_date: string | null
+  created_at: string
 }
 
 export interface Fundamental {
@@ -145,6 +180,8 @@ export interface Database {
       companies: { Row: Company; Insert: Omit<Company, 'created_at' | 'updated_at' | 'cusip' | 'cik' | 'discovered_via' | 'discovered_at'> & { created_at?: string; updated_at?: string; cusip?: string | null; cik?: string | null; discovered_via?: string | null; discovered_at?: string | null }; Update: Partial<Company> }
       holdings: { Row: Holding; Insert: Omit<Holding, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Holding> }
       fundamentals: { Row: Fundamental; Insert: Omit<Fundamental, 'id' | 'updated_at'> & { id?: string; updated_at?: string }; Update: Partial<Fundamental> }
+      insider_transactions: { Row: InsiderTransaction; Insert: Omit<InsiderTransaction, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<InsiderTransaction> }
+      hf_activity: { Row: HfActivity; Insert: Omit<HfActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<HfActivity> }
       company_backers: { Row: CompanyBacker; Insert: CompanyBacker; Update: Partial<CompanyBacker> }
       flows: { Row: Flow; Insert: Partial<Pick<Flow, 'id' | 'created_at' | 'note'>> & Omit<Flow, 'id' | 'created_at' | 'note'> & { note?: string | null }; Update: Partial<Flow> }
       bottlenecks: { Row: Bottleneck; Insert: Omit<Bottleneck, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Bottleneck> }

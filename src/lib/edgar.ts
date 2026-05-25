@@ -236,3 +236,145 @@ export async function fetch13FHoldings(cik: string, filing: EdgarFiling): Promis
     holdings: parseInformationTable(xml),
   }
 }
+
+// ---------- Form 4 (insider transactions) ----------
+
+export interface ParsedInsiderTx {
+  transactionDate: string | null     // YYYY-MM-DD
+  reportingOwner: string             // person/entity name
+  reportingOwnerRole: string | null  // e.g. "Chief Executive Officer"
+  isOfficer: boolean
+  isDirector: boolean
+  isTenPercentOwner: boolean
+  securityTitle: string | null
+  shares: number | null
+  pricePerShare: number | null
+  valueUsd: number | null            // shares * price (always positive; direction in acquiredOrDisposed)
+  transactionCode: string | null     // 'S' sale, 'P' purchase, 'M' exempt, 'G' gift, 'F' tax, etc.
+  acquiredOrDisposed: string | null  // 'A' or 'D'
+}
+
+/** Form 4 primary doc lives at a stable path inside the filing folder. */
+export function form4PrimaryDocUrl(cik: string, accession: string): string {
+  const cikInt = parseInt(cik, 10)
+  const accNoDashes = accession.replace(/-/g, '')
+  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/primary_doc.xml`
+}
+
+/**
+ * Parse a Form 4 / Form 4/A ownership XML document into ParsedInsiderTx rows.
+ * Handles single transaction and multi-transaction filings.
+ *
+ * Schema highlights:
+ *   <ownershipDocument>
+ *     <reportingOwner>
+ *       <reportingOwnerId><rptOwnerName>...</rptOwnerName></reportingOwnerId>
+ *       <reportingOwnerRelationship>
+ *         <isOfficer>1</isOfficer>
+ *         <officerTitle>Chief Executive Officer</officerTitle>
+ *         <isDirector>1</isDirector>
+ *         <isTenPercentOwner>0</isTenPercentOwner>
+ *       </reportingOwnerRelationship>
+ *     </reportingOwner>
+ *     <nonDerivativeTable>
+ *       <nonDerivativeTransaction>
+ *         <transactionDate><value>2026-05-15</value></transactionDate>
+ *         <securityTitle><value>Common Stock</value></securityTitle>
+ *         <transactionAmounts>
+ *           <transactionShares><value>5000</value>
+ *           <transactionPricePerShare><value>215.33</value>
+ *           <transactionAcquiredDisposedCode><value>D</value>
+ *         <transactionCoding>
+ *           <transactionCode>S</transactionCode>    <!-- no <value> wrapper here -->
+ */
+export function parseForm4(xml: string): ParsedInsiderTx[] {
+  const parser = new XMLParser({ ignoreAttributes: true, removeNSPrefix: true, parseTagValue: false })
+  const root = parser.parse(xml) as { ownershipDocument?: Record<string, unknown> }
+  const doc = root.ownershipDocument
+  if (!doc) return []
+
+  // Owner can be single object or array (multiple reporting owners). Take the first
+  // (most filings have one; for joint filings we just attribute to the primary).
+  const ownerRaw = doc.reportingOwner
+  const owner = Array.isArray(ownerRaw) ? ownerRaw[0] : ownerRaw
+  if (!owner || typeof owner !== 'object') return []
+
+  const ownerId = (owner as Record<string, unknown>).reportingOwnerId as Record<string, unknown> | undefined
+  const reportingOwner = String(ownerId?.rptOwnerName ?? '').trim()
+
+  const rel = (owner as Record<string, unknown>).reportingOwnerRelationship as Record<string, unknown> | undefined
+  const isOfficer = String(rel?.isOfficer ?? '0').trim() === '1' || rel?.isOfficer === 1 || rel?.isOfficer === true
+  const isDirector = String(rel?.isDirector ?? '0').trim() === '1' || rel?.isDirector === 1 || rel?.isDirector === true
+  const isTenPercentOwner = String(rel?.isTenPercentOwner ?? '0').trim() === '1' || rel?.isTenPercentOwner === 1
+  const reportingOwnerRole = (rel?.officerTitle != null ? String(rel.officerTitle).trim() :
+                              isDirector ? 'Director' :
+                              isTenPercentOwner ? '10% Owner' :
+                              isOfficer ? 'Officer' : null) || null
+
+  // nonDerivativeTable.nonDerivativeTransaction can be missing, single, or array.
+  const ndt = doc.nonDerivativeTable as Record<string, unknown> | undefined
+  const txnRaw = ndt?.nonDerivativeTransaction
+  if (!txnRaw) return []
+  const txns = Array.isArray(txnRaw) ? txnRaw : [txnRaw]
+
+  const out: ParsedInsiderTx[] = []
+  for (const t of txns as Array<Record<string, unknown>>) {
+    const transactionDate = unwrapValue(t.transactionDate)
+    const securityTitle = unwrapValue(t.securityTitle)
+
+    const amounts = t.transactionAmounts as Record<string, unknown> | undefined
+    const sharesStr = unwrapValue(amounts?.transactionShares)
+    const priceStr = unwrapValue(amounts?.transactionPricePerShare)
+    const adCode = unwrapValue(amounts?.transactionAcquiredDisposedCode)
+
+    const coding = t.transactionCoding as Record<string, unknown> | undefined
+    // transactionCoding.transactionCode comes through as a raw string (no <value> wrapper)
+    const codeRaw = coding?.transactionCode
+    const transactionCode = codeRaw != null ? String(codeRaw).trim() : null
+
+    const shares = sharesStr != null ? Number(sharesStr) : null
+    const price = priceStr != null ? Number(priceStr) : null
+    const valueUsd = shares != null && price != null && Number.isFinite(shares) && Number.isFinite(price)
+      ? shares * price
+      : null
+
+    out.push({
+      transactionDate,
+      reportingOwner,
+      reportingOwnerRole,
+      isOfficer, isDirector, isTenPercentOwner,
+      securityTitle,
+      shares: Number.isFinite(shares as number) ? (shares as number) : null,
+      pricePerShare: Number.isFinite(price as number) ? (price as number) : null,
+      valueUsd,
+      transactionCode,
+      acquiredOrDisposed: adCode,
+    })
+  }
+  return out
+}
+
+// Helper for the <wrapper><value>x</value></wrapper> pattern XBRL uses.
+function unwrapValue(node: unknown): string | null {
+  if (node == null) return null
+  if (typeof node === 'string' || typeof node === 'number') return String(node).trim() || null
+  if (typeof node === 'object' && 'value' in (node as Record<string, unknown>)) {
+    const v = (node as Record<string, unknown>).value
+    if (v == null) return null
+    return String(v).trim() || null
+  }
+  return null
+}
+
+/** Pull a single Form 4 XML + parse it. */
+export async function fetchForm4(cik: string, accession: string): Promise<ParsedInsiderTx[]> {
+  const url = form4PrimaryDocUrl(cik, accession)
+  try {
+    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/xml' } })
+    if (!r.ok) return []
+    const xml = await r.text()
+    return parseForm4(xml)
+  } catch {
+    return []
+  }
+}

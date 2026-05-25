@@ -62,10 +62,13 @@ export async function GET(req: NextRequest) {
   }
 
   const results: SubResult[] = []
-  // Daily: prices (~5s) + 8-K filings (~3s incremental) + news (~15s)
+  // Daily: prices (~5s) + 8-K filings (~3s incremental) + news (~5s) +
+  // insider (~20s incremental) + HF activity (~5s for ~20 orgs)
   results.push(await call('prices', '/api/cron/prices'))
   results.push(await call('8k-tracker', '/api/cron/8k-tracker'))
   results.push(await call('news', '/api/cron/news'))
+  results.push(await call('insider', '/api/cron/insider'))
+  results.push(await call('hf-activity', '/api/cron/hf-activity'))
   // Weekly: fundamentals (Tuesdays = day 2) + 13F holdings (Sundays = day 0)
   if (day === 2) results.push(await call('fundamentals', '/api/cron/fundamentals'))
   if (day === 0) results.push(await call('13f-tracker', '/api/cron/13f-tracker'))
