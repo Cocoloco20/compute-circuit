@@ -254,14 +254,20 @@ export interface ParsedInsiderTx {
   acquiredOrDisposed: string | null  // 'A' or 'D'
 }
 
-/** Build the URL for a Form 4 filing's primary XML document.
- * The filename varies per filing (e.g. "wk-form4_1774386816.xml") and is
- * carried in the EdgarFiling.primaryDocument field from submissions.json.
- * NEVER hardcode "primary_doc.xml" — that path returns NoSuchKey. */
+/** Build the URL for a Form 4 filing's raw XML document.
+ *
+ * Subtle: submissions.json's primaryDocument field for Form 4 includes the
+ * XSL stylesheet folder, e.g. "xslF345X06/wk-form4_1774386816.xml". That
+ * path returns the HTML-rendered version (with embedded XSL), not raw XML.
+ * We need the bare filename — strip any leading directory.
+ *
+ * - With prefix → HTTP 200, content-type: text/html (parser gets nothing)
+ * - Without prefix → HTTP 200, content-type: text/xml (what we want) */
 export function form4PrimaryDocUrl(cik: string, accession: string, primaryDocument: string): string {
   const cikInt = parseInt(cik, 10)
   const accNoDashes = accession.replace(/-/g, '')
-  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/${primaryDocument}`
+  const bareFilename = primaryDocument.split('/').pop() ?? primaryDocument
+  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/${bareFilename}`
 }
 
 /**
