@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import {
   fetchAllCompanyFilings,
   filingIndexUrl,
   headlineFor8K,
 } from '@/lib/edgar'
-import type { Database } from '@/types/db'
 
 /**
  * Daily 8-K poller.
@@ -52,7 +51,7 @@ export async function GET(req: NextRequest) {
   if (!url || !key) {
     return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
   }
-  const sb = createClient<Database>(url, key, { auth: { persistSession: false } })
+  const sb = supabaseServiceRole()
 
   // ----- fetch CIKed companies -----
   const companiesResp = await sb

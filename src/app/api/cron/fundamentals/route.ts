@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import { fetchAllEdgarFundamentals } from '@/lib/market'
-import type { Database } from '@/types/db'
 
 /**
  * Weekly fundamentals refresh (Tuesdays).
@@ -32,7 +31,7 @@ export async function GET(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
-  const sb = createClient<Database>(url, key, { auth: { persistSession: false } })
+  const sb = supabaseServiceRole()
 
   const resp = await sb.from('companies').select('id, cik').not('cik', 'is', null)
   if (resp.error) return NextResponse.json({ error: resp.error.message }, { status: 500 })

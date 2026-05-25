@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import {
   fetchAllGridDemand,
@@ -9,7 +9,6 @@ import {
   fetchAllCountryElectricity,
 } from '@/lib/eia'
 import { EIA_SERIES_CATALOG, EIA_FAB_COUNTRIES } from '@/lib/eia-catalog'
-import type { Database } from '@/types/db'
 
 /**
  * Daily EIA cron — comprehensive supply-chain ingestion.
@@ -88,7 +87,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: false, error: 'EIA_API_KEY not configured' }, { status: 500 })
   }
 
-  const sb = createClient<Database>(url, key, { auth: { persistSession: false } })
+  const sb = supabaseServiceRole()
   const t0 = Date.now()
   const snapshotDate = new Date().toISOString().slice(0, 10)
 

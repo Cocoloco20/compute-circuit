@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import {
   fetchCompanyFilings,
@@ -7,7 +7,6 @@ import {
   fetch13FHoldings,
   type ParsedHolding,
 } from '@/lib/edgar'
-import type { Database } from '@/types/db'
 
 /**
  * Weekly 13F poller.
@@ -59,7 +58,7 @@ export async function GET(req: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
 
-  const sb = createClient<Database>(url, key, { auth: { persistSession: false } })
+  const sb = supabaseServiceRole()
 
   // ----- fetch investors flagged as 13F filers -----
   const invResp = await sb.from('investors').select('id, name, cik').eq('files_13f', true).not('cik', 'is', null)

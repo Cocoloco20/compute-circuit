@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import { discoverAcrossInvestors } from '@/lib/scrapers/edgar-form-d'
 import {
@@ -7,7 +7,6 @@ import {
   normalizeName,
   slugifyName,
 } from '@/lib/scrapers/index'
-import type { Database } from '@/types/db'
 
 /**
  * Portfolio scraper — runs once a month (or on manual curl).
@@ -51,7 +50,7 @@ export async function GET(req: NextRequest) {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
 
-  const sb = createClient<Database>(url, key, { auth: { persistSession: false } })
+  const sb = supabaseServiceRole()
 
   // ----- pull existing companies + investors -----
   const [coResp, invResp] = await Promise.all([

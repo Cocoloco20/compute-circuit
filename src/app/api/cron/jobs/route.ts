@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import { fetchAllJobBoards, JOB_BOARDS, type JobBoardConfig } from '@/lib/jobs'
-import type { Database } from '@/types/db'
 
 /**
  * Daily "hiring pulse" snapshot.
@@ -37,7 +36,7 @@ export async function GET(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
-  const sb = createClient<Database>(url, key, { auth: { persistSession: false } })
+  const sb = supabaseServiceRole()
 
   // Filter the static map to companies that actually exist in the db. This
   // protects against drift if a company is deleted but its slug still lives

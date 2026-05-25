@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
+import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import { fetchAllPatentSnapshots } from '@/lib/uspto'
-import type { Database } from '@/types/db'
 
 /**
  * Daily USPTO patent-snapshot cron.
@@ -50,7 +49,7 @@ export async function GET(req: NextRequest) {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
-  const sb = createClient<Database>(url, key, { auth: { persistSession: false } })
+  const sb = supabaseServiceRole()
 
   const cosResp = await sb
     .from('companies')

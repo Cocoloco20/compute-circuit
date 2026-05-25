@@ -194,16 +194,18 @@ export const EIA_SERIES_CATALOG: EiaSeriesSpec[] = [
   // only authoritative source for state-level total energy consumption.
   // Useful when an 8-K says "we're siting in Virginia" — quick context on
   // how stressed VA's grid already is.
+  // SEDS uses separate seriesId + stateId facets (not the legacy
+  // 'TETCB.STATE.A' combined-id format from EIA API v1).
   {
     id: 'SEDS.TOTAL_CONSUMPTION.VA.A',
     label: 'Virginia total energy consumption',
     layer: 'grid',
     endpoint: 'seds/data',
     frequency: 'annual',
-    facets: { seriesId: ['TETCB.VA.A'] },                  // TETCB = total energy consumed, billion BTU
+    facets: { seriesId: ['TETCB'], stateId: ['VA'] },
     data: ['value'],
     valueColumn: 'value',
-    unit: 'billion Btu',
+    unit: 'Billion Btu',
   },
   {
     id: 'SEDS.TOTAL_CONSUMPTION.TX.A',
@@ -211,10 +213,10 @@ export const EIA_SERIES_CATALOG: EiaSeriesSpec[] = [
     layer: 'grid',
     endpoint: 'seds/data',
     frequency: 'annual',
-    facets: { seriesId: ['TETCB.TX.A'] },
+    facets: { seriesId: ['TETCB'], stateId: ['TX'] },
     data: ['value'],
     valueColumn: 'value',
-    unit: 'billion Btu',
+    unit: 'Billion Btu',
   },
   {
     id: 'SEDS.TOTAL_CONSUMPTION.AZ.A',
@@ -222,10 +224,10 @@ export const EIA_SERIES_CATALOG: EiaSeriesSpec[] = [
     layer: 'grid',
     endpoint: 'seds/data',
     frequency: 'annual',
-    facets: { seriesId: ['TETCB.AZ.A'] },
+    facets: { seriesId: ['TETCB'], stateId: ['AZ'] },
     data: ['value'],
     valueColumn: 'value',
-    unit: 'billion Btu',
+    unit: 'Billion Btu',
   },
   {
     id: 'SEDS.TOTAL_CONSUMPTION.OR.A',
@@ -233,10 +235,10 @@ export const EIA_SERIES_CATALOG: EiaSeriesSpec[] = [
     layer: 'grid',
     endpoint: 'seds/data',
     frequency: 'annual',
-    facets: { seriesId: ['TETCB.OR.A'] },
+    facets: { seriesId: ['TETCB'], stateId: ['OR'] },
     data: ['value'],
     valueColumn: 'value',
-    unit: 'billion Btu',
+    unit: 'Billion Btu',
   },
   {
     id: 'SEDS.TOTAL_CONSUMPTION.IA.A',
@@ -244,10 +246,10 @@ export const EIA_SERIES_CATALOG: EiaSeriesSpec[] = [
     layer: 'grid',
     endpoint: 'seds/data',
     frequency: 'annual',
-    facets: { seriesId: ['TETCB.IA.A'] },
+    facets: { seriesId: ['TETCB'], stateId: ['IA'] },
     data: ['value'],
     valueColumn: 'value',
-    unit: 'billion Btu',
+    unit: 'Billion Btu',
   },
   {
     id: 'SEDS.TOTAL_CONSUMPTION.GA.A',
@@ -255,10 +257,10 @@ export const EIA_SERIES_CATALOG: EiaSeriesSpec[] = [
     layer: 'grid',
     endpoint: 'seds/data',
     frequency: 'annual',
-    facets: { seriesId: ['TETCB.GA.A'] },
+    facets: { seriesId: ['TETCB'], stateId: ['GA'] },
     data: ['value'],
     valueColumn: 'value',
-    unit: 'billion Btu',
+    unit: 'Billion Btu',
   },
 ]
 
