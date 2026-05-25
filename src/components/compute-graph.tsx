@@ -28,6 +28,7 @@ import type { GraphData } from '@/lib/graph-data'
 import { getLogoUrl } from '@/lib/logo'
 import EntityDrawer from './entity-drawer'
 import CommandPalette from './command-palette'
+import PulseBoard from './pulse-board'
 
 // ---------- visual constants ----------
 
@@ -662,6 +663,9 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
       {/* Chrome telemetry — GasCity-style "instrument is live" bar at bottom-center */}
       <ChromeTelemetry lastUpdates={data.lastUpdates} />
+
+      {/* Pulse Board — graph-wide "what mattered today" panel */}
+      <PulseBoard data={data} onSelect={(s) => setSelected(s)} />
 
       {/* Hover tooltip */}
       {hover && (
