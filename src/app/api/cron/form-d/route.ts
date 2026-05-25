@@ -27,7 +27,11 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const LOOKBACK_DAYS = 90
+// 540 days = ~18 months. Most private rounds happen every 12-18 months;
+// a 90d window misses too much when this is a one-shot backfill against
+// freshly-CIKed cos. The cron is incremental (dedups on accession), so the
+// wide window only costs more SEC fetches on first run.
+const LOOKBACK_DAYS = 540
 const BATCH_SIZE = 5
 
 interface CompanyRow {

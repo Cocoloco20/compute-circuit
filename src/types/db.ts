@@ -65,6 +65,11 @@ export interface Company {
   github_repo: string | null  // GitHub "owner/name" of primary OSS repo (e.g. 'openai/openai-python')
   eia_region: string | null  // EIA balancing-authority code ('PJM', 'ERCO', 'FLA', 'US48')
   assignee_name: string | null  // USPTO assignee name for patent search (e.g. 'NVIDIA Corporation')
+  // AI-generated thesis (Phase 7c). Coexists with manual `thesis` field above:
+  // analysts can write a `thesis`; the generator writes to `thesis_ai`.
+  thesis_ai: string | null
+  thesis_risk_ai: string | null
+  thesis_generated_at: string | null
   created_at: string
   updated_at: string
 }
@@ -198,6 +203,21 @@ export interface ModelLeaderboardEntry {
   elo_rank: number                          // 1 = best. Always populated.
   params_b: number | null                   // model size in B params (best-effort)
   license: string | null                    // 'open' | 'closed' | 'unknown'
+  created_at: string
+}
+
+export interface SocialMention {
+  id: string
+  company_id: string
+  snapshot_date: string
+  source: string // 'hn' | 'reddit'
+  mentions_24h: number
+  mentions_7d: number
+  top_post_url: string | null
+  top_post_title: string | null
+  top_post_score: number | null
+  top_post_comments: number | null
+  sample_subreddits: string[] | null
   created_at: string
 }
 
@@ -348,6 +368,7 @@ export interface Database {
       hf_activity: { Row: HfActivity; Insert: Omit<HfActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<HfActivity> }
       model_leaderboard: { Row: ModelLeaderboardEntry; Insert: Omit<ModelLeaderboardEntry, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<ModelLeaderboardEntry> }
       github_activity: { Row: GithubActivity; Insert: Omit<GithubActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GithubActivity> }
+      social_mentions: { Row: SocialMention; Insert: Omit<SocialMention, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<SocialMention> }
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
       gpu_spot_prices: { Row: GpuSpotPrice; Insert: Omit<GpuSpotPrice, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GpuSpotPrice> }

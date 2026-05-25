@@ -44,6 +44,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
   const gpuSpot = useGpuSpot24h(data)
   const capex = useCapexRunRateTop(data)
   const leaderboardTop5 = useLeaderboardTop5(data)
+  const mentions = useTopMentions24h(data)
 
   // Mobile variant: no chrome, no collapsible header (the parent sheet's
   // header already supplies title + close). Just stacked sections.
@@ -60,6 +61,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
           gpuSpot={gpuSpot}
           capex={capex}
           leaderboardTop5={leaderboardTop5}
+          mentions={mentions}
           companies={data.companies}
           onSelect={onSelect}
         />
@@ -89,6 +91,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
             gpuSpot={gpuSpot}
             capex={capex}
             leaderboardTop5={leaderboardTop5}
+            mentions={mentions}
             companies={data.companies}
             onSelect={onSelect}
           />
@@ -105,6 +108,7 @@ interface PulseSectionsProps {
   insider: InsiderRow[]
   funding: FundingRow[]
   hiring: HiringRow[]
+  mentions: MentionRow[]
   gpuSpot: GpuSpotRow[]
   capex: CapexRunRateRow[]
   leaderboardTop5: ModelLeaderboardEntry[]
@@ -112,7 +116,7 @@ interface PulseSectionsProps {
   onSelect: (sel: SelectedRef) => void
 }
 
-function PulseSections({ movers, filings, news, insider, funding, hiring, gpuSpot, capex, leaderboardTop5, companies, onSelect }: PulseSectionsProps) {
+function PulseSections({ movers, filings, news, insider, funding, hiring, mentions, gpuSpot, capex, leaderboardTop5, companies, onSelect }: PulseSectionsProps) {
   return (
     <>
       <PulseSection title="Movers · 1d">
@@ -237,6 +241,35 @@ function PulseSections({ movers, filings, news, insider, funding, hiring, gpuSpo
             right={
               <span className={'font-mono ' + (h.delta >= 0 ? 'text-feed-jobs' : 'text-fg-secondary')}>
                 {h.delta >= 0 ? '+' : ''}{h.delta}
+              </span>
+            }
+          />
+        ))}
+      </PulseSection>
+
+      <PulseSection title="Mentions · 24h">
+        {mentions.length === 0 ? <NoData /> : mentions.map((m) => (
+          <PulseRow
+            key={m.coId}
+            onClick={() => onSelect({ kind: 'company', id: m.coId })}
+            left={
+              <div className="flex items-center gap-1.5 min-w-0">
+                <span className="truncate text-fg-primary">{m.coTicker ?? m.coName}</span>
+                {m.hn24h > 0 && (
+                  <span className="shrink-0 rounded bg-feed-filings/10 border border-feed-filings/20 px-1 py-0.25 text-[9px] text-feed-filings font-mono leading-none">
+                    HN
+                  </span>
+                )}
+                {m.reddit24h > 0 && (
+                  <span className="shrink-0 rounded bg-signal-alert/10 border border-signal-alert/20 px-1 py-0.25 text-[9px] text-signal-alert font-mono leading-none">
+                    Reddit
+                  </span>
+                )}
+              </div>
+            }
+            right={
+              <span className="font-mono text-fg-primary shrink-0">
+                {m.total24h}
               </span>
             }
           />
@@ -623,6 +656,57 @@ function useLeaderboardTop5(data: GraphData): ModelLeaderboardEntry[] {
     const latestDate = dates[0]
     const latest = entries.filter(e => e.snapshot_date === latestDate)
     return latest.sort((a, b) => a.elo_rank - b.elo_rank).slice(0, 5)
+  }, [data])
+}
+
+interface MentionRow {
+  coId: string
+  coName: string
+  coTicker: string | null
+  total24h: number
+  hn24h: number
+  reddit24h: number
+}
+
+function useTopMentions24h(data: GraphData): MentionRow[] {
+  return useMemo(() => {
+    if (!data.socialMentions || data.socialMentions.length === 0) return []
+    const dates = Array.from(new Set(data.socialMentions.map(e => e.snapshot_date))).sort((a, b) => b.localeCompare(a))
+    const latestDate = dates[0]
+    if (!latestDate) return []
+
+    const latestSnaps = data.socialMentions.filter(s => s.snapshot_date === latestDate)
+    const byCompany = new Map<string, { hn: number; reddit: number }>()
+
+    for (const snap of latestSnaps) {
+      const current = byCompany.get(snap.company_id) ?? { hn: 0, reddit: 0 }
+      if (snap.source === 'hn') {
+        current.hn = snap.mentions_24h ?? 0
+      } else if (snap.source === 'reddit') {
+        current.reddit = snap.mentions_24h ?? 0
+      }
+      byCompany.set(snap.company_id, current)
+    }
+
+    const coById = new Map(data.companies.map(c => [c.id, c]))
+    const rows: MentionRow[] = []
+
+    for (const [coId, val] of byCompany) {
+      const co = coById.get(coId)
+      if (!co) continue
+      const total24h = val.hn + val.reddit
+      if (total24h === 0) continue
+      rows.push({
+        coId,
+        coName: co.name,
+        coTicker: co.ticker,
+        total24h,
+        hn24h: val.hn,
+        reddit24h: val.reddit,
+      })
+    }
+
+    return rows.sort((a, b) => b.total24h - a.total24h).slice(0, 5)
   }, [data])
 }
 
