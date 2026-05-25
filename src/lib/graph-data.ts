@@ -12,6 +12,9 @@ import type {
   Fundamental,
   InsiderTransaction,
   HfActivity,
+  GridDemandSnapshot,
+  PatentSnapshotRow,
+  JobSnapshotRow,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -33,6 +36,9 @@ export interface GraphData {
   fundamentals: Fundamental[]     // XBRL metrics, last 2 years per company
   insiders: InsiderTransaction[]  // Form 4 transactions, last 90 days
   hfActivity: HfActivity[]        // latest HF snapshot per company
+  gridDemand: GridDemandSnapshot[] // EIA grid demand, last 35 days for delta
+  patents: PatentSnapshotRow[]    // USPTO TTM snapshots, last 35 days for delta
+  jobs: JobSnapshotRow[]          // Hiring pulse snapshots, last 35 days for delta
   lastUpdates: {                  // GasCity-style "instrument is live" telemetry
     price: string | null          // ISO of most-recent companies.price_updated_at
     news: string | null           // most-recent signals.date where source='google-news'
@@ -40,6 +46,9 @@ export interface GraphData {
     insider: string | null        // most-recent insider_transactions.filing_date
     hf: string | null             // most-recent hf_activity.snapshot_date
     holdings: string | null       // most-recent holdings.period
+    grid: string | null           // most-recent grid_demand_snapshots.snapshot_date
+    patents: string | null        // most-recent patent_snapshots.snapshot_date
+    jobs: string | null           // most-recent job_snapshots.snapshot_date
   }
 }
 
@@ -125,6 +134,33 @@ export async function fetchGraph(): Promise<GraphData> {
     .order('snapshot_date', { ascending: false })
     .limit(200)
 
+  // 35-day window for the three "delta" signals so drawer chips can compare
+  // today vs 7d and 30d ago. Volumes are tiny:
+  //   grid_demand: 7 cos × 35 = 245
+  //   patents:     21 cos × 35 = 735
+  //   jobs:        10 cos × 35 = 350
+  const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const [gd, pat, jb] = await Promise.all([
+    sb.from('grid_demand_snapshots').select('*')
+      .gte('snapshot_date', thirtyFiveDaysAgo)
+      .order('snapshot_date', { ascending: false }).limit(500),
+    sb.from('patent_snapshots').select('*')
+      .gte('snapshot_date', thirtyFiveDaysAgo)
+      .order('snapshot_date', { ascending: false }).limit(1500),
+    sb.from('job_snapshots').select('*')
+      .gte('snapshot_date', thirtyFiveDaysAgo)
+      .order('snapshot_date', { ascending: false }).limit(500),
+  ])
+
+  // gd/pat/jb are non-fatal — tables may be empty pre-cron-run or before keys
+  // are configured (EIA / USPTO). Log silently and degrade gracefully.
+  for (const r of [gd, pat, jb] as Array<{ error: { message: string } | null }>) {
+    if (r.error) {
+      // eslint-disable-next-line no-console
+      console.warn('[graph-data] optional signal table read failed:', r.error.message)
+    }
+  }
+
   const errors = [l, i, c, b, f, bn, bb, s, sc, h, fnd, ins, hf].map(r => r.error).filter(Boolean)
   if (errors.length > 0) {
     throw new Error('Supabase fetch failed: ' + errors.map(e => e!.message).join('; '))
@@ -143,6 +179,9 @@ export async function fetchGraph(): Promise<GraphData> {
     fundamentals: (fnd.data ?? []) as Fundamental[],
     insiders: (ins.data ?? []) as InsiderTransaction[],
     hfActivity: (hf.data ?? []) as HfActivity[],
+    gridDemand: (gd.data ?? []) as GridDemandSnapshot[],
+    patents: (pat.data ?? []) as PatentSnapshotRow[],
+    jobs: (jb.data ?? []) as JobSnapshotRow[],
     lastUpdates: {
       price: ((c.data ?? []) as Company[])
         .map(co => co.price_updated_at)
@@ -169,6 +208,18 @@ export async function fetchGraph(): Promise<GraphData> {
         .at(-1) ?? null,
       holdings: ((h.data ?? []) as Holding[])
         .map(x => x.period)
+        .sort()
+        .at(-1) ?? null,
+      grid: ((gd.data ?? []) as GridDemandSnapshot[])
+        .map(x => x.snapshot_date)
+        .sort()
+        .at(-1) ?? null,
+      patents: ((pat.data ?? []) as PatentSnapshotRow[])
+        .map(x => x.snapshot_date)
+        .sort()
+        .at(-1) ?? null,
+      jobs: ((jb.data ?? []) as JobSnapshotRow[])
+        .map(x => x.snapshot_date)
         .sort()
         .at(-1) ?? null,
     },

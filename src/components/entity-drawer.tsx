@@ -15,7 +15,8 @@
 
 import { useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow, Holding, Fundamental, HfActivity } from '@/types/db'
+import type { Flow, Holding, Fundamental, HfActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow } from '@/types/db'
+import { CPC_SUBCLASS_LABELS } from '@/lib/uspto'
 import { getLogoUrl } from '@/lib/logo'
 import type { SelectedRef } from './compute-graph'
 
@@ -256,6 +257,7 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
         <Stat label="Conviction" value={company.conviction ?? '—'} />
         <Stat label="Share" value={company.share != null ? `${(company.share * 100).toFixed(0)}%` : '—'} />
       </div>
+      <SignalChips companyId={company.id} data={data} />
       {company.thesis && <Section title="Thesis">{company.thesis}</Section>}
       {company.notes && <Section title="Notes"><div className="whitespace-pre-line">{company.notes}</div></Section>}
       {backers.length > 0 && (
@@ -729,6 +731,163 @@ function Stat({ label, value }: { label: string; value: string }) {
     <div className="rounded border border-zinc-900 bg-zinc-900/40 px-2 py-1">
       <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
       <div className="text-zinc-200">{value}</div>
+    </div>
+  )
+}
+
+// ----- SignalChips: hiring / power / R&D -----
+//
+// Bloomberg-style "decision-ready" header chips above the long-form sections.
+// Each one is conditionally rendered: hidden entirely (no "no data" state) for
+// companies that aren't mapped to that signal, so the drawer stays clean.
+
+function pickLatestAndPriors<T extends { snapshot_date: string }>(
+  rows: T[],
+): { latest: T | null; d7: T | null; d30: T | null } {
+  if (rows.length === 0) return { latest: null, d7: null, d30: null }
+  const sorted = rows.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))
+  const latest = sorted[0]
+  // Closest snapshot to N days before the latest snapshot
+  const latestT = new Date(latest.snapshot_date).getTime()
+  const target7 = latestT - 7 * 86_400_000
+  const target30 = latestT - 30 * 86_400_000
+  const closest = (target: number): T | null => {
+    let best: T | null = null
+    let bestDelta = Infinity
+    for (const r of sorted) {
+      const d = Math.abs(new Date(r.snapshot_date).getTime() - target)
+      if (d < bestDelta) { bestDelta = d; best = r }
+    }
+    // Reject if no nearby snapshot — keep deltas honest
+    return bestDelta < 4 * 86_400_000 ? best : null
+  }
+  return { latest, d7: closest(target7), d30: closest(target30) }
+}
+
+function HiringPulseChip({ rows }: { rows: JobSnapshotRow[] }) {
+  if (rows.length === 0) return null
+  const { latest, d7, d30 } = pickLatestAndPriors(rows)
+  if (!latest) return null
+  const delta7 = d7 ? latest.total_open - d7.total_open : null
+  const delta30 = d30 ? latest.total_open - d30.total_open : null
+  const top = Array.isArray(latest.top_categories) && latest.top_categories[0]
+    ? latest.top_categories[0]
+    : null
+  const deltaColor = (n: number | null) =>
+    n == null ? 'text-zinc-600' : n >= 5 ? 'text-emerald-400' : n <= -5 ? 'text-red-400' : 'text-zinc-400'
+  const ramping = delta7 != null && delta7 >= 20
+  return (
+    <div className="rounded border border-zinc-900 bg-zinc-900/40 px-2 py-1.5">
+      <div className="flex items-baseline justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-zinc-500">Hiring pulse</div>
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-sm text-zinc-100">{latest.total_open}</span>
+          <span className="text-[10px] text-zinc-500">open</span>
+          {ramping && <span className="ml-1 rounded bg-pink-500/15 px-1 py-0.5 text-[9px] uppercase text-pink-300">ramp</span>}
+        </div>
+      </div>
+      <div className="mt-0.5 flex items-center gap-2 text-[10px] font-mono">
+        <span className={deltaColor(delta7)}>
+          {delta7 != null ? (delta7 >= 0 ? '+' : '') + delta7 + ' 7d' : '— 7d'}
+        </span>
+        <span className="text-zinc-700">·</span>
+        <span className={deltaColor(delta30)}>
+          {delta30 != null ? (delta30 >= 0 ? '+' : '') + delta30 + ' 30d' : '— 30d'}
+        </span>
+        {top && (
+          <>
+            <span className="text-zinc-700">·</span>
+            <span className="text-zinc-400">top: <span className="text-zinc-200">{top.name}</span> ({top.count})</span>
+          </>
+        )}
+      </div>
+      <div className="mt-0.5 text-[9px] text-zinc-600">
+        via {latest.source_provider} · {latest.source_slug}
+      </div>
+    </div>
+  )
+}
+
+function PowerPressureChip({ rows }: { rows: GridDemandSnapshot[] }) {
+  if (rows.length === 0) return null
+  const latest = rows.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))[0]
+  if (!latest || latest.current_7d_avg_mwh == null) return null
+  const gwh = latest.current_7d_avg_mwh / 1000
+  const yoy = latest.yoy_change_pct ?? 0
+  const yoyColor = yoy >= 5 ? 'text-yellow-300' : yoy <= -5 ? 'text-zinc-400' : 'text-zinc-300'
+  const tight = yoy >= 5
+  return (
+    <div className="rounded border border-zinc-900 bg-zinc-900/40 px-2 py-1.5">
+      <div className="flex items-baseline justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-zinc-500">Power pressure · {latest.region}</div>
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-sm text-zinc-100">{gwh.toFixed(1)}</span>
+          <span className="text-[10px] text-zinc-500">GWh 7d</span>
+          {tight && <span className="ml-1 rounded bg-yellow-500/15 px-1 py-0.5 text-[9px] uppercase text-yellow-300">tight</span>}
+        </div>
+      </div>
+      <div className="mt-0.5 text-[10px] font-mono">
+        <span className={yoyColor}>{yoy >= 0 ? '+' : ''}{yoy.toFixed(1)}% YoY</span>
+        {latest.last_hour && (
+          <>
+            <span className="ml-2 text-zinc-700">·</span>
+            <span className="ml-2 text-zinc-500">last hr {latest.last_hourly_mwh != null ? (latest.last_hourly_mwh / 1000).toFixed(1) : '—'} GWh</span>
+          </>
+        )}
+      </div>
+      <div className="mt-0.5 text-[9px] text-zinc-600">EIA Form 930 · {latest.snapshot_date}</div>
+    </div>
+  )
+}
+
+function RDVelocityChip({ rows }: { rows: PatentSnapshotRow[] }) {
+  if (rows.length === 0) return null
+  const { latest, d30 } = pickLatestAndPriors(rows)
+  if (!latest) return null
+  const delta30 = d30 ? latest.ttm_count - d30.ttm_count : null
+  const top3 = Array.isArray(latest.top_subclasses) ? latest.top_subclasses.slice(0, 3) : []
+  return (
+    <div className="rounded border border-zinc-900 bg-zinc-900/40 px-2 py-1.5">
+      <div className="flex items-baseline justify-between">
+        <div className="text-[10px] uppercase tracking-wider text-zinc-500">R&D velocity · TTM</div>
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-sm text-zinc-100">{latest.ttm_count}</span>
+          <span className="text-[10px] text-zinc-500">filings</span>
+          {delta30 != null && (
+            <span className={'ml-1 text-[10px] font-mono ' + (delta30 >= 0 ? 'text-violet-300' : 'text-zinc-400')}>
+              {delta30 >= 0 ? '+' : ''}{delta30}/30d
+            </span>
+          )}
+        </div>
+      </div>
+      {top3.length > 0 && (
+        <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] font-mono">
+          {top3.map(s => (
+            <span key={s.code} className="rounded border border-zinc-800 px-1 text-zinc-300">
+              {s.code}
+              {CPC_SUBCLASS_LABELS[s.code] && (
+                <span className="ml-1 text-zinc-500">{CPC_SUBCLASS_LABELS[s.code]}</span>
+              )}
+              <span className="ml-1 text-zinc-500">·{s.count}</span>
+            </span>
+          ))}
+        </div>
+      )}
+      <div className="mt-0.5 text-[9px] text-zinc-600">USPTO · {latest.snapshot_date}</div>
+    </div>
+  )
+}
+
+function SignalChips({ companyId, data }: { companyId: string; data: GraphData }) {
+  const jobs = data.jobs.filter(j => j.company_id === companyId)
+  const grid = data.gridDemand.filter(g => g.company_id === companyId)
+  const patents = data.patents.filter(p => p.company_id === companyId)
+  if (jobs.length === 0 && grid.length === 0 && patents.length === 0) return null
+  return (
+    <div className="mb-4 grid grid-cols-1 gap-2">
+      {jobs.length    > 0 && <HiringPulseChip   rows={jobs}    />}
+      {grid.length    > 0 && <PowerPressureChip rows={grid}    />}
+      {patents.length > 0 && <RDVelocityChip    rows={patents} />}
     </div>
   )
 }

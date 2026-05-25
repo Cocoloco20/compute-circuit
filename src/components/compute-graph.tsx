@@ -697,6 +697,9 @@ function ChromeTelemetry({ lastUpdates }: { lastUpdates: GraphData['lastUpdates'
     { label: 'INSIDER', iso: lastUpdates.insider,  textColor: 'text-red-400',     dotColor: 'bg-red-400'     },
     { label: '13F',     iso: lastUpdates.holdings, textColor: 'text-emerald-400', dotColor: 'bg-emerald-400' },
     { label: 'HF',      iso: lastUpdates.hf,       textColor: 'text-amber-400',   dotColor: 'bg-amber-400'   },
+    { label: 'GRID',    iso: lastUpdates.grid,     textColor: 'text-yellow-400',  dotColor: 'bg-yellow-400'  },
+    { label: 'IP',      iso: lastUpdates.patents,  textColor: 'text-violet-400',  dotColor: 'bg-violet-400'  },
+    { label: 'JOBS',    iso: lastUpdates.jobs,     textColor: 'text-pink-400',    dotColor: 'bg-pink-400'    },
   ]
   return (
     <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-500 backdrop-blur">
