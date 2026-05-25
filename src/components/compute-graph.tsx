@@ -584,17 +584,17 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   // ---------- render UI overlay ----------
 
   return (
-    <div className="relative h-screen w-full overflow-hidden bg-[#05060a] text-zinc-200">
+    <div className="relative h-screen w-full overflow-hidden bg-[#05060a] text-fg-primary">
       <div ref={mountRef} className="absolute inset-0" />
 
       {/* Top bar */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4">
         <div className="pointer-events-auto font-mono text-sm">
-          <span className="font-semibold text-white">Compute Circuit</span>
-          <span className="ml-3 text-zinc-500">
+          <span className="font-semibold text-fg-primary">Compute Circuit</span>
+          <span className="ml-3 text-fg-muted">
             {data.companies.filter(c => c.layer_id).length} cos
             {data.companies.filter(c => !c.layer_id).length > 0 && (
-              <span className="text-zinc-600"> (+{data.companies.filter(c => !c.layer_id).length} unplaced)</span>
+              <span className="text-fg-dim"> (+{data.companies.filter(c => !c.layer_id).length} unplaced)</span>
             )}
             <span> · {data.investors.length} investors · {data.flows.length} flows · {data.bottlenecks.length} bottlenecks</span>
           </span>
@@ -602,7 +602,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         <button
           type="button"
           onClick={() => setPaletteOpen(true)}
-          className="pointer-events-auto rounded border border-zinc-800 bg-zinc-950/60 px-3 py-1.5 text-xs text-zinc-400 backdrop-blur hover:border-zinc-700 hover:text-white"
+          className="pointer-events-auto rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 text-xs text-fg-secondary backdrop-blur hover:border-border-strong hover:text-fg-primary"
         >
           ⌘K Search
         </button>
@@ -610,8 +610,8 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
       {/* Layer key — left rail (top). Shows per-layer co count + today's
           signal count (8-K filings + news matched to a co in that layer). */}
-      <div className="pointer-events-auto absolute left-4 top-16 z-10 w-48 space-y-0.5 text-[11px] font-mono text-zinc-500">
-        <div className="mb-1 text-zinc-600 uppercase tracking-wider">Layers · 24h</div>
+      <div className="pointer-events-auto absolute left-4 top-16 z-10 w-48 space-y-0.5 text-[11px] font-mono text-fg-muted">
+        <div className="mb-1 text-label text-fg-dim">Layers · 24h</div>
         {[...data.layers].reverse().map((l) => {
           const layerCoIds = new Set(
             data.companies.filter(c => c.layer_id === l.id).map(c => c.id)
@@ -633,9 +633,9 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
               <span>{l.name}</span>
               <span className="flex items-center gap-1.5">
                 {todayActive > 0 && (
-                  <span className="font-mono text-[10px] text-cyan-400">+{todayActive}</span>
+                  <span className="font-mono text-meta text-signal-info">+{todayActive}</span>
                 )}
-                <span className="text-zinc-700">{layerCoIds.size}</span>
+                <span className="text-fg-dim">{layerCoIds.size}</span>
               </span>
             </div>
           )
@@ -644,7 +644,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
       {/* Backer filter chips — left rail (bottom) */}
       <div className="pointer-events-auto absolute bottom-4 left-4 z-10 max-w-[200px] space-y-1 text-[11px] font-mono">
-        <div className="mb-1 text-zinc-600 uppercase tracking-wider">Filter by backer</div>
+        <div className="mb-1 text-label text-fg-dim">Filter by backer</div>
         {data.investors.map((inv) => {
           const active = backerFilter === inv.id
           return (
@@ -653,10 +653,10 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
               key={inv.id}
               onClick={() => setBackerFilter(active ? null : inv.id)}
               className={
-                'block w-full rounded border px-2 py-1 text-left transition-colors ' +
+                'block w-full rounded-md border px-2 py-1 text-left transition-colors ' +
                 (active
-                  ? 'border-purple-500/60 bg-purple-500/10 text-purple-200'
-                  : 'border-zinc-800 bg-zinc-950/40 text-zinc-400 hover:border-zinc-700 hover:text-zinc-200')
+                  ? 'border-accent-primary/60 bg-accent-primary/10 text-accent-primary'
+                  : 'border-border-default bg-bg-overlay text-fg-secondary hover:border-border-strong hover:text-fg-primary')
               }
             >
               {inv.name}
@@ -667,7 +667,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           <button
             type="button"
             onClick={() => setBackerFilter(null)}
-            className="block w-full rounded border border-zinc-800 bg-zinc-950/40 px-2 py-1 text-center text-zinc-500 hover:text-white"
+            className="block w-full rounded-md border border-border-default bg-bg-overlay px-2 py-1 text-center text-fg-muted hover:text-fg-primary"
           >
             clear
           </button>
@@ -675,8 +675,8 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       </div>
 
       {/* Flow type legend — bottom right */}
-      <div className="pointer-events-none absolute bottom-4 right-4 z-10 space-y-1 text-[11px] font-mono text-zinc-400">
-        <div className="mb-1 text-zinc-600 uppercase tracking-wider">Flow types</div>
+      <div className="pointer-events-none absolute bottom-4 right-4 z-10 space-y-1 text-[11px] font-mono text-fg-secondary">
+        <div className="mb-1 text-label text-fg-dim">Flow types</div>
         {(Object.keys(FLOW_COLORS) as FlowType[]).map((k) => (
           <div key={k} className="flex items-center gap-2">
             <span className="inline-block h-2 w-3" style={{ backgroundColor: '#' + FLOW_COLORS[k].toString(16).padStart(6, '0') }} />
@@ -697,7 +697,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       {/* Hover tooltip */}
       {hover && (
         <div
-          className="pointer-events-none absolute z-20 rounded border border-zinc-800 bg-zinc-950/90 px-2 py-1 text-xs text-white backdrop-blur"
+          className="pointer-events-none absolute z-20 rounded-md border border-border-default bg-bg-overlay px-2 py-1 text-xs text-fg-primary backdrop-blur"
           style={{ left: hover.x + 12, top: hover.y + 12 }}
         >
           {hover.label}
@@ -721,25 +721,27 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 // ---------- Chrome telemetry (GasCity-style "instrument is live" bar) ----------
 
 function ChromeTelemetry({ lastUpdates }: { lastUpdates: GraphData['lastUpdates'] }) {
+  // Per-feed accents map 1:1 onto the feed-* design tokens.
   const entries: Array<{ label: string; iso: string | null; textColor: string; dotColor: string }> = [
-    { label: 'PRICE',   iso: lastUpdates.price,    textColor: 'text-emerald-400', dotColor: 'bg-emerald-400' },
-    { label: 'NEWS',    iso: lastUpdates.news,     textColor: 'text-cyan-400',    dotColor: 'bg-cyan-400'    },
-    { label: '8-K',     iso: lastUpdates.filings,  textColor: 'text-orange-400',  dotColor: 'bg-orange-400'  },
-    { label: 'INSIDER', iso: lastUpdates.insider,  textColor: 'text-red-400',     dotColor: 'bg-red-400'     },
-    { label: '13F',     iso: lastUpdates.holdings, textColor: 'text-emerald-400', dotColor: 'bg-emerald-400' },
-    { label: 'HF',      iso: lastUpdates.hf,       textColor: 'text-amber-400',   dotColor: 'bg-amber-400'   },
-    { label: 'GRID',    iso: lastUpdates.grid,     textColor: 'text-yellow-400',  dotColor: 'bg-yellow-400'  },
-    { label: 'IP',      iso: lastUpdates.patents,  textColor: 'text-violet-400',  dotColor: 'bg-violet-400'  },
-    { label: 'JOBS',    iso: lastUpdates.jobs,     textColor: 'text-pink-400',    dotColor: 'bg-pink-400'    },
+    { label: 'PRICE',   iso: lastUpdates.price,    textColor: 'text-feed-price',    dotColor: 'bg-feed-price'    },
+    { label: 'NEWS',    iso: lastUpdates.news,     textColor: 'text-feed-news',     dotColor: 'bg-feed-news'     },
+    { label: '8-K',     iso: lastUpdates.filings,  textColor: 'text-feed-filings',  dotColor: 'bg-feed-filings'  },
+    { label: 'INSIDER', iso: lastUpdates.insider,  textColor: 'text-feed-insider',  dotColor: 'bg-feed-insider'  },
+    { label: '13F',     iso: lastUpdates.holdings, textColor: 'text-feed-holdings', dotColor: 'bg-feed-holdings' },
+    { label: 'HF',      iso: lastUpdates.hf,       textColor: 'text-feed-hf',       dotColor: 'bg-feed-hf'       },
+    { label: 'GITHUB',  iso: lastUpdates.github,   textColor: 'text-feed-github',   dotColor: 'bg-feed-github'   },
+    { label: 'GRID',    iso: lastUpdates.grid,     textColor: 'text-feed-grid',     dotColor: 'bg-feed-grid'     },
+    { label: 'IP',      iso: lastUpdates.patents,  textColor: 'text-feed-patents',  dotColor: 'bg-feed-patents'  },
+    { label: 'JOBS',    iso: lastUpdates.jobs,     textColor: 'text-feed-jobs',     dotColor: 'bg-feed-jobs'     },
   ]
   return (
-    <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-500 backdrop-blur">
-      <span className="text-zinc-600">LIVE</span>
+    <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 text-meta font-mono uppercase tracking-wider text-fg-muted shadow-panel backdrop-blur">
+      <span className="text-fg-dim">LIVE</span>
       {entries.map((e) => (
         <span key={e.label} className="flex items-center gap-1">
-          <span className={'inline-block h-1.5 w-1.5 rounded-full ' + (e.iso ? e.dotColor : 'bg-zinc-700')} />
-          <span className="text-zinc-500">{e.label}</span>
-          <span className={e.iso ? e.textColor : 'text-zinc-700'}>{e.iso ? agoStr(e.iso) : 'never'}</span>
+          <span className={'inline-block h-1.5 w-1.5 rounded-full ' + (e.iso ? e.dotColor : 'bg-fg-dim')} />
+          <span className="text-fg-muted">{e.label}</span>
+          <span className={e.iso ? e.textColor : 'text-fg-dim'}>{e.iso ? agoStr(e.iso) : 'never'}</span>
         </span>
       ))}
     </div>
