@@ -178,13 +178,19 @@ async function fetchApplications(name: string, opts: FetchOpts = {}): Promise<Od
     return null
   }
   const limit = opts.limit ?? 200
-  const pageSize = 100
+  // 25/page = ~6KB/page, well under USPTO's per-response payload cap. Larger
+  // pages (100) returned HTTP 413 for high-volume assignees like Google LLC
+  // (678 TTM) and Qualcomm (1824 TTM). Smaller pages are slower but bulletproof.
+  const pageSize = 25
   const since = ttmStartDate()
   const today = todayIso()
 
-  // Search firstApplicantName OR applicantBag.applicantNameText — phrase-quoted
-  // to avoid token-level false positives ('Intel' matching 'Intellectual...').
-  const q = `applicationMetaData.firstApplicantName:"${name}" OR applicationMetaData.applicantBag.applicantNameText:"${name}"`
+  // Use only firstApplicantName (the indexed top-level field). The earlier OR
+  // fallback to applicantBag.applicantNameText doubled the hit count, which
+  // pushed high-volume cos like Google/Qualcomm past USPTO's response-size
+  // limit and triggered HTTP 413. Big corps file under their corp name —
+  // they don't need the fallback path.
+  const q = `applicationMetaData.firstApplicantName:"${name}"`
   // Range-filter on filing date so TTM count is computed server-side, not
   // by post-filtering a giant set. `rangeFilters` syntax is `<field> <from>:<to>`.
   const rangeFilters = `applicationMetaData.filingDate ${since}:${today}`
