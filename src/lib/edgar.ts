@@ -254,11 +254,14 @@ export interface ParsedInsiderTx {
   acquiredOrDisposed: string | null  // 'A' or 'D'
 }
 
-/** Form 4 primary doc lives at a stable path inside the filing folder. */
-export function form4PrimaryDocUrl(cik: string, accession: string): string {
+/** Build the URL for a Form 4 filing's primary XML document.
+ * The filename varies per filing (e.g. "wk-form4_1774386816.xml") and is
+ * carried in the EdgarFiling.primaryDocument field from submissions.json.
+ * NEVER hardcode "primary_doc.xml" — that path returns NoSuchKey. */
+export function form4PrimaryDocUrl(cik: string, accession: string, primaryDocument: string): string {
   const cikInt = parseInt(cik, 10)
   const accNoDashes = accession.replace(/-/g, '')
-  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/primary_doc.xml`
+  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/${primaryDocument}`
 }
 
 /**
@@ -367,8 +370,8 @@ function unwrapValue(node: unknown): string | null {
 }
 
 /** Pull a single Form 4 XML + parse it. */
-export async function fetchForm4(cik: string, accession: string): Promise<ParsedInsiderTx[]> {
-  const url = form4PrimaryDocUrl(cik, accession)
+export async function fetchForm4(cik: string, accession: string, primaryDocument: string): Promise<ParsedInsiderTx[]> {
+  const url = form4PrimaryDocUrl(cik, accession, primaryDocument)
   try {
     const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/xml' } })
     if (!r.ok) return []

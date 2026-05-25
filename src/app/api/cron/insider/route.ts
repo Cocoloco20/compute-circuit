@@ -89,7 +89,7 @@ export async function GET(req: NextRequest) {
     )
     for (const f of recentForm4s) {
       if (xmlFetches >= MAX_XML_FETCHES_PER_RUN) break outer
-      const txns = await fetchForm4(co.cik, f.accessionNumber)
+      const txns = await fetchForm4(co.cik, f.accessionNumber, f.primaryDocument)
       xmlFetches++
       perCo[co.id].form4s++
       for (const t of txns) {
@@ -109,7 +109,7 @@ export async function GET(req: NextRequest) {
           value_usd: t.valueUsd,
           transaction_code: t.transactionCode,
           acquired_or_disposed: t.acquiredOrDisposed,
-          source_url: form4PrimaryDocUrl(co.cik, f.accessionNumber),
+          source_url: form4PrimaryDocUrl(co.cik, f.accessionNumber, f.primaryDocument),
         })
         perCo[co.id].transactions++
       }
