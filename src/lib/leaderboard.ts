@@ -37,7 +37,9 @@ export interface LMArenaRawModel {
   displayName?: string
   name?: string
   model_name?: string
+  modelDisplayName?: string
   organization?: string
+  modelOrganization?: string
   rank?: number
   overall?: number
   rankByModality?: {
@@ -48,6 +50,7 @@ export interface LMArenaRawModel {
   parameters?: number | string
   elo?: number
   elo_rating?: number
+  rating?: number
 }
 
 export interface AAModel {
@@ -75,7 +78,7 @@ function parseLMArenaDataList(list: LMArenaRawModel[]) {
     params_b: number | null
   }>()
   for (const obj of list) {
-    const name = obj.publicName || obj.displayName || obj.name || obj.model_name
+    const name = obj.modelDisplayName || obj.publicName || obj.displayName || obj.name || obj.model_name
     if (!name) continue
 
     // Get rank
@@ -94,13 +97,13 @@ function parseLMArenaDataList(list: LMArenaRawModel[]) {
     let license: 'open' | 'closed' | 'unknown' = 'unknown'
     if (obj.license) {
       const licLower = String(obj.license).toLowerCase()
-      if (licLower.includes('open') || licLower.includes('apache') || licLower.includes('mit') || licLower.includes('llama')) {
+      if (licLower.includes('open') || licLower.includes('apache') || licLower.includes('mit') || licLower.includes('llama') || licLower.includes('permissive')) {
         license = 'open'
       } else if (licLower.includes('proprietary') || licLower.includes('closed') || licLower.includes('commercial')) {
         license = 'closed'
       }
     } else {
-      const orgLower = String(obj.organization || '').toLowerCase()
+      const orgLower = String(obj.modelOrganization || obj.organization || '').toLowerCase()
       const nameLower = name.toLowerCase()
       if (orgLower.includes('meta') || orgLower.includes('mistral') || nameLower.includes('llama') || nameLower.includes('qwen') || nameLower.includes('deepseek') || nameLower.includes('yi-') || nameLower.includes('gemma')) {
         license = 'open'
@@ -121,10 +124,10 @@ function parseLMArenaDataList(list: LMArenaRawModel[]) {
       }
     }
 
-    const elo_score = obj.elo !== undefined ? Number(obj.elo) : (obj.elo_rating !== undefined ? Number(obj.elo_rating) : null)
+    const elo_score = obj.rating !== undefined ? Number(obj.rating) : (obj.elo !== undefined ? Number(obj.elo) : (obj.elo_rating !== undefined ? Number(obj.elo_rating) : null))
 
     const existing = modelsMap.get(name)
-    if (!existing || (rank < existing.elo_rank)) {
+    if (!existing) {
       modelsMap.set(name, {
         model_name: name,
         elo_score: elo_score,
@@ -133,6 +136,19 @@ function parseLMArenaDataList(list: LMArenaRawModel[]) {
         license,
         params_b
       })
+    } else {
+      if (rank < existing.elo_rank) {
+        existing.elo_rank = rank
+      }
+      if (existing.elo_score === null && elo_score !== null) {
+        existing.elo_score = elo_score
+      }
+      if (existing.params_b === null && params_b !== null) {
+        existing.params_b = params_b
+      }
+      if (existing.license === 'unknown' && license !== 'unknown') {
+        existing.license = license
+      }
     }
   }
 
@@ -183,22 +199,39 @@ export async function scrapeLmarenaHtml(url: string): Promise<LMArenaRawModel[]>
   while (true) {
     const indexId = rscText.indexOf('{"id":"', pos)
     const indexName = rscText.indexOf('{"name":"', pos)
+    const indexModelDisplayName = rscText.indexOf('"modelDisplayName"', pos)
+    
     let index = -1
-    if (indexId !== -1 && indexName !== -1) {
-      index = Math.min(indexId, indexName)
-    } else if (indexId !== -1) {
-      index = indexId
-    } else {
-      index = indexName
+    let isModelDisplayName = false
+    
+    const indices = [
+      { idx: indexId, isMDN: false },
+      { idx: indexName, isMDN: false },
+      { idx: indexModelDisplayName, isMDN: true }
+    ].filter(x => x.idx !== -1)
+    
+    if (indices.length > 0) {
+      indices.sort((a, b) => a.idx - b.idx)
+      index = indices[0].idx
+      isModelDisplayName = indices[0].isMDN
     }
     
     if (index === -1) break
     
+    let start = index
+    if (isModelDisplayName) {
+      start = rscText.lastIndexOf('{', index)
+      if (start === -1) {
+        pos = index + 1
+        continue
+      }
+    }
+    
     let braceCount = 0
-    let end = index
+    let end = start
     let inString = false
     let escape = false
-    for (let i = index; i < rscText.length; i++) {
+    for (let i = start; i < rscText.length; i++) {
       const char = rscText[i]
       if (escape) {
         escape = false
@@ -223,11 +256,11 @@ export async function scrapeLmarenaHtml(url: string): Promise<LMArenaRawModel[]>
         }
       }
     }
-    if (end > index) {
-      const candidate = rscText.substring(index, end)
+    if (end > start) {
+      const candidate = rscText.substring(start, end)
       try {
         const obj = JSON.parse(candidate) as LMArenaRawModel
-        if (obj.organization && (obj.name || obj.displayName || obj.publicName)) {
+        if (obj.modelDisplayName || obj.organization || obj.modelOrganization) {
           results.push(obj)
         }
       } catch {
