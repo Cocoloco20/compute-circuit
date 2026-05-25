@@ -1,101 +1,129 @@
-# Data Quality Cleanup — 2026-05-25
+# Daily Email Digest — Setup & Handoff
 
-One-shot Supabase clean-up of the `companies` table and FK-linked child tables.
-Applied via `scripts/data-quality-apply.js` (single transaction, COMMIT or ROLLBACK).
-Audit script is `scripts/data-quality-audit.js` (read-only — re-run any time).
+> Feature #2: Single-user watchlist + daily 8 AM ET email digest.
+> Turns Compute Circuit from "open sometimes" into a habit by pushing
+> high-signal overnight deltas straight to your inbox.
 
-## Summary
+---
 
-| Type           | Count | Detail                                                                  |
-| -------------- | ----- | ----------------------------------------------------------------------- |
-| Merges         | 1     | `vastai` -> `vast-ai`                                                   |
-| Deletes        | 1     | `vastai` (after FK reassignment)                                        |
-| Renames        | 4     | `easic-corp.name`, `nvda.name`, `sumco.name`, `arm.hf_org`              |
-| Reassigns      | 1     | `job_snapshots.company_id` from `vastai` to `vast-ai`                   |
-| Dedup-drops    | 2     | `social_mentions` duplicates from `vastai` (vast-ai already had them)   |
-| Flagged review | 4     | `seamicro-inc`, `nirvanix-inc`, `easic-corp`, `xai.assignee_name`       |
+## What was built
 
-Company count: **105 -> 104**.
+| File | Purpose |
+|------|---------|
+| `src/lib/email.ts` | Thin Resend API wrapper (`sendEmail`) — no SDK, pure fetch |
+| `src/lib/digest.ts` | `buildDigest()` + `renderEmailHtml()` — compute + render |
+| `src/app/api/cron/digest/route.ts` | GET endpoint; Bearer-authed; calls fetch→build→send |
+| `vercel.json` | Added `"0 12 * * *"` cron for `/api/cron/digest` (8 AM ET) |
+| `src/app/api/cron/daily/route.ts` | Wired digest call at the END (skips if `RESEND_API_KEY` missing) |
+| `.env.example` | Documents `RESEND_API_KEY`, `DIGEST_EMAIL`, `WATCHLIST_CO_IDS` |
 
-## Merges
+### Signals computed per watched company
 
-### `vastai` -> `vast-ai`
-- Same `domain` (`vast.ai`), same `name` (`Vast.ai`), id Levenshtein distance 1.
-- `vast-ai` had data-weight 11 (8 signals, 1 flow link, full thesis text + conviction)
-  vs. `vastai` weight 3 (1 job snapshot, 2 social mentions, no thesis).
-- `vast-ai` kept. `vastai` rows reassigned and `vastai` row deleted.
+| Signal | Source data | Window |
+|--------|------------|--------|
+| Price % change | `companies.last_price` vs `prev_close` | Today |
+| New 8-K filings | `signals` table (`source='sec-edgar'`, `form_type='8-K'`) | 24h |
+| News count + top headline | `signals` table (`source='google-news'`) | 24h |
+| Insider net $ | `insider_transactions.value_usd` × acquired/disposed | 24h |
+| Hiring delta | `job_snapshots.total_open` vs prior snapshot | Today vs yesterday |
+| Funding round | `funding_rounds.filed_date` | 7 days |
+| Top model ELO rank change | `model_leaderboard` by `company_id` | Latest vs prior snapshot |
 
-FK reassignment trail:
-- `job_snapshots`: 1 row reassigned (vast-ai had 0)
-- `social_mentions`: 2 vastai rows were *exact duplicates* of vast-ai's (same
-  `(company_id, snapshot_date, source)` tuple from the same scraper). Dropped
-  the vastai copies; vast-ai's were already canonical.
-- All other child tables (signal_companies, holdings, company_backers,
-  patent_snapshots, hf_activity, insider_transactions, github_activity,
-  transcript_signals, grid_demand_snapshots, bottleneck_beneficiaries,
-  fundamentals, model_leaderboard, funding_rounds, flows): vastai had zero rows.
+---
 
-## Renames
+## 1. Sign up for Resend (free)
 
-| id           | column      | old             | new                       | reason                                         |
-| ------------ | ----------- | --------------- | ------------------------- | ---------------------------------------------- |
-| `easic-corp` | `name`      | `EASIC CORP`    | `eASIC Corporation`       | All-caps artifact from Khosla portfolio scrape |
-| `nvda`       | `name`      | `NVIDIA`        | `NVIDIA Corporation`      | Canonical brand (NVIDIA is correct all-caps,   |
-|              |             |                 |                           | but the legal entity is "NVIDIA Corporation")  |
-| `sumco`      | `name`      | `SUMCO`         | `SUMCO Corporation`       | All-caps; legal entity is "SUMCO Corporation"  |
-| `arm`        | `hf_org`    | `arm`           | `Arm`                     | `arm` returns 0 models on HF; `Arm` is the     |
-|              |             |                 |                           | real org and returns 2 (e.g.                   |
-|              |             |                 |                           | `Arm/neural-super-sampling`).                  |
+1. Go to [resend.com](https://resend.com) → **Sign Up** (no credit card needed for free tier — 3,000 emails/month)
+2. In the Resend dashboard, go to **API Keys** → **Create API Key**
+   - Name it something like `compute-circuit-digest`
+   - Permission: **Sending access**
+3. Copy the key — it starts with `re_`
 
-## Flagged for User Review (NOT auto-applied — be conservative)
+> **From address**: Until you verify a custom domain, emails come from
+> `onboarding@resend.dev`. This is Resend's sandbox default and works fine
+> for personal use. To use `digest@compute-circuit.vercel.app`, you'll need
+> to verify the domain in the Resend dashboard → **Domains** → **Add Domain**.
 
-### `seamicro-inc`
-Acquired by AMD in 2012, shut down in 2015 — defunct. Was added by an old Khosla
-portfolio scraper run. The DB still shows 8 `signals` and 1 `company_backers`
-linkage. The signals are likely name-collision news entries (the name
-"seamicro" still appears in some legacy compute history articles). One social
-mention from 12 days ago is also likely a stale crawl hit.
+---
 
-**Suggested action:** delete with `DELETE FROM companies WHERE id='seamicro-inc';`
-(CASCADE will wipe the signals + backers — confirm OK with user first).
+## 2. Set environment variables in Vercel
 
-### `nirvanix-inc`
-Defunct since 2013 (filed for liquidation September 2013). Zero recent activity:
-no signals, no jobs, no funding rounds. Last activity > 1500 days ago.
+Go to your Vercel project → **Settings** → **Environment Variables** and add:
 
-**Suggested action:** delete with `DELETE FROM companies WHERE id='nirvanix-inc';`.
+| Variable | Example value | Notes |
+|----------|--------------|-------|
+| `RESEND_API_KEY` | `re_abc123...` | From step 1 |
+| `DIGEST_EMAIL` | `you@gmail.com` | Where to send the daily email |
+| `WATCHLIST_CO_IDS` | `uuid-1,uuid-2,uuid-3` | See below |
+| `CRON_SECRET` | `a-long-random-string` | Already set if daily cron works |
 
-### `easic-corp`
-Acquired by Intel in 2018 — defunct as a standalone. Renamed for clarity but
-kept in DB as historical Khosla-portfolio entry (1 stale signal at ~385d).
-User may want to delete; left in place for now per "conservative" rule.
+### Finding company IDs for `WATCHLIST_CO_IDS`
 
-### `xai.assignee_name`
-Investigated 11 variants against USPTO ODP API (X.AI Corp, X.AI Corp., X.AI
-Corporation, X.AI LLC, X.AI Holdings, XAI Corp, XAI Corporation, xAI Corp,
-XAI, xAI, X.AI). All return either HTTP 404 or unrelated entities (e.g. `XAI`
-matches `MINED XAI LLC`, an unrelated explainable-AI company). xAI Corp was
-founded mid-2023, so most patent applications likely haven't published yet
-(USPTO publishes 18 months after filing). **`assignee_name` left null** —
-this is the correct value. Re-check in Q3 2026 when more filings should
-have published.
+Run in the Supabase SQL editor:
+```sql
+SELECT id, name, ticker FROM companies ORDER BY name;
+```
+Copy the `id` values (UUIDs) for your 8–15 companies of interest, comma-separated, no spaces.
 
-## Audit Findings — Not Acted On
+---
 
-The audit surfaced 70+ "duplicate" candidate pairs at conf=0.30 (Levenshtein=2
-on 3-4 char ticker IDs like `vrt`/`vst`, `wolf`/`wulf`, `nbis`/`qbts`, etc.).
-All are clearly distinct companies that happen to have similar tickers (Vertiv
-vs Vistra; Wolfspeed vs TeraWulf; Nebius vs D-Wave Quantum). The audit tool
-intentionally reports them; the apply tool intentionally ignores them.
+## 3. Verify the email works (manual trigger)
 
-## Re-running
+After deploying to Vercel:
 
 ```bash
-# Read-only audit (safe any time)
-node scripts/data-quality-audit.js
-
-# Apply fixes (idempotent — guarded by name='OLD' WHERE clauses)
-node scripts/data-quality-apply.js
+curl -s -H "Authorization: Bearer $CRON_SECRET" \
+  https://compute-circuit.vercel.app/api/cron/digest | jq .
 ```
 
-`npm run build` is unaffected — no application code changed.
+Expected response:
+```json
+{
+  "ok": true,
+  "emailId": "abc123...",
+  "recipient": "you@gmail.com",
+  "watchedCos": 12,
+  "anySignals": true,
+  "generatedAt": "2026-05-25T12:00:00.000Z"
+}
+```
+
+Then check your inbox — you should see the email within 30 seconds.
+
+---
+
+## 4. Schedule
+
+The digest runs automatically via two paths:
+
+| Trigger | Time | Route |
+|---------|------|-------|
+| Dedicated cron | 08:00 AM ET (12:00 UTC) daily | `/api/cron/digest` |
+| After nightly data cron | 10:00 PM UTC (if `RESEND_API_KEY` set) | Called by `/api/cron/daily` |
+
+You'll typically get one email per day — the 8 AM one. The 10 PM call via
+the daily dispatcher is a backup in case the dedicated schedule ever misses.
+
+> **Hobby plan note**: Vercel Hobby now supports 2 cron jobs. We're using both
+> slots (`/api/cron/daily` at 22:00 UTC, `/api/cron/digest` at 12:00 UTC).
+> If you upgrade to Pro, you can add more granular schedules.
+
+---
+
+## 5. Customising the watchlist
+
+The watchlist is intentionally a single env var (`WATCHLIST_CO_IDS`) so there's
+no UI or database table to maintain. To change which companies appear in the digest:
+
+1. Update `WATCHLIST_CO_IDS` in Vercel env vars
+2. Redeploy (or just wait — env vars are read at runtime, so the next cron invocation picks up the change automatically)
+
+---
+
+## Future enhancements (when crons ship)
+
+The digest renderer already has placeholder slots for:
+- **IR-page diff** — wired in when the IR diff cron lands
+- **Regulatory event tags** — wired in when the regulatory cron lands
+
+These will surface automatically once those crons populate the relevant tables.
