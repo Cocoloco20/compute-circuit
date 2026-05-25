@@ -19,6 +19,7 @@
 
 import { useMemo, useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
+import { topCapexRunRate, type CapexRunRateRow } from '@/lib/capex'
 import type { SelectedRef } from './compute-graph'
 
 interface Props {
@@ -39,6 +40,8 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
   const insider = useInsiderWeek(data)
   const hiring = useHiringRamps(data)
   const funding = useFunding90d(data)
+  const gpuSpot = useGpuSpot24h(data)
+  const capex = useCapexRunRateTop(data)
 
   // Mobile variant: no chrome, no collapsible header (the parent sheet's
   // header already supplies title + close). Just stacked sections.
@@ -52,6 +55,9 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
           insider={insider}
           funding={funding}
           hiring={hiring}
+          gpuSpot={gpuSpot}
+          capex={capex}
+          companies={data.companies}
           onSelect={onSelect}
         />
       </div>
@@ -77,6 +83,9 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
             insider={insider}
             funding={funding}
             hiring={hiring}
+            gpuSpot={gpuSpot}
+            capex={capex}
+            companies={data.companies}
             onSelect={onSelect}
           />
         </div>
@@ -92,10 +101,13 @@ interface PulseSectionsProps {
   insider: InsiderRow[]
   funding: FundingRow[]
   hiring: HiringRow[]
+  gpuSpot: GpuSpotRow[]
+  capex: CapexRunRateRow[]
+  companies: GraphData['companies']
   onSelect: (sel: SelectedRef) => void
 }
 
-function PulseSections({ movers, filings, news, insider, funding, hiring, onSelect }: PulseSectionsProps) {
+function PulseSections({ movers, filings, news, insider, funding, hiring, gpuSpot, capex, companies, onSelect }: PulseSectionsProps) {
   return (
     <>
       <PulseSection title="Movers · 1d">
@@ -198,6 +210,66 @@ function PulseSections({ movers, filings, news, insider, funding, hiring, onSele
             }
           />
         ))}
+      </PulseSection>
+
+      <PulseSection title="GPU spot · 24h">
+        {gpuSpot.length === 0 ? <NoData /> : gpuSpot.map((g) => (
+          <PulseRow
+            key={g.model}
+            left={
+              <span className="text-fg-primary">
+                {g.model}
+                <span className="ml-1 font-mono text-fg-muted">
+                  ${g.median.toFixed(2)}/hr
+                </span>
+              </span>
+            }
+            right={
+              <span className={'font-mono ' + (
+                g.deltaPct == null ? 'text-fg-dim'
+                : g.deltaPct >= 0 ? 'text-signal-alert' : 'text-signal-healthy'
+              )}>
+                {g.deltaPct == null
+                  ? '—'
+                  : `${g.deltaPct >= 0 ? '+' : ''}${g.deltaPct.toFixed(1)}%`}
+              </span>
+            }
+          />
+        ))}
+      </PulseSection>
+
+      <PulseSection title="Capex run-rate · TTM">
+        {capex.length === 0 ? <NoData /> : capex.map((c) => {
+          const co = companies.find(x => x.id === c.companyId)
+          const yoy = c.yoy_pct
+          const yoyColor =
+            yoy == null ? 'text-fg-dim'
+            : yoy >= 20 ? 'text-signal-healthy'
+            : yoy >= 5 ? 'text-signal-warn'
+            : yoy >= -1 ? 'text-fg-secondary'
+            : 'text-signal-alert'
+          return (
+            <PulseRow
+              key={c.companyId}
+              onClick={() => onSelect({ kind: 'company', id: c.companyId })}
+              left={
+                <span className="text-fg-primary">
+                  {co?.ticker ?? co?.name ?? c.companyId}
+                  <span className="ml-1 font-mono text-fg-muted">
+                    {c.ttm >= 1_000_000_000
+                      ? `$${(c.ttm / 1_000_000_000).toFixed(1)}B`
+                      : `$${(c.ttm / 1_000_000).toFixed(0)}M`}
+                  </span>
+                </span>
+              }
+              right={
+                <span className={'font-mono ' + yoyColor}>
+                  {yoy == null ? '—' : `${yoy >= 0 ? '+' : ''}${yoy.toFixed(0)}%`}
+                </span>
+              }
+            />
+          )
+        })}
       </PulseSection>
     </>
   )
@@ -408,6 +480,69 @@ function useHiringRamps(data: GraphData): HiringRow[] {
     }
     return rows.sort((a, b) => b.delta - a.delta).slice(0, 5)
   }, [data])
+}
+
+// ---------- GPU spot 24h delta (top 5 by absolute delta) ----------
+//
+// Pivot gpu_spot_prices (only the 'blended' rows) by gpu_model. For each
+// model find the latest snapshot and the closest snapshot ~24h before it
+// (within ±2 days, so we tolerate gaps in the daily cron). Sort by the
+// absolute % delta descending — the models that moved most are surfaced.
+
+interface GpuSpotRow {
+  model: string
+  median: number
+  deltaPct: number | null
+  date: string
+}
+function useGpuSpot24h(data: GraphData): GpuSpotRow[] {
+  return useMemo(() => {
+    const byModel = new Map<string, GraphData['gpuSpot']>()
+    for (const r of data.gpuSpot) {
+      if (r.source !== 'blended') continue
+      const arr = byModel.get(r.gpu_model) ?? []
+      arr.push(r)
+      byModel.set(r.gpu_model, arr)
+    }
+    const rows: GpuSpotRow[] = []
+    for (const [model, snaps] of byModel) {
+      const sorted = snaps.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))
+      const latest = sorted[0]
+      if (!latest) continue
+      const latestMs = new Date(latest.snapshot_date).getTime()
+      const target = latestMs - 86_400_000   // 24h prior
+      let best: typeof latest | null = null
+      let bestDelta = Infinity
+      for (const s of sorted) {
+        const d = Math.abs(new Date(s.snapshot_date).getTime() - target)
+        if (d < bestDelta) { bestDelta = d; best = s }
+      }
+      // Accept snapshots up to ±2 days from the target (cron gaps).
+      const useDelta = best && best !== latest && bestDelta < 2 * 86_400_000 ? best : null
+      const deltaPct = useDelta && useDelta.median_usd_per_hour > 0
+        ? ((latest.median_usd_per_hour - useDelta.median_usd_per_hour) / useDelta.median_usd_per_hour) * 100
+        : null
+      rows.push({
+        model,
+        median: latest.median_usd_per_hour,
+        deltaPct,
+        date: latest.snapshot_date,
+      })
+    }
+    return rows
+      .sort((a, b) => Math.abs(b.deltaPct ?? 0) - Math.abs(a.deltaPct ?? 0))
+      .slice(0, 5)
+  }, [data])
+}
+
+// ---------- Capex TTM run-rate (top 5 hyperscalers) ----------
+//
+// Thin wrapper around src/lib/capex.ts::topCapexRunRate. The pure function
+// already returns sorted-by-TTM rows; we memoize against `data` so the
+// React render path stays cheap.
+
+function useCapexRunRateTop(data: GraphData): CapexRunRateRow[] {
+  return useMemo(() => topCapexRunRate(data, 5), [data])
 }
 
 // ---------- formatters ----------
