@@ -12,6 +12,8 @@ import type {
   Fundamental,
   InsiderTransaction,
   FundingRound,
+  TranscriptSignal,
+  GpuSpotPrice,
   HfActivity,
   GithubActivity,
   GridDemandSnapshot,
@@ -42,6 +44,8 @@ export interface GraphData {
   fundamentals: Fundamental[]     // XBRL metrics, last 2 years per company
   insiders: InsiderTransaction[]  // Form 4 transactions, last 90 days
   fundingRounds: FundingRound[]   // Form D filings, last 180 days
+  transcripts: TranscriptSignal[] // Earnings-8K NLP signals, last 180 days
+  gpuSpot: GpuSpotPrice[]         // GPU spot-price snapshots, last 35 days
   hfActivity: HfActivity[]        // latest HF snapshot per company
   githubActivity: GithubActivity[] // latest GitHub repo snapshot per company
   gridDemand: GridDemandSnapshot[] // EIA grid demand, last 35 days for delta
@@ -57,6 +61,8 @@ export interface GraphData {
     filings: string | null        // most-recent signals.date where source='sec-edgar'
     insider: string | null        // most-recent insider_transactions.filing_date
     fundingRounds: string | null  // most-recent funding_rounds.filed_date
+    transcripts: string | null    // most-recent transcript_signals.filed_date
+    gpuSpot: string | null        // most-recent gpu_spot_prices.snapshot_date
     hf: string | null             // most-recent hf_activity.snapshot_date
     github: string | null         // most-recent github_activity.snapshot_date
     holdings: string | null       // most-recent holdings.period
@@ -150,6 +156,24 @@ export async function fetchGraph(): Promise<GraphData> {
     .order('filed_date', { ascending: false })
     .limit(200)
 
+  // Transcript signals: last 180 days. ~30 public CIKed cos × ≤ 4 quarterly
+  // earnings 8-Ks/yr → ≤ 60 rows in window, well under the cap.
+  const tr = await sb
+    .from('transcript_signals')
+    .select('*')
+    .gte('filed_date', oneEightyDaysAgo)
+    .order('filed_date', { ascending: false })
+    .limit(500)
+
+  // GPU spot prices: last 35 days. 8 canonical models × 3 sources × 35 days
+  // = up to 840 rows — keep the limit ample so deltas always render.
+  const gpu = await sb
+    .from('gpu_spot_prices')
+    .select('*')
+    .gte('snapshot_date', new Date(Date.now() - 35 * 86_400_000).toISOString().slice(0, 10))
+    .order('snapshot_date', { ascending: false })
+    .limit(500)
+
   // HF activity: most recent snapshot per company. With ~20 hf-tagged cos
   // × 1 snapshot/day this is trivial.
   const hf = await sb
@@ -207,7 +231,7 @@ export async function fetchGraph(): Promise<GraphData> {
     }
   }
 
-  const errors = [l, i, c, b, f, bn, bb, s, sc, h, fnd, ins, fr, hf, gh].map(r => r.error).filter(Boolean)
+  const errors = [l, i, c, b, f, bn, bb, s, sc, h, fnd, ins, fr, tr, gpu, hf, gh].map(r => r.error).filter(Boolean)
   if (errors.length > 0) {
     throw new Error('Supabase fetch failed: ' + errors.map(e => e!.message).join('; '))
   }
@@ -225,6 +249,8 @@ export async function fetchGraph(): Promise<GraphData> {
     fundamentals: (fnd.data ?? []) as Fundamental[],
     insiders: (ins.data ?? []) as InsiderTransaction[],
     fundingRounds: (fr.data ?? []) as FundingRound[],
+    transcripts: (tr.data ?? []) as TranscriptSignal[],
+    gpuSpot: (gpu.data ?? []) as GpuSpotPrice[],
     hfActivity: (hf.data ?? []) as HfActivity[],
     githubActivity: (gh.data ?? []) as GithubActivity[],
     gridDemand: (gd.data ?? []) as GridDemandSnapshot[],
@@ -256,6 +282,14 @@ export async function fetchGraph(): Promise<GraphData> {
         .at(-1) ?? null,
       fundingRounds: ((fr.data ?? []) as FundingRound[])
         .map(x => x.filed_date)
+        .sort()
+        .at(-1) ?? null,
+      transcripts: ((tr.data ?? []) as TranscriptSignal[])
+        .map(x => x.filed_date)
+        .sort()
+        .at(-1) ?? null,
+      gpuSpot: ((gpu.data ?? []) as GpuSpotPrice[])
+        .map(x => x.snapshot_date)
         .sort()
         .at(-1) ?? null,
       hf: ((hf.data ?? []) as HfActivity[])

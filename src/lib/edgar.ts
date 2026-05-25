@@ -552,3 +552,98 @@ export async function fetchFormDOfferingForCik(
   }
   return out
 }
+
+// ---------- 8-K earnings-release fetcher ----------
+
+/**
+ * Filter a company's filings to 8-Ks with item 2.02 ("Results of Operations").
+ *
+ * Those are the earnings filings — the press release attached as exhibit
+ * 99.1 (and sometimes a supplemental slide deck) is the closest thing to
+ * an "earnings transcript" we can pull from EDGAR. Real Q&A transcripts
+ * live on third-party sites and aren't scrape-friendly.
+ *
+ * The `items` field on a filing is a comma-or-space-separated list like
+ * "2.02,9.01" — we split + trim + match. Returns sorted newest-first
+ * (by reportDate fall-back filingDate), capped to `limit`.
+ */
+export function filterEarningsResults8Ks(filings: EdgarFiling[], limit = 4): EdgarFiling[] {
+  const earnings = filings.filter((f) => {
+    if (f.form !== '8-K' && f.form !== '8-K/A') return false
+    const items = (f.items ?? '').split(/[,\s]+/).map((s) => s.trim()).filter(Boolean)
+    return items.includes('2.02')
+  })
+  earnings.sort((a, b) => {
+    const da = a.reportDate || a.filingDate
+    const db = b.reportDate || b.filingDate
+    return db.localeCompare(da)
+  })
+  return earnings.slice(0, limit)
+}
+
+/**
+ * Build the URL for an 8-K's primary document (the press release for
+ * item-2.02 filings).
+ *
+ * Like Form 4, the `primaryDocument` field can include a directory prefix
+ * (e.g. "xslF345X06/wk-form4...") — we want the bare filename.
+ */
+export function eightKPrimaryDocUrl(cik: string, accession: string, primaryDocument: string): string {
+  const cikInt = parseInt(cik, 10)
+  const accNoDashes = accession.replace(/-/g, '')
+  const bareFilename = primaryDocument.split('/').pop() ?? primaryDocument
+  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/${bareFilename}`
+}
+
+/**
+ * Fetch an 8-K filing's earnings exhibit and return { url, text }.
+ *
+ * Resolution strategy:
+ *   1) Pull index.json for the accession, look for ex99-1*.htm / ex99_1*.htm
+ *      / ex991*.htm / ex991*.txt — the canonical exhibit name for 8-K
+ *      item 2.02 press releases.
+ *   2) If none matches, fall back to the filing's primaryDocument.
+ *   3) Fetch the resolved URL; skip very large bodies (> 2 MB) since those
+ *      are probably slide decks.
+ *
+ * Returns null on any error (404, parse failure, oversize) so the caller
+ * just continues with the next filing.
+ */
+export async function fetchEarningsExhibitText(
+  cik: string,
+  accession: string,
+  primaryDocument: string,
+): Promise<{ url: string; text: string } | null> {
+  const cikInt = parseInt(cik, 10)
+  const accNoDashes = accession.replace(/-/g, '')
+  const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/index.json`
+  let exhibitUrl: string | null = null
+  try {
+    const r = await fetch(indexUrl, { headers: { 'User-Agent': UA, Accept: 'application/json' } })
+    if (r.ok) {
+      const data = (await r.json()) as { directory?: { item?: Array<{ name: string; size?: string }> } }
+      const items = data.directory?.item ?? []
+      const ex991 = items.find((i) => /^ex(?:hibit)?[\s_-]*99[\s_.-]*1[^/]*\.(?:htm|html|txt)$/i.test(i.name))
+        ?? items.find((i) => /^ex991[^/]*\.(?:htm|html|txt)$/i.test(i.name))
+      if (ex991) {
+        exhibitUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/${ex991.name}`
+      }
+    }
+  } catch {
+    // index fetch failed — fall through to primaryDocument
+  }
+  if (!exhibitUrl && primaryDocument) {
+    exhibitUrl = eightKPrimaryDocUrl(cik, accession, primaryDocument)
+  }
+  if (!exhibitUrl) return null
+  try {
+    const r = await fetch(exhibitUrl, { headers: { 'User-Agent': UA, Accept: 'text/html,text/plain' } })
+    if (!r.ok) return null
+    const lenHeader = r.headers.get('content-length')
+    if (lenHeader && Number(lenHeader) > 2_000_000) return null
+    const text = await r.text()
+    return { url: exhibitUrl, text }
+  } catch {
+    return null
+  }
+}

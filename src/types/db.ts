@@ -139,6 +139,21 @@ export interface FundingRound {
   created_at: string
 }
 
+export interface TranscriptSignal {
+  id: string
+  company_id: string
+  filed_date: string                    // YYYY-MM-DD
+  accession: string                     // SEC accession; dedup key
+  ai_mentions: number
+  gpu_mentions: number
+  capex_mentions: number
+  data_center_mentions: number
+  token_mentions: number
+  extracted_phrases: Array<{ phrase: string; context_snippet: string }>
+  source_url: string | null
+  created_at: string
+}
+
 export interface InsiderTransaction {
   id: string
   company_id: string
@@ -206,6 +221,18 @@ export interface JobSnapshotRow {
   top_categories: Array<{ name: string; count: number }>  // jsonb full set, sorted desc by count
   source_provider: string  // 'greenhouse' | 'lever' | 'ashby'
   source_slug: string
+  created_at: string
+}
+
+export interface GpuSpotPrice {
+  id: string
+  snapshot_date: string
+  gpu_model: string                  // 'H100 80GB SXM5' | 'A100 80GB' | 'RTX 4090' | ...
+  median_usd_per_hour: number
+  p25_usd_per_hour: number | null
+  p75_usd_per_hour: number | null
+  listing_count: number
+  source: 'vast.ai' | 'runpod' | 'blended'
   created_at: string
 }
 
@@ -292,10 +319,12 @@ export interface Database {
       fundamentals: { Row: Fundamental; Insert: Omit<Fundamental, 'id' | 'updated_at'> & { id?: string; updated_at?: string }; Update: Partial<Fundamental> }
       insider_transactions: { Row: InsiderTransaction; Insert: Omit<InsiderTransaction, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<InsiderTransaction> }
       funding_rounds: { Row: FundingRound; Insert: Omit<FundingRound, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<FundingRound> }
+      transcript_signals: { Row: TranscriptSignal; Insert: Omit<TranscriptSignal, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<TranscriptSignal> }
       hf_activity: { Row: HfActivity; Insert: Omit<HfActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<HfActivity> }
       github_activity: { Row: GithubActivity; Insert: Omit<GithubActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GithubActivity> }
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
+      gpu_spot_prices: { Row: GpuSpotPrice; Insert: Omit<GpuSpotPrice, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GpuSpotPrice> }
       grid_demand_snapshots: { Row: GridDemandSnapshot; Insert: Omit<GridDemandSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GridDemandSnapshot> }
       eia_commodity_snapshots: { Row: EiaCommoditySnapshot; Insert: Omit<EiaCommoditySnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaCommoditySnapshot> }
       eia_fuelmix_snapshots: { Row: EiaFuelMixSnapshot; Insert: Omit<EiaFuelMixSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaFuelMixSnapshot> }
