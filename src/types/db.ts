@@ -201,6 +201,21 @@ export interface ModelLeaderboardEntry {
   created_at: string
 }
 
+export interface SocialMention {
+  id: string
+  company_id: string
+  snapshot_date: string
+  source: string // 'hn' | 'reddit'
+  mentions_24h: number
+  mentions_7d: number
+  top_post_url: string | null
+  top_post_title: string | null
+  top_post_score: number | null
+  top_post_comments: number | null
+  sample_subreddits: string[] | null
+  created_at: string
+}
+
 export interface GithubActivity {
   id: string
   company_id: string
@@ -336,6 +351,7 @@ export interface Database {
       hf_activity: { Row: HfActivity; Insert: Omit<HfActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<HfActivity> }
       model_leaderboard: { Row: ModelLeaderboardEntry; Insert: Omit<ModelLeaderboardEntry, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<ModelLeaderboardEntry> }
       github_activity: { Row: GithubActivity; Insert: Omit<GithubActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GithubActivity> }
+      social_mentions: { Row: SocialMention; Insert: Omit<SocialMention, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<SocialMention> }
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
       gpu_spot_prices: { Row: GpuSpotPrice; Insert: Omit<GpuSpotPrice, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GpuSpotPrice> }

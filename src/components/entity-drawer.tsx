@@ -15,7 +15,7 @@
 
 import { useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound, TranscriptSignal } from '@/types/db'
+import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound, TranscriptSignal, SocialMention } from '@/types/db'
 import { computeCapexTTM } from '@/lib/capex'
 import { CPC_SUBCLASS_LABELS } from '@/lib/uspto'
 import { getLogoUrl } from '@/lib/logo'
@@ -1115,6 +1115,77 @@ function HiringPulseChip({ rows }: { rows: JobSnapshotRow[] }) {
   )
 }
 
+function BuzzChip({ rows }: { rows: SocialMention[] }) {
+  if (rows.length === 0) return null
+
+  // Find latest HN and Reddit rows
+  const hnRows = rows.filter(r => r.source === 'hn')
+  const redditRows = rows.filter(r => r.source === 'reddit')
+
+  const latestHn = hnRows.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))[0]
+  const latestReddit = redditRows.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))[0]
+
+  if (!latestHn && !latestReddit) return null
+
+  const hn7d = latestHn?.mentions_7d ?? 0
+  const hn24h = latestHn?.mentions_24h ?? 0
+  const reddit7d = latestReddit?.mentions_7d ?? 0
+  const reddit24h = latestReddit?.mentions_24h ?? 0
+  const total7d = hn7d + reddit7d
+
+  const sub = latestReddit?.sample_subreddits?.[0] ? `r/${latestReddit.sample_subreddits[0]}` : null
+
+  // Top post between both sources
+  const hnScore = latestHn?.top_post_score ?? 0
+  const redditScore = latestReddit?.top_post_score ?? 0
+  const topPost = hnScore >= redditScore ? latestHn : latestReddit
+  const topTitle = topPost?.top_post_title
+  const topUrl = topPost?.top_post_url
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1.5 shadow-card">
+      <div className="flex items-baseline justify-between">
+        <div className="text-label text-fg-muted">Buzz · 7d</div>
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-sm text-fg-primary">{total7d}</span>
+          <span className="text-meta text-fg-muted">mentions</span>
+        </div>
+      </div>
+      <div className="mt-0.5 flex items-center gap-2 text-meta font-mono text-fg-secondary">
+        {latestHn && (
+          <span>
+            HN×{hn7d} <span className="text-signal-healthy">+{hn24h}</span>
+          </span>
+        )}
+        {latestHn && latestReddit && <span className="text-fg-dim">·</span>}
+        {latestReddit && (
+          <span>
+            Reddit×{reddit7d} <span className="text-signal-healthy">+{reddit24h}</span>
+          </span>
+        )}
+        {sub && (
+          <>
+            <span className="text-fg-dim">·</span>
+            <span className="text-fg-muted">{sub}</span>
+          </>
+        )}
+      </div>
+      {topTitle && (
+        <div className="mt-0.5 text-[9px] truncate text-fg-muted" title={topTitle}>
+          top:{' '}
+          {topUrl ? (
+            <a href={topUrl} target="_blank" rel="noreferrer" className="text-fg-primary hover:text-accent-primary">
+              &apos;{topTitle}&apos;
+            </a>
+          ) : (
+            <span className="text-fg-primary">&apos;{topTitle}&apos;</span>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PowerPressureChip({ rows }: { rows: GridDemandSnapshot[] }) {
   if (rows.length === 0) return null
   const latest = rows.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))[0]
@@ -1251,11 +1322,13 @@ function SignalChips({ companyId, data }: { companyId: string; data: GraphData }
   const grid = data.gridDemand.filter(g => g.company_id === companyId)
   const patents = data.patents.filter(p => p.company_id === companyId)
   const github = data.githubActivity.filter(g => g.company_id === companyId)
+  const social = data.socialMentions?.filter(s => s.company_id === companyId) || []
   const company = data.companies.find(c => c.id === companyId)
-  if (jobs.length === 0 && grid.length === 0 && patents.length === 0 && github.length === 0) return null
+  if (jobs.length === 0 && grid.length === 0 && patents.length === 0 && github.length === 0 && social.length === 0) return null
   return (
     <div className="mb-4 grid grid-cols-1 gap-2">
       {jobs.length    > 0 && <HiringPulseChip   rows={jobs}    />}
+      {social.length  > 0 && <BuzzChip           rows={social}  />}
       {grid.length    > 0 && <PowerPressureChip rows={grid}    />}
       {patents.length > 0 && <RDVelocityChip    rows={patents} />}
       {github.length  > 0 && <GitHubActivityChip rows={github} companyName={company?.name ?? companyId} />}
