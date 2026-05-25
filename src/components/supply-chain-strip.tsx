@@ -498,6 +498,20 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
           : `${modelsEntries[0].label} ${fmtNum(modelsEntries[0].value, modelsEntries[0].unit)}`,
       },
       {
+        layer: 'gpu',
+        label: 'GPU',
+        emoji: '🟩',
+        entries: gpuEntries,
+        worstTone: gpuChipTone,
+        // Headline: $/H100/hr blended median (falls back to whatever the
+        // top entry is if no headline H100 data yet).
+        headline: gpuEntries.length === 0
+          ? 'no data'
+          : headlineGpu
+            ? `$${headlineGpu.median_usd_per_hour.toFixed(2)}/H100/hr`
+            : `$${gpuEntries[0].value.toFixed(2)}/${gpuEntries[0].label.split(' ')[0]}/hr`,
+      },
+      {
         layer: 'btc',
         label: 'BTC',
         emoji: '₿',
