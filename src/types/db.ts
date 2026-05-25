@@ -80,6 +80,39 @@ export interface GridDemandSnapshot {
   created_at: string
 }
 
+export interface EiaCommoditySnapshot {
+  id: string
+  series_id: string         // 'NG.HENRY_HUB.D' | 'NUC.OUTAGE_US.D' | ...
+  snapshot_date: string
+  value: number
+  unit: string
+  label: string | null
+  source_series: string | null
+  created_at: string
+}
+
+export interface EiaFuelMixSnapshot {
+  id: string
+  region: string
+  snapshot_date: string
+  fuel_mix: Record<string, number>  // { nuclear: 33.2, natural_gas: 41.1, ... } — % of 24h gen
+  total_mwh: number | null
+  carbon_g_per_kwh: number | null
+  created_at: string
+}
+
+export interface EiaInternationalSnapshot {
+  id: string
+  country_id: string                // 'TWN' | 'KOR' | 'JPN' | 'NLD' | 'SGP' | 'IRL'
+  country_label: string
+  fab_exposure: string              // 'TSMC' | 'Samsung / SK Hynix' | ...
+  snapshot_date: string
+  latest_year: number
+  net_generation_twh: number
+  yoy_pct: number | null
+  created_at: string
+}
+
 export interface InsiderTransaction {
   id: string
   company_id: string
@@ -222,6 +255,9 @@ export interface Database {
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
       grid_demand_snapshots: { Row: GridDemandSnapshot; Insert: Omit<GridDemandSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GridDemandSnapshot> }
+      eia_commodity_snapshots: { Row: EiaCommoditySnapshot; Insert: Omit<EiaCommoditySnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaCommoditySnapshot> }
+      eia_fuelmix_snapshots: { Row: EiaFuelMixSnapshot; Insert: Omit<EiaFuelMixSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaFuelMixSnapshot> }
+      eia_international_snapshots: { Row: EiaInternationalSnapshot; Insert: Omit<EiaInternationalSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaInternationalSnapshot> }
       company_backers: { Row: CompanyBacker; Insert: CompanyBacker; Update: Partial<CompanyBacker> }
       flows: { Row: Flow; Insert: Partial<Pick<Flow, 'id' | 'created_at' | 'note'>> & Omit<Flow, 'id' | 'created_at' | 'note'> & { note?: string | null }; Update: Partial<Flow> }
       bottlenecks: { Row: Bottleneck; Insert: Omit<Bottleneck, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Bottleneck> }
