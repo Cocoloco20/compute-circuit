@@ -74,6 +74,12 @@ export interface Company {
   google_trends_term: string | null
   arxiv_affiliation: string | null
   youtube_channel: string | null
+  // Phase 7C-lite (migration 0041): HQ geographic coordinates for the
+  // 2D world map view. Null for cos with no confirmed HQ city — those
+  // get skipped by world-map.tsx and the future Three.js globe.
+  hq_lat: number | null
+  hq_lng: number | null
+  hq_city: string | null
   created_at: string
   updated_at: string
 }

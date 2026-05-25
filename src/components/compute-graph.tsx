@@ -30,6 +30,7 @@ import EntityDrawer from './entity-drawer'
 import CommandPalette from './command-palette'
 import PulseBoard from './pulse-board'
 import SupplyChainStrip from './supply-chain-strip'
+import WorldMap from './world-map'
 
 // ---------- visual constants ----------
 
@@ -172,6 +173,11 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   // Desktop layout uses `md:` breakpoints to ignore this entirely.
   const [mobileSheet, setMobileSheet] = useState<'pulse' | 'chain' | 'search' | null>(null)
 
+  // Phase 7C-lite: top-bar toggle between the 3D ecosystem graph and the
+  // 2D world map. The Pulse Board, Supply Chain Strip, ⌘K, and drawer are
+  // orthogonal to view mode — they render regardless.
+  const [viewMode, setViewMode] = useState<'graph' | 'world'>('graph')
+
   const positions = useMemo(() => computePositions(data), [data])
 
   // Filter set — which companies + investors are highlighted. Composes from all
@@ -223,6 +229,9 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   // ---------- main THREE setup ----------
 
   useEffect(() => {
+    // Don't mount three.js when the user is in 2D world view — the renderer
+    // would attach to nothing and leak GPU memory on every toggle.
+    if (viewMode !== 'graph') return
     const mount = mountRef.current
     if (!mount) return
 
@@ -612,7 +621,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         mount.removeChild(renderer.domElement)
       }
     }
-  }, [data, positions, filterSet])
+  }, [data, positions, filterSet, viewMode])
 
   // ---------- key bindings ----------
 
@@ -692,7 +701,16 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
   return (
     <div className="relative h-screen w-full overflow-hidden bg-[#05060a] text-fg-primary">
-      <div ref={mountRef} className="absolute inset-0" />
+      {/* 3D ecosystem graph (mounts only when viewMode='graph'; the useEffect
+          above gates the THREE setup on the same flag, so toggling to 'world'
+          tears the renderer down cleanly). */}
+      {viewMode === 'graph' ? (
+        <div ref={mountRef} className="absolute inset-0" />
+      ) : (
+        <div className="absolute inset-0">
+          <WorldMap data={data} onSelect={(s) => setSelected(s)} />
+        </div>
+      )}
 
       {/* ----- Top bar -----
           Mobile: compact 44px-tall row, just wordmark + search icon. Respects
@@ -709,13 +727,27 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
             <span> · {data.investors.length} investors · {data.flows.length} flows · {data.bottlenecks.length} bottlenecks</span>
           </span>
         </div>
-        <button
-          type="button"
-          onClick={() => setPaletteOpen(true)}
-          className="pointer-events-auto hidden min-h-11 min-w-11 items-center rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 text-xs text-fg-secondary backdrop-blur hover:border-border-strong hover:text-fg-primary md:inline-flex"
-        >
-          ⌘K Search
-        </button>
+        <div className="pointer-events-auto flex items-center gap-2">
+          {/* View toggle. Visible on every breakpoint — phones get the same
+              affordance as desktop, just smaller. Label flips to show the
+              *destination* view so the verb reads "tap to switch to X". */}
+          <button
+            type="button"
+            onClick={() => setViewMode(viewMode === 'graph' ? 'world' : 'graph')}
+            className="inline-flex min-h-11 min-w-11 items-center rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 font-mono text-xs text-fg-secondary backdrop-blur hover:border-border-strong hover:text-fg-primary"
+            aria-label={viewMode === 'graph' ? 'Switch to world map view' : 'Switch to graph view'}
+            title="Toggle 3D graph / 2D world map"
+          >
+            {viewMode === 'graph' ? '🌐 World' : '📊 Graph'}
+          </button>
+          <button
+            type="button"
+            onClick={() => setPaletteOpen(true)}
+            className="hidden min-h-11 min-w-11 items-center rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 text-xs text-fg-secondary backdrop-blur hover:border-border-strong hover:text-fg-primary md:inline-flex"
+          >
+            ⌘K Search
+          </button>
+        </div>
       </div>
 
       {/* Active ⌘K filter chips — appear top-center under the title bar.
