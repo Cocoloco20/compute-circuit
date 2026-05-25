@@ -279,6 +279,12 @@ export interface GithubActivity {
   contributors_30d: number
   last_release_tag: string | null
   last_release_date: string | null
+  commits_7d: number
+  commits_30d: number
+  distinct_committers_30d: number
+  lines_added_30d: number
+  lines_removed_30d: number
+  commits_weekly_history: Array<{ week_starting: string; count: number }>
   created_at: string
 }
 

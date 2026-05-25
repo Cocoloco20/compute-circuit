@@ -41,6 +41,25 @@ interface CommitResp {
   commit?: { author?: { name?: string; email?: string } | null }
 }
 
+interface CommitActivityWeek {
+  days: number[]
+  total: number
+  week: number
+}
+
+interface ContributorWeek {
+  w: number
+  a: number
+  d: number
+  c: number
+}
+
+interface ContributorStats {
+  total: number
+  weeks: ContributorWeek[]
+  author: { login: string }
+}
+
 export interface RepoActivitySnapshot {
   repoFullName: string
   stars: number
@@ -49,6 +68,12 @@ export interface RepoActivitySnapshot {
   contributors30d: number
   lastReleaseTag: string | null
   lastReleaseDate: string | null  // YYYY-MM-DD
+  commits_7d: number
+  commits_30d: number
+  distinct_committers_30d: number
+  lines_added_30d: number
+  lines_removed_30d: number
+  commits_weekly_history: Array<{ week_starting: string; count: number }>
 }
 
 function ghHeaders(): HeadersInit {
@@ -126,6 +151,44 @@ export async function fetchRepoActivity(repoFullName: string): Promise<RepoActiv
     }
   }
 
+  // 5. Commit activity & Contributors stats (using 202 retry logic)
+  let commits_7d = 0
+  let commits_30d = 0
+  let commits_weekly_history: Array<{ week_starting: string; count: number }> = []
+
+  const commitActivity = await fetchCommitActivity(repoFullName)
+  if (Array.isArray(commitActivity) && commitActivity.length > 0) {
+    const lastWeek = commitActivity[commitActivity.length - 1]
+    commits_7d = lastWeek?.total ?? 0
+    const last4Weeks = commitActivity.slice(-4)
+    commits_30d = last4Weeks.reduce((sum: number, w) => sum + (w.total || 0), 0)
+    commits_weekly_history = commitActivity.slice(-12).map((w) => ({
+      week_starting: new Date(w.week * 1000).toISOString().slice(0, 10),
+      count: w.total || 0,
+    }))
+  }
+
+  let distinct_committers_30d = 0
+  let lines_added_30d = 0
+  let lines_removed_30d = 0
+
+  const contributors = await fetchContributorsStats(repoFullName)
+  if (Array.isArray(contributors)) {
+    for (const contrib of contributors) {
+      if (!contrib.weeks) continue
+      const last4Weeks = contrib.weeks.slice(-4)
+      let active = false
+      for (const w of last4Weeks) {
+        if (w.c > 0) active = true
+        lines_added_30d += w.a || 0
+        lines_removed_30d += w.d || 0
+      }
+      if (active) {
+        distinct_committers_30d++
+      }
+    }
+  }
+
   return {
     repoFullName,
     stars,
@@ -134,7 +197,59 @@ export async function fetchRepoActivity(repoFullName: string): Promise<RepoActiv
     contributors30d: authorSet.size,
     lastReleaseTag,
     lastReleaseDate,
+    commits_7d,
+    commits_30d,
+    distinct_committers_30d,
+    lines_added_30d,
+    lines_removed_30d,
+    commits_weekly_history,
   }
+}
+
+async function fetchCommitActivity(repoFullName: string): Promise<CommitActivityWeek[] | null> {
+  const url = `https://api.github.com/repos/${repoFullName}/stats/commit_activity`
+  const opts: RequestInit = { headers: ghHeaders() }
+  
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, opts)
+      if (r.status === 202) {
+        if (attempt === 1) return null
+        await new Promise(res => setTimeout(res, 3000))
+        continue
+      }
+      if (r.ok) {
+        return (await r.json()) as CommitActivityWeek[]
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+  return null
+}
+
+async function fetchContributorsStats(repoFullName: string): Promise<ContributorStats[] | null> {
+  const url = `https://api.github.com/repos/${repoFullName}/stats/contributors`
+  const opts: RequestInit = { headers: ghHeaders() }
+  
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const r = await fetch(url, opts)
+      if (r.status === 202) {
+        if (attempt === 1) return null
+        await new Promise(res => setTimeout(res, 3000))
+        continue
+      }
+      if (r.ok) {
+        return (await r.json()) as ContributorStats[]
+      }
+      return null
+    } catch {
+      return null
+    }
+  }
+  return null
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))

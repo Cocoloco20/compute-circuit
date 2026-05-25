@@ -203,6 +203,9 @@ export async function fetchGraph(): Promise<GraphData> {
     console.warn('[graph-data] gpu_hyperscaler_pricing read failed (table may not exist yet):', gpuHs.error.message)
   }
 
+  const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+
   // HF activity: most recent snapshot per company. With ~20 hf-tagged cos
   // × 1 snapshot/day this is trivial.
   const hf = await sb
@@ -211,21 +214,19 @@ export async function fetchGraph(): Promise<GraphData> {
     .order('snapshot_date', { ascending: false })
     .limit(200)
 
-  // GitHub activity: most recent snapshot per company. Same shape as HF —
-  // ~20 cos × 1 snapshot/day.
+  // GitHub activity: last 35 days for delta.
   const gh = await sb
     .from('github_activity')
     .select('*')
+    .gte('snapshot_date', thirtyFiveDaysAgo)
     .order('snapshot_date', { ascending: false })
-    .limit(200)
+    .limit(1000)
 
   // 35-day window for the three "delta" signals so drawer chips can compare
   // today vs 7d and 30d ago. Volumes are tiny:
   //   grid_demand: 7 cos × 35 = 245
   //   patents:     21 cos × 35 = 735
   //   jobs:        10 cos × 35 = 350
-  const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const [gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] = await Promise.all([
     sb.from('grid_demand_snapshots').select('*')
       .gte('snapshot_date', thirtyFiveDaysAgo)
