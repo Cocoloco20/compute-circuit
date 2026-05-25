@@ -3,7 +3,23 @@
 //   supabase gen types typescript --project-id YOUR_PROJECT > src/types/db.ts
 
 export type FlowType = 'money' | 'compute' | 'energy' | 'equipment' | 'intel' | 'venture'
-export type NodeKind = 'company' | 'investor'
+// Phase 7A adds 'agency' — same drawer + graph treatment as company / investor,
+// but renders the regulator / export-control body (US BIS, EU AI Office, CN CAC).
+export type NodeKind = 'company' | 'investor' | 'agency'
+
+// Phase 7A: regulators / export-control bodies / standards orgs. Sits on the
+// 'government' layer; surfaced in the entity drawer with a kind='agency' body.
+export interface Agency {
+  id: string
+  name: string
+  jurisdiction: string | null
+  agency_type: string | null
+  website: string | null
+  rss_feed_url: string | null
+  twitter_handle: string | null
+  layer_id: string | null
+  created_at: string
+}
 
 export interface Layer {
   id: string
@@ -80,6 +96,8 @@ export interface Company {
   hq_lat: number | null
   hq_lng: number | null
   hq_city: string | null
+  // Phase 7A: ISO 3166-1 alpha-2 country of HQ / primary listing.
+  country: string | null
   created_at: string
   updated_at: string
 }
@@ -448,6 +466,7 @@ export interface Database {
       signal_companies: { Row: { signal_id: string; company_id: string }; Insert: { signal_id: string; company_id: string }; Update: Partial<{ signal_id: string; company_id: string }> }
       signal_bottlenecks: { Row: { signal_id: string; bottleneck_id: string }; Insert: { signal_id: string; bottleneck_id: string }; Update: Partial<{ signal_id: string; bottleneck_id: string }> }
       verifications: { Row: Verification; Insert: Omit<Verification, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Verification> }
+      agencies: { Row: Agency; Insert: Omit<Agency, 'created_at'> & { created_at?: string }; Update: Partial<Agency> }
     }
     Views: Record<string, never>
     Functions: Record<string, never>

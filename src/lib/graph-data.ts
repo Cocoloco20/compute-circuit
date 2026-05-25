@@ -29,6 +29,7 @@ import type {
   InterestSignal,
   ArxivPaper,
   ArxivSnapshot,
+  Agency,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -67,6 +68,7 @@ export interface GraphData {
   eiaFuelMix: EiaFuelMixSnapshot[]          // Per-region generation mix + carbon intensity
   eiaInternational: EiaInternationalSnapshot[]  // Fab-country electricity stats
   aeoProjections: AeoProjection[]           // AEO 2026 long-term forecast (data center demand)
+  agencies: Agency[]                        // Phase 7A — regulators / export-control / standards
   lastUpdates: {                  // GasCity-style "instrument is live" telemetry
     price: string | null          // ISO of most-recent companies.price_updated_at
     news: string | null           // most-recent signals.date where source='google-news'
@@ -143,14 +145,31 @@ export async function fetchGraph(): Promise<GraphData> {
     .limit(500)
 
   // Fundamentals: last 2 years per company. We have ~32 public cos × ~12 metrics × ~8 periods
-  // = ~3000 rows max, but most cos won't have all metrics — typically ~1000 rows.
+  // = ~3000 rows max, but most cos won't have all metrics — typically ~1000+ rows.
+  //
+  // Supabase REST silently caps result sets at 1000 rows even when .limit(2000) is
+  // requested. With our row volume that drops Q rows on later-alphabetical companies
+  // (e.g. Vertiv "V*"), breaking the TTM capex + YoY computation in capex.ts.
+  // Same fix pattern as the signal_companies chunking above — paginate by .range()
+  // until a short page (< pageSize) signals we've drained the table.
   const twoYearsAgo = new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const fnd = await sb
-    .from('fundamentals')
-    .select('*')
-    .gte('period', twoYearsAgo)
-    .order('period', { ascending: false })
-    .limit(2000)
+  const PAGE = 1000
+  let fndData: Fundamental[] = []
+  let fndError: { message: string } | null = null
+  for (let offset = 0; ; offset += PAGE) {
+    const page = await sb
+      .from('fundamentals')
+      .select('*')
+      .gte('period', twoYearsAgo)
+      .order('period', { ascending: false })
+      .range(offset, offset + PAGE - 1)
+    if (page.error) { fndError = page.error; break }
+    const rows = (page.data ?? []) as Fundamental[]
+    fndData = fndData.concat(rows)
+    if (rows.length < PAGE) break  // last (possibly empty) page
+    if (offset > 20_000) break  // hard safety cap so a runaway table can't OOM
+  }
+  const fnd = { data: fndData, error: fndError }
 
   // Insider transactions: last 90 days. Daily cron caps backfill at 120 XML
   // fetches/run so this table stays manageable.
@@ -272,6 +291,14 @@ export async function fetchGraph(): Promise<GraphData> {
       .order('published_date', { ascending: false }).limit(500),
   ])
 
+  // Phase 7A — agencies (regulators / export-control bodies). Tiny table.
+  // Non-fatal on read error so a missing migration 0039 doesn't break pages.
+  const ag = await sb.from('agencies').select('*').order('name').limit(50)
+  if (ag.error) {
+    // eslint-disable-next-line no-console
+    console.warn('[graph-data] agencies read failed (table may not exist yet):', ag.error.message)
+  }
+
   // All optional signal tables — non-fatal on read error (table empty,
   // RLS denied, API key missing pre-cron).
   for (const r of [gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] as Array<{ error: { message: string } | null }>) {
@@ -316,6 +343,7 @@ export async function fetchGraph(): Promise<GraphData> {
     eiaFuelMix: (eiaFmx.data ?? []) as EiaFuelMixSnapshot[],
     eiaInternational: (eiaIntl.data ?? []) as EiaInternationalSnapshot[],
     aeoProjections: (aeo.data ?? []) as AeoProjection[],
+    agencies: (ag.data ?? []) as Agency[],
     lastUpdates: {
       price: ((c.data ?? []) as Company[])
         .map(co => co.price_updated_at)

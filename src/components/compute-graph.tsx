@@ -63,6 +63,7 @@ export type SelectedRef =
   | { kind: 'company'; id: string }
   | { kind: 'investor'; id: string }
   | { kind: 'bottleneck'; id: string }
+  | { kind: 'agency'; id: string }
 
 interface NodePosition {
   x: number
@@ -89,6 +90,7 @@ function computePositions(data: GraphData) {
   const companyPos = new Map<string, NodePosition>()
   const investorPos = new Map<string, NodePosition>()
   const bottleneckPos = new Map<string, NodePosition>()
+  const agencyPos = new Map<string, NodePosition>()
 
   // Group companies by layer; sort by id so positions are stable across renders.
   const byLayer = new Map<string, Company[]>()
@@ -129,7 +131,18 @@ function computePositions(data: GraphData) {
     })
   })
 
-  return { companyPos, investorPos, bottleneckPos }
+  // Agencies (Phase 7A): default to 'government' layer's y, on a slightly
+  // wider ring so they don't crowd the company set. Tolerant of missing layer.
+  const agencies = data.agencies ?? []
+  const govY = layerMap.get('government')?.y_position ?? INVESTOR_Y
+  const AGENCY_RING_RADIUS = 11
+  agencies.forEach((a, i) => {
+    const layerY = a.layer_id ? layerMap.get(a.layer_id)?.y_position : null
+    const y = layerY ?? govY
+    agencyPos.set(a.id, ringPosition(i, agencies.length, AGENCY_RING_RADIUS, y, 0.5))
+  })
+
+  return { companyPos, investorPos, bottleneckPos, agencyPos }
 }
 
 // Disposes all materials/geometries/textures attached to a mesh tree.
@@ -444,6 +457,61 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       label.position.set(pos.x, pos.y - 0.95, pos.z)
       label.userData = { kind: 'investor', id: inv.id, label: inv.name }
       applyFilterToMaterial(label.material, !filterSet || filterSet.investors.has(inv.id))
+      scene.add(label)
+      nodeMeshes.push(label)
+    })
+
+    // ----- agencies (Phase 7A — regulators / export-control bodies) -----
+    // Square sprites (distinct from circular badges used for cos/investors)
+    // with a flag emoji baked into the canvas for jurisdiction.
+    function makeAgencyBadge(name: string, jurisdictionFlag: string | null, scale: number): THREE.Sprite {
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 128
+      const ctx = canvas.getContext('2d')!
+      ctx.fillStyle = '#cbd5e1'
+      ctx.fillRect(2, 2, 124, 124)
+      ctx.fillStyle = '#0f172a'
+      ctx.fillRect(8, 8, 112, 112)
+      if (jurisdictionFlag) {
+        ctx.font = '60px "Apple Color Emoji", "Segoe UI Emoji", "Noto Color Emoji", system-ui'
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'middle'
+        ctx.fillText(jurisdictionFlag, 64, 50)
+      }
+      const short = name.split(/[\s/(]+/).filter(Boolean).slice(0, 3).map(w => w[0]).join('').toUpperCase().slice(0, 4)
+      ctx.fillStyle = '#e2e8f0'
+      ctx.font = 'bold 22px ui-monospace, SFMono-Regular, Menlo, monospace'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(short, 64, 98)
+      const tex = new THREE.CanvasTexture(canvas)
+      tex.colorSpace = THREE.SRGBColorSpace
+      tex.minFilter = THREE.LinearFilter
+      tex.magFilter = THREE.LinearFilter
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
+      const sprite = new THREE.Sprite(mat)
+      sprite.scale.set(scale, scale, 1)
+      return sprite
+    }
+    function jurisdictionToFlag(j: string | null | undefined): string | null {
+      if (!j || j.length !== 2) return null
+      const u = j.toUpperCase()
+      if (!/^[A-Z]{2}$/.test(u)) return null
+      return String.fromCodePoint(u.charCodeAt(0) - 65 + 0x1f1e6, u.charCodeAt(1) - 65 + 0x1f1e6)
+    }
+    ;(data.agencies ?? []).forEach((a) => {
+      const pos = positions.agencyPos.get(a.id)
+      if (!pos) return
+      const flag = jurisdictionToFlag(a.jurisdiction)
+      const sprite = makeAgencyBadge(a.name, flag, 1.0)
+      sprite.position.set(pos.x, pos.y, pos.z)
+      sprite.userData = { kind: 'agency', id: a.id, label: a.name + (a.jurisdiction ? ` · ${a.jurisdiction}` : '') }
+      scene.add(sprite)
+      nodeMeshes.push(sprite)
+      const labelText = a.name.length > 22 ? a.name.slice(0, 20) + '…' : a.name
+      const label = makeLabel(labelText, 0.30, '#cbd5e1')
+      label.position.set(pos.x, pos.y - 0.85, pos.z)
+      label.userData = { kind: 'agency', id: a.id, label: a.name }
       scene.add(label)
       nodeMeshes.push(label)
     })
@@ -777,6 +845,9 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           const layerCoIds = new Set(
             data.companies.filter(c => c.layer_id === l.id).map(c => c.id)
           )
+          // Phase 7A: include agencies that sit on this layer in the count.
+          const layerAgencyCount = (data.agencies ?? []).filter(a => a.layer_id === l.id).length
+          const totalCount = layerCoIds.size + layerAgencyCount
           const todayStart = new Date()
           todayStart.setUTCHours(0, 0, 0, 0)
           // Count signals with at least one company link in this layer, dated today
@@ -796,7 +867,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
                 {todayActive > 0 && (
                   <span className="font-mono text-meta text-signal-info">+{todayActive}</span>
                 )}
-                <span className="text-fg-dim">{layerCoIds.size}</span>
+                <span className="text-fg-dim">{totalCount}</span>
               </span>
             </div>
           )

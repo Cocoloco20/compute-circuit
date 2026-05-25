@@ -42,7 +42,7 @@ import type { SelectedRef } from './compute-graph'
 
 // ---------- types ----------
 
-type HitKind = 'company' | 'investor' | 'bottleneck' | 'signal' | 'sector' | 'command'
+type HitKind = 'company' | 'investor' | 'bottleneck' | 'agency' | 'signal' | 'sector' | 'command'
 type HitCategory = 'entities' | 'signals' | 'sectors' | 'commands'
 
 interface BaseHit {
@@ -189,6 +189,16 @@ function buildCorpus(data: GraphData): Hit[] {
       id: b.id,
       label: b.name,
       sub: b.severity ?? 'bottleneck',
+    })
+  }
+  // Agencies (Phase 7A) — regulators / export-control / standards bodies.
+  for (const a of (data.agencies ?? [])) {
+    out.push({
+      kind: 'agency',
+      category: 'entities',
+      id: a.id,
+      label: a.name,
+      sub: [a.jurisdiction, a.agency_type].filter(Boolean).join(' · ') || 'agency',
     })
   }
 

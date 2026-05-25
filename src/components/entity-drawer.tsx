@@ -107,7 +107,17 @@ export default function EntityDrawer({ selected, data, onClose }: Props) {
 function renderBody(selected: SelectedRef, data: GraphData): React.ReactNode {
   if (selected.kind === 'company') return <CompanyBody id={selected.id} data={data} />
   if (selected.kind === 'investor') return <InvestorBody id={selected.id} data={data} />
+  if (selected.kind === 'agency') return <AgencyBody id={selected.id} data={data} />
   return <BottleneckBody id={selected.id} data={data} />
+}
+
+// Phase 7A: ISO 3166-1 alpha-2 country code → Unicode flag emoji ('US' → '🇺🇸').
+// Uses regional-indicator-pair math (U+1F1E6 = 'A'). Returns null for invalid input.
+export function countryToFlag(country: string | null | undefined): string | null {
+  if (!country || country.length !== 2) return null
+  const upper = country.toUpperCase()
+  if (!/^[A-Z]{2}$/.test(upper)) return null
+  return String.fromCodePoint(upper.charCodeAt(0) - 65 + 0x1f1e6, upper.charCodeAt(1) - 65 + 0x1f1e6)
 }
 
 // ---------- Company (tabbed) ----------
@@ -191,6 +201,10 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
         <div className="flex-1">
           <div className="text-base font-semibold text-fg-primary">{company.name}</div>
           <div className="text-xs text-fg-muted">
+            {(() => {
+              const flag = countryToFlag(company.country)
+              return flag ? <span aria-label={company.country ?? ''} title={company.country ?? ''} className="mr-1">{flag}</span> : null
+            })()}
             {sub} · {company.layer_id ?? 'unplaced'}
             {company.conviction && <> · <span className="text-fg-secondary">{company.conviction}</span></>}
           </div>
@@ -1019,6 +1033,54 @@ function PortfolioBreakdown({ portfolio }: { portfolio: GraphData['companies'] }
           </ul>
         </Section>
       )}
+    </>
+  )
+}
+
+// ---------- Agency (Phase 7A — regulators, export-control, AI-safety bodies) ----------
+// Mirrors InvestorBody: Header + sub-sections. Recent regulatory events will
+// populate once a regulatory_events cron writes to its own table.
+
+function AgencyBody({ id, data }: { id: string; data: GraphData }) {
+  const ag = (data.agencies ?? []).find(a => a.id === id)
+  if (!ag) return <Empty msg="Agency not found" />
+  const domain = ag.website ? (() => {
+    try { return new URL(ag.website).hostname.replace(/^www\./, '') }
+    catch { return null }
+  })() : null
+  const flag = countryToFlag(ag.jurisdiction)
+  const sub = [flag, ag.jurisdiction, ag.agency_type].filter(Boolean).join(' · ')
+  return (
+    <>
+      <Header domain={domain} name={ag.name} sub={sub || 'agency'} />
+      <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+        <Stat label="Jurisdiction" value={ag.jurisdiction ?? '—'} />
+        <Stat label="Type" value={ag.agency_type ?? '—'} />
+      </div>
+      {ag.website && (
+        <Section title="Website">
+          <a href={ag.website} target="_blank" rel="noopener noreferrer"
+             className="break-all text-accent-primary hover:underline">{ag.website}</a>
+        </Section>
+      )}
+      {ag.twitter_handle && (
+        <Section title="Twitter">
+          <a href={`https://x.com/${ag.twitter_handle.replace(/^@/, '')}`} target="_blank" rel="noopener noreferrer"
+             className="text-accent-primary hover:underline">@{ag.twitter_handle.replace(/^@/, '')}</a>
+        </Section>
+      )}
+      {ag.rss_feed_url && (
+        <Section title="RSS feed">
+          <a href={ag.rss_feed_url} target="_blank" rel="noopener noreferrer"
+             className="break-all text-fg-secondary hover:text-fg-primary">{ag.rss_feed_url}</a>
+        </Section>
+      )}
+      <Section title="Recent regulatory events">
+        <div className="text-xs text-fg-muted">
+          Regulatory event tracker not yet wired — this section will populate
+          once the <code className="font-mono text-fg-secondary">regulatory_events</code> cron lands.
+        </div>
+      </Section>
     </>
   )
 }
