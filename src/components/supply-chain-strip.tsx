@@ -38,7 +38,7 @@ interface ChainEntry {
 }
 
 interface ChainLayerSummary {
-  layer: ChainLayer | 'fab' | 'dc' | 'models' | 'btc'
+  layer: ChainLayer | 'fab' | 'dc' | 'models' | 'btc' | 'gpu'
   label: string
   emoji: string
   worstTone: 'green' | 'yellow' | 'red' | 'neutral'
@@ -105,7 +105,10 @@ function fmtNum(v: number, unit: string): string {
   return `${Math.round(v * 100) / 100} ${unit}`
 }
 
-export default function SupplyChainStrip({ data }: { data: GraphData }) {
+/** 'desktop' (default) renders the horizontal floating strip pinned top-center.
+    'mobile' renders a vertical stack of full-width chips for use inside the
+    parent MobileSheet. */
+export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: GraphData; variant?: 'desktop' | 'mobile' }) {
   const [expanded, setExpanded] = useState<string | null>(null)
 
   const summary = useMemo<ChainLayerSummary[]>(() => {
@@ -295,6 +298,81 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
     }
     modelsEntries.sort((a, b) => b.value - a.value)
 
+    // ----- GPU — blended spot prices across Vast.ai + RunPod (gpu_spot_prices
+    // table). The H100 line is the headline: $/H100/hr is the cleanest
+    // training-demand thermometer we have. Tone per task spec:
+    //   red    if H100 blended median > $3.00 /hr   (training market saturated)
+    //   yellow if      $2.51 ..  3.00 /hr
+    //   green  if              ≤ $2.00 /hr            (visible slack)
+    //   (between green and yellow the chip stays green — narrow window)
+    //
+    // Expanded tray lists ALL models with their blended median + 24h delta.
+    // Per-model delta = today's blended row vs yesterday's blended row.
+    const gpuEntries: ChainEntry[] = []
+    const gpuBlendedLatestByModel = new Map<string, GraphData['gpuSpot'][number]>()
+    const gpuBlendedPriorByModel = new Map<string, GraphData['gpuSpot'][number]>()
+    for (const row of data.gpuSpot) {
+      if (row.source !== 'blended') continue
+      const cur = gpuBlendedLatestByModel.get(row.gpu_model)
+      if (!cur || row.snapshot_date > cur.snapshot_date) {
+        // promote cur → prior, row → latest
+        if (cur) gpuBlendedPriorByModel.set(row.gpu_model, cur)
+        gpuBlendedLatestByModel.set(row.gpu_model, row)
+      } else {
+        const prior = gpuBlendedPriorByModel.get(row.gpu_model)
+        if (!prior || row.snapshot_date > prior.snapshot_date) {
+          gpuBlendedPriorByModel.set(row.gpu_model, row)
+        }
+      }
+    }
+    // Order chips: H100 SXM5 first, then H100 PCIe, H200, B200, A100 80GB, A100 40GB, RTX 4090, RTX 3090
+    const GPU_DISPLAY_ORDER = [
+      'H100 80GB SXM5',
+      'H100 80GB PCIe',
+      'H200',
+      'B200',
+      'A100 80GB',
+      'A100 40GB',
+      'RTX 4090',
+      'RTX 3090',
+    ]
+    for (const model of GPU_DISPLAY_ORDER) {
+      const latest = gpuBlendedLatestByModel.get(model)
+      if (!latest) continue
+      const prior = gpuBlendedPriorByModel.get(model)
+      const deltaPct = prior && prior.median_usd_per_hour > 0
+        ? ((latest.median_usd_per_hour - prior.median_usd_per_hour) / prior.median_usd_per_hour) * 100
+        : null
+      let tone: ChainEntry['tone'] = 'green'
+      // Same H100 thresholds applied per-model so the tray visually agrees with the headline.
+      if (model.startsWith('H100') || model === 'H200' || model === 'B200') {
+        if (latest.median_usd_per_hour > 3.0) tone = 'red'
+        else if (latest.median_usd_per_hour > 2.5) tone = 'yellow'
+        else tone = 'green'
+      }
+      gpuEntries.push({
+        series_id: `GPU.${model}`,
+        label: model,
+        value: latest.median_usd_per_hour,
+        unit: '$/hr',
+        tone,
+        delta: deltaPct,
+        date: latest.snapshot_date,
+      })
+    }
+    // Headline tone: drive off the most-rented production GPU (H100 SXM5),
+    // falling back to H100 PCIe → H200 if no SXM5 data yet.
+    const headlineGpu =
+      gpuBlendedLatestByModel.get('H100 80GB SXM5') ??
+      gpuBlendedLatestByModel.get('H100 80GB PCIe') ??
+      gpuBlendedLatestByModel.get('H200')
+    let gpuChipTone: ChainEntry['tone'] = 'neutral'
+    if (headlineGpu) {
+      if (headlineGpu.median_usd_per_hour > 3.0) gpuChipTone = 'red'
+      else if (headlineGpu.median_usd_per_hour > 2.5) gpuChipTone = 'yellow'
+      else gpuChipTone = 'green'
+    }
+
     // ----- BTC — global mining as a "compute spend" proxy. Hashrate ↑ ⇒ the
     // world is buying more ASICs and renting more grid power, which competes
     // with hyperscaler buildout. We pull three series from eia_commodity_snapshots
@@ -438,9 +516,76 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
   const hasAnyData = summary.some(s => s.entries.length > 0)
   if (!hasAnyData) return null
 
+  // ----- MOBILE variant: vertical stack inside the parent MobileSheet -----
+  //
+  // Each chip is full-width with its headline on its own line so dense
+  // values don't truncate. Tap to expand the layer's detail tray inline.
+  if (variant === 'mobile') {
+    return (
+      <div className="space-y-2 px-3 py-3 text-meta font-mono">
+        {summary.map((s) => {
+          const isOpen = expanded === s.label
+          const hasData = s.entries.length > 0
+          return (
+            <div
+              key={s.label}
+              className={'overflow-hidden rounded-card border ring-1 ' + TONE_RING[s.worstTone] +
+                (hasData ? ' border-border-default' : ' border-border-subtle opacity-40')}
+            >
+              <button
+                type="button"
+                disabled={!hasData}
+                onClick={() => setExpanded(isOpen ? null : s.label)}
+                className={
+                  'flex min-h-11 w-full flex-col items-start gap-1 px-3 py-2 text-left transition ' +
+                  (isOpen ? 'bg-bg-surface' : 'bg-bg-overlay hover:bg-bg-surface/60')
+                }
+              >
+                <span className="flex items-center gap-2">
+                  <span className={'inline-block h-1.5 w-1.5 rounded-full ' + TONE_DOT[s.worstTone]} />
+                  <span className="text-label text-fg-primary">{s.emoji} {s.label}</span>
+                  <span className="ml-1 text-fg-dim">{s.entries.length} series</span>
+                </span>
+                <span className={'text-body ' + TONE_TEXT[s.worstTone]}>{s.headline}</span>
+              </button>
+              {isOpen && hasData && (
+                <div className="space-y-1 border-t border-border-subtle bg-bg-overlay px-3 py-2">
+                  {s.entries.map(e => (
+                    <div key={e.series_id} className="flex items-baseline justify-between gap-2 rounded px-1 py-1">
+                      <span className="flex items-center gap-1.5 truncate">
+                        <span className={'inline-block h-1.5 w-1.5 shrink-0 rounded-full ' + TONE_DOT[e.tone]} />
+                        <span className="text-fg-primary truncate">{e.label}</span>
+                      </span>
+                      <span className="flex shrink-0 items-baseline gap-2 text-fg-secondary">
+                        <span className={TONE_TEXT[e.tone]}>{fmtNum(e.value, e.unit)}</span>
+                        {e.delta != null && (
+                          <span className={'text-meta ' + (e.delta >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
+                            {e.delta >= 0 ? '+' : ''}{e.delta.toFixed(1)}%
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                  ))}
+                  {s.label === 'POWER' && <AeoForecastBlock projections={data.aeoProjections} />}
+                </div>
+              )}
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  // ----- DESKTOP variant: horizontal strip pinned top-center -----
+  //
+  // Hidden below md: phone users reach the same content via the bottom-nav
+  // "Chain" tab → MobileSheet → variant="mobile".
+  // The chip rail itself is `overflow-x-auto` + `snap-x` so it touch-scrolls
+  // gracefully at narrow widths (e.g. 768–1024px tablets) and each chip is
+  // `flex-none` so chips never squash.
   return (
-    <div className="pointer-events-auto absolute left-1/2 top-14 z-10 -translate-x-1/2">
-      <div className="flex gap-1 rounded-md border border-border-default bg-bg-overlay p-1 text-meta font-mono shadow-panel backdrop-blur">
+    <div className="pointer-events-auto absolute left-1/2 top-14 z-10 hidden max-w-[calc(100vw-2rem)] -translate-x-1/2 md:block">
+      <div className="flex snap-x snap-mandatory gap-1 overflow-x-auto rounded-md border border-border-default bg-bg-overlay p-1 text-meta font-mono shadow-panel backdrop-blur">
         {summary.map((s) => {
           const isOpen = expanded === s.label
           const hasData = s.entries.length > 0
@@ -450,7 +595,7 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
               type="button"
               onClick={() => setExpanded(isOpen ? null : s.label)}
               className={
-                'flex items-center gap-1.5 rounded px-2 py-1 ring-1 transition ' +
+                'flex flex-none snap-start items-center gap-1.5 rounded px-2 py-1 ring-1 transition ' +
                 TONE_RING[s.worstTone] + ' ' +
                 (isOpen ? 'bg-bg-surface' : 'bg-transparent hover:bg-bg-surface/60') +
                 (!hasData ? ' opacity-40' : '')
@@ -469,7 +614,7 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
         const s = summary.find(x => x.label === expanded)
         if (!s || s.entries.length === 0) return null
         return (
-          <div className="mt-1 max-h-[300px] w-[420px] overflow-y-auto rounded-card border border-border-default bg-bg-overlay p-3 text-[11px] font-mono shadow-panel backdrop-blur">
+          <div className="mt-1 max-h-[300px] w-[min(420px,calc(100vw-2rem))] overflow-y-auto rounded-card border border-border-default bg-bg-overlay p-3 text-[11px] font-mono shadow-panel backdrop-blur">
             <div className="mb-2 flex items-baseline justify-between">
               <span className="uppercase tracking-wider text-fg-secondary">{s.emoji} {s.label} layer · {s.entries.length} series</span>
               <button

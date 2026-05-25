@@ -15,7 +15,8 @@
 
 import { useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound } from '@/types/db'
+import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound, TranscriptSignal } from '@/types/db'
+import { computeCapexTTM } from '@/lib/capex'
 import { CPC_SUBCLASS_LABELS } from '@/lib/uspto'
 import { getLogoUrl } from '@/lib/logo'
 import type { SelectedRef } from './compute-graph'
@@ -53,19 +54,53 @@ interface Props {
 export default function EntityDrawer({ selected, data, onClose }: Props) {
   const body = renderBody(selected, data)
   return (
-    <div className="absolute right-0 top-0 z-30 h-full w-[380px] overflow-y-auto border-l border-border-default bg-bg-overlay p-5 text-sm text-fg-primary backdrop-blur">
-      <div className="mb-4 flex items-start justify-between">
-        <div className="text-label text-fg-muted">{selected.kind}</div>
-        <button
-          type="button"
-          onClick={onClose}
-          className="rounded border border-border-default px-2 py-0.5 text-xs text-fg-secondary hover:border-border-strong hover:text-fg-primary"
-        >
-          esc
-        </button>
+    <>
+      {/* Mobile scrim — tap to dismiss. Sits below the drawer but above the
+          bottom nav so users can still tap nav tabs without dismissing first.
+          Only rendered on phones. */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close detail"
+        className="fixed inset-0 z-20 bg-black/40 backdrop-blur-sm md:hidden"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 60px)' }}
+      />
+      <div
+        className={
+          // Mobile: full-width bottom-sheet (100vw, 90vh) sitting above the
+          // bottom-nav (60px + safe area). Desktop: 380px right slide-in.
+          'fixed inset-x-0 z-30 flex flex-col overflow-hidden rounded-t-card border-x border-t border-border-default bg-bg-overlay text-sm text-fg-primary backdrop-blur ' +
+          'md:absolute md:inset-x-auto md:right-0 md:top-0 md:h-full md:w-[380px] md:rounded-none md:border-x-0 md:border-t-0 md:border-l'
+        }
+        style={{
+          // Mobile-only positioning: anchored above the bottom nav, 90vh tall.
+          // Desktop overrides via the md: classes above.
+          bottom: 'calc(env(safe-area-inset-bottom) + 60px)',
+          height: '90vh',
+        }}
+        role="dialog"
+        aria-label={selected.kind}
+      >
+        {/* Drag handle (mobile only) */}
+        <div className="flex items-center justify-center border-b border-border-subtle px-4 py-2 md:hidden">
+          <div className="h-1 w-10 rounded-full bg-border-strong" aria-hidden="true" />
+        </div>
+        <div className="flex items-start justify-between border-b border-border-subtle px-5 py-3 md:border-b-0 md:px-5 md:pb-4 md:pt-5">
+          <div className="text-label text-fg-muted">{selected.kind}</div>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded border border-border-default px-2 py-0.5 text-xs text-fg-secondary hover:border-border-strong hover:text-fg-primary md:min-h-0 md:min-w-0"
+          >
+            <span className="hidden md:inline">esc</span>
+            <span className="md:hidden">×</span>
+          </button>
+        </div>
+        <div className="flex-1 overflow-y-auto px-5 pb-5 pt-3 md:pt-0">
+          {body}
+        </div>
       </div>
-      {body}
-    </div>
+    </>
   )
 }
 
@@ -169,11 +204,11 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
       {company.last_price != null && (
         <div className="space-y-1">
           <div className="flex items-baseline gap-3">
-            <span className="font-mono text-stat-lg text-fg-primary">
+            <span className="font-mono text-2xl text-fg-primary md:text-stat-lg">
               {company.price_currency === 'USD' ? '$' : ''}{company.last_price.toFixed(2)}
             </span>
             {change != null && (
-              <span className={'font-mono text-stat ' + (positive ? 'text-signal-healthy' : 'text-signal-alert')}>
+              <span className={'font-mono text-lg md:text-stat ' + (positive ? 'text-signal-healthy' : 'text-signal-alert')}>
                 {positive ? '+' : ''}{change.toFixed(2)}
                 {changePct != null && <> ({positive ? '+' : ''}{changePct.toFixed(2)}%)</>}
               </span>
@@ -261,7 +296,7 @@ function Tabs<T extends string>({
   tabs: Array<TabDef<T>>
 }) {
   return (
-    <div className="-mx-5 flex gap-0 border-b border-border-default px-5 text-[11px] font-mono uppercase tracking-wider">
+    <div className="-mx-5 flex gap-0 overflow-x-auto border-b border-border-default px-5 text-[11px] font-mono uppercase tracking-wider">
       {tabs.map((t) => {
         const isActive = t.id === active
         return (
@@ -270,7 +305,8 @@ function Tabs<T extends string>({
             type="button"
             onClick={() => onChange(t.id)}
             className={
-              'border-b-2 py-2 transition-colors first:pl-0 ' +
+              // min-h-11 keeps tabs tappable on phones (WCAG 2.5.5).
+              'min-h-11 shrink-0 border-b-2 py-2 transition-colors first:pl-0 md:min-h-0 ' +
               (isActive
                 ? 'border-signal-info text-fg-primary'
                 : 'border-transparent text-fg-muted hover:text-fg-primary')
@@ -344,6 +380,7 @@ function CompanyFinancials({ companyId, data }: { companyId: string; data: Graph
 function CompanyActivity({ companyId, data }: { companyId: string; data: GraphData }) {
   return (
     <>
+      <TranscriptDigest companyId={companyId} data={data} />
       <FundingHistory companyId={companyId} data={data} />
       <InsiderFlow companyId={companyId} data={data} />
       <SignalList companyId={companyId} data={data} />
@@ -361,6 +398,107 @@ function CompanyHolders({ companyId, data }: { companyId: string; data: GraphDat
       <FlowList title={`In (${inFlows.length})`}  flows={inFlows}  data={data} direction="in"  />
     </>
   )
+}
+
+// ----- Capex run-rate callout (Financials tab header) -----
+//
+// Sits above the Fundamentals table. Surfaces TTM capex + YoY%, color-coded
+// per the strategic-roadmap thresholds:
+//   emerald (≥ +20%)  — ramping fast
+//   warn    (+5..+20%) — growing
+//   secondary (~ flat) — neutral
+//   alert   (negative)  — contracting
+// Hidden when capex data is missing or stale (computeCapexTTM returns nulls).
+
+function CapexRunRateCallout({ companyId, data }: { companyId: string; data: GraphData }) {
+  const { ttm, yoy_pct, latest_period } = computeCapexTTM(data.fundamentals, companyId)
+  if (ttm == null || latest_period == null) return null
+  const yoyColor =
+    yoy_pct == null ? 'text-fg-secondary'
+    : yoy_pct >= 20 ? 'text-signal-healthy'
+    : yoy_pct >= 5 ? 'text-signal-warn'
+    : yoy_pct >= -1 ? 'text-fg-secondary'
+    : 'text-signal-alert'
+  const ttmFormatted = ttm >= 1_000_000_000
+    ? `$${(ttm / 1_000_000_000).toFixed(1)}B`
+    : ttm >= 1_000_000 ? `$${(ttm / 1_000_000).toFixed(0)}M` : `$${ttm.toLocaleString()}`
+  return (
+    <div className="mb-4 rounded-card border border-border-default bg-bg-surface/40 px-3 py-2 shadow-card">
+      <div className="text-label text-fg-muted">Capex run-rate · TTM</div>
+      <div className="mt-1 flex items-baseline gap-3">
+        <span className="font-mono text-stat-lg text-fg-primary">{ttmFormatted}</span>
+        {yoy_pct != null && (
+          <span className={'font-mono text-stat ' + yoyColor}>
+            {yoy_pct >= 0 ? '+' : ''}{yoy_pct.toFixed(1)}% YoY
+          </span>
+        )}
+      </div>
+      <div className="mt-0.5 text-meta text-fg-dim">period ending {latest_period}</div>
+    </div>
+  )
+}
+
+// ----- Transcript digest (Activity tab) -----
+//
+// Lexicon-derived NLP from the latest earnings-related 8-K item 2.02 press
+// release. Headline format: "Q4 2025 earnings · AI×42 GPU×18 capex×12" with
+// the top extracted phrase blockquoted underneath. Hidden when the co has no
+// transcript rows in the 180-day window.
+
+function TranscriptDigest({ companyId, data }: { companyId: string; data: GraphData }) {
+  const mine = data.transcripts.filter(t => t.company_id === companyId)
+  if (mine.length === 0) return null
+  // Latest filing first.
+  const latest: TranscriptSignal = mine.slice().sort((a, b) => b.filed_date.localeCompare(a.filed_date))[0]
+  const tag = quarterTagForDate(latest.filed_date)
+  // Mention chips — drop ones at zero count.
+  type Chip = { label: string; count: number; color: string }
+  const chips: Chip[] = [
+    { label: 'AI',     count: latest.ai_mentions,           color: 'text-feed-hf' },
+    { label: 'GPU',    count: latest.gpu_mentions,          color: 'text-feed-github' },
+    { label: 'capex',  count: latest.capex_mentions,        color: 'text-signal-warn' },
+    { label: 'DC',     count: latest.data_center_mentions,  color: 'text-feed-grid' },
+    { label: 'tokens', count: latest.token_mentions,        color: 'text-signal-info' },
+  ].filter(c => c.count > 0)
+  // Top phrase: just the first extracted phrase (cron orders them by sentence
+  // position, which roughly tracks salience inside press releases — they
+  // usually open with the most material claim).
+  const topPhrase = Array.isArray(latest.extracted_phrases) && latest.extracted_phrases[0]
+    ? latest.extracted_phrases[0].phrase
+    : null
+  return (
+    <Section title="Earnings transcript">
+      <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+        <span className="font-mono text-xs text-fg-primary">{tag} earnings</span>
+        {chips.length > 0 && <span className="text-fg-dim">·</span>}
+        {chips.map(c => (
+          <span key={c.label} className={'font-mono text-meta ' + c.color}>
+            {c.label}×{c.count}
+          </span>
+        ))}
+      </div>
+      {topPhrase && (
+        <blockquote className="mt-1 border-l-2 border-border-strong pl-2 text-xs italic text-fg-secondary">
+          &ldquo;{topPhrase}&rdquo;
+        </blockquote>
+      )}
+      <div className="mt-1 flex items-baseline gap-2 text-meta text-fg-dim">
+        <span>filed {latest.filed_date}</span>
+        {latest.source_url && (
+          <a href={latest.source_url} target="_blank" rel="noreferrer" className="hover:text-fg-secondary">↗ 8-K</a>
+        )}
+      </div>
+    </Section>
+  )
+}
+
+// Map an ISO date to a quarter tag like "Q4 2025".
+function quarterTagForDate(iso: string): string {
+  const [y, m] = iso.split('-')
+  const month = Number(m)
+  if (!Number.isFinite(month)) return iso.slice(0, 7)
+  const q = Math.ceil(month / 3)
+  return `Q${q} ${y}`
 }
 
 // MarketData merged into StickyHeader (price + day change + 52w range live there now).
@@ -400,6 +538,8 @@ function Fundamentals({ companyId, data }: { companyId: string; data: GraphData 
   // Revenue is the headline; compute margin % off it if present.
   const revenue = latestPerMetric.get('revenue')?.value ?? null
   return (
+    <>
+      <CapexRunRateCallout companyId={companyId} data={data} />
     <Section title="Fundamentals">
       <ul className="space-y-1">
         {rows.map((f) => {
@@ -423,6 +563,7 @@ function Fundamentals({ companyId, data }: { companyId: string; data: GraphData 
         SEC XBRL · period {rows[0].period}
       </div>
     </Section>
+    </>
   )
 }
 

@@ -161,18 +161,64 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   const [selected, setSelected] = useState<SelectedRef | null>(null)
   const [paletteOpen, setPaletteOpen] = useState(false)
   const [backerFilter, setBackerFilter] = useState<string | null>(null) // investor id
+  // Additional filters driven by the global ⌘K palette. Each is a soft predicate
+  // that intersects with the others to produce the highlighted company set.
+  const [sectorFilter, setSectorFilter] = useState<string | null>(null) // layer id
+  const [heldOnly, setHeldOnly] = useState(false)
+  const [hiringDeptFilter, setHiringDeptFilter] = useState<string | null>(null)
   const [hover, setHover] = useState<{ label: string; x: number; y: number } | null>(null)
+  // Mobile bottom-sheet shell. On phones the floating chrome collapses into a
+  // bottom tab bar; tapping a tab slides up a sheet with that panel's content.
+  // Desktop layout uses `md:` breakpoints to ignore this entirely.
+  const [mobileSheet, setMobileSheet] = useState<'pulse' | 'chain' | 'search' | null>(null)
 
   const positions = useMemo(() => computePositions(data), [data])
 
-  // Backer filter set — which companies + investors are highlighted
+  // Filter set — which companies + investors are highlighted. Composes from all
+  // active filters (backer × sector × heldOnly × hiringDept). Returns null when
+  // no filter is active so the scene renders at full opacity.
   const filterSet = useMemo(() => {
-    if (!backerFilter) return null
-    const companies = new Set(
-      data.backers.filter(b => b.investor_id === backerFilter).map(b => b.company_id),
-    )
-    return { companies, investors: new Set([backerFilter]) }
-  }, [backerFilter, data.backers])
+    const activeAny = backerFilter || sectorFilter || heldOnly || hiringDeptFilter
+    if (!activeAny) return null
+
+    // Start with the full company set, then intersect each active filter into it.
+    let companies = new Set(data.companies.map(c => c.id))
+    const investors = new Set<string>()
+
+    if (backerFilter) {
+      const backed = new Set(
+        data.backers.filter(b => b.investor_id === backerFilter).map(b => b.company_id),
+      )
+      companies = new Set([...companies].filter(id => backed.has(id)))
+      investors.add(backerFilter)
+    }
+    if (sectorFilter) {
+      const inLayer = new Set(
+        data.companies.filter(c => c.layer_id === sectorFilter).map(c => c.id),
+      )
+      companies = new Set([...companies].filter(id => inLayer.has(id)))
+    }
+    if (heldOnly) {
+      const held = new Set(data.companies.filter(c => c.position_held).map(c => c.id))
+      companies = new Set([...companies].filter(id => held.has(id)))
+    }
+    if (hiringDeptFilter) {
+      const needle = hiringDeptFilter.toLowerCase()
+      // Group jobs by company to find the latest snapshot per co.
+      const latestByCo = new Map<string, GraphData['jobs'][number]>()
+      for (const j of data.jobs) {
+        const cur = latestByCo.get(j.company_id)
+        if (!cur || j.snapshot_date > cur.snapshot_date) latestByCo.set(j.company_id, j)
+      }
+      const matchCos = new Set<string>()
+      latestByCo.forEach((snap, coId) => {
+        const top = Array.isArray(snap.top_categories) && snap.top_categories[0]?.name
+        if (top && top.toLowerCase().includes(needle)) matchCos.add(coId)
+      })
+      companies = new Set([...companies].filter(id => matchCos.has(id)))
+    }
+    return { companies, investors }
+  }, [backerFilter, sectorFilter, heldOnly, hiringDeptFilter, data.companies, data.backers, data.jobs])
 
   // ---------- main THREE setup ----------
 
@@ -186,7 +232,11 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
     scene.fog = new THREE.Fog(BG_COLOR, 30, 80)
 
     const camera = new THREE.PerspectiveCamera(55, mount.clientWidth / mount.clientHeight, 0.1, 200)
-    camera.position.set(22, 4, 22)
+    // Touch devices (viewport < 768px) get a wider default framing so the graph
+    // doesn't feel cramped behind narrow chrome. ~20% farther back than desktop.
+    const isTouch = typeof window !== 'undefined' && window.innerWidth < 768
+    if (isTouch) camera.position.set(26, 5, 26)
+    else camera.position.set(22, 4, 22)
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false })
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
@@ -573,13 +623,70 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         setPaletteOpen((v) => !v)
       } else if (e.key === 'Escape') {
         if (paletteOpen) setPaletteOpen(false)
+        else if (mobileSheet) setMobileSheet(null)
         else if (selected) setSelected(null)
         else if (backerFilter) setBackerFilter(null)
+        else if (sectorFilter) setSectorFilter(null)
+        else if (heldOnly) setHeldOnly(false)
+        else if (hiringDeptFilter) setHiringDeptFilter(null)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [paletteOpen, selected, backerFilter])
+  }, [paletteOpen, selected, backerFilter, sectorFilter, heldOnly, hiringDeptFilter, mobileSheet])
+
+  // ⌘K palette event bus — sector + command hits dispatch DOM events rather
+  // than threading a callback through every component. We translate them into
+  // local state changes or drawer opens here.
+  useEffect(() => {
+    function onSectorFilter(ev: Event) {
+      const detail = (ev as CustomEvent<{ layerId: string }>).detail
+      if (!detail?.layerId) return
+      setSectorFilter(prev => (prev === detail.layerId ? null : detail.layerId))
+    }
+    function onCommand(ev: Event) {
+      const detail = (ev as CustomEvent<{ commandId: string }>).detail
+      const id = detail?.commandId
+      if (!id) return
+      switch (id) {
+        case 'graph.held-only':
+          setHeldOnly(true)
+          break
+        case 'graph.hiring-dc':
+          setHiringDeptFilter('data')   // matches "Data Center", "Data Engineering", etc.
+          break
+        case 'graph.frontier-leader': {
+          // Open the drawer for the heaviest lab co (labs layer).
+          const labsLayer = data.layers.find(l => l.name.toLowerCase().includes('lab'))
+          const candidates = data.companies
+            .filter(c => labsLayer ? c.layer_id === labsLayer.id : false)
+            .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+          if (candidates[0]) setSelected({ kind: 'company', id: candidates[0].id })
+          break
+        }
+        default:
+          // Pulse Board / Supply Chain focus + AI-earnings — rebroadcast so
+          // those panels can opt in without us hard-wiring callbacks.
+          window.dispatchEvent(new CustomEvent('cc:focus', { detail: { commandId: id } }))
+      }
+    }
+    window.addEventListener('cc:sector-filter', onSectorFilter)
+    window.addEventListener('cc:command', onCommand)
+    return () => {
+      window.removeEventListener('cc:sector-filter', onSectorFilter)
+      window.removeEventListener('cc:command', onCommand)
+    }
+  }, [data.layers, data.companies])
+
+  // On mount, honor a #sector=<layerId> hash so deep links work.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const m = window.location.hash.match(/sector=([^&]+)/)
+    if (m) {
+      const layerId = decodeURIComponent(m[1])
+      if (data.layers.some(l => l.id === layerId)) setSectorFilter(layerId)
+    }
+  }, [data.layers])
 
   // ---------- render UI overlay ----------
 
@@ -587,11 +694,14 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
     <div className="relative h-screen w-full overflow-hidden bg-[#05060a] text-fg-primary">
       <div ref={mountRef} className="absolute inset-0" />
 
-      {/* Top bar */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between p-4">
-        <div className="pointer-events-auto font-mono text-sm">
+      {/* ----- Top bar -----
+          Mobile: compact 44px-tall row, just wordmark + search icon. Respects
+          iOS notch via safe-area-inset-top.
+          Desktop (md:): full bar with the live counters. */}
+      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-3 pt-[max(env(safe-area-inset-top),0.5rem)] pb-2 md:p-4">
+        <div className="pointer-events-auto min-w-0 font-mono text-sm">
           <span className="font-semibold text-fg-primary">Compute Circuit</span>
-          <span className="ml-3 text-fg-muted">
+          <span className="ml-3 hidden text-fg-muted sm:inline">
             {data.companies.filter(c => c.layer_id).length} cos
             {data.companies.filter(c => !c.layer_id).length > 0 && (
               <span className="text-fg-dim"> (+{data.companies.filter(c => !c.layer_id).length} unplaced)</span>
@@ -602,15 +712,34 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         <button
           type="button"
           onClick={() => setPaletteOpen(true)}
-          className="pointer-events-auto rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 text-xs text-fg-secondary backdrop-blur hover:border-border-strong hover:text-fg-primary"
+          className="pointer-events-auto hidden min-h-11 min-w-11 items-center rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 text-xs text-fg-secondary backdrop-blur hover:border-border-strong hover:text-fg-primary md:inline-flex"
         >
           ⌘K Search
         </button>
       </div>
 
-      {/* Layer key — left rail (top). Shows per-layer co count + today's
-          signal count (8-K filings + news matched to a co in that layer). */}
-      <div className="pointer-events-auto absolute left-4 top-16 z-10 w-48 space-y-0.5 text-[11px] font-mono text-fg-muted">
+      {/* Active ⌘K filter chips — appear top-center under the title bar.
+          On mobile we float them just below the 44px top bar; on md+ they slot
+          into the original top-12 position. */}
+      {(sectorFilter || heldOnly || hiringDeptFilter) && (
+        <div className="pointer-events-auto absolute left-1/2 top-12 z-10 flex max-w-[calc(100vw-1rem)] -translate-x-1/2 flex-wrap items-center justify-center gap-1.5 px-2">
+          {sectorFilter && (
+            <FilterChip
+              label={'sector: ' + (data.layers.find(l => l.id === sectorFilter)?.name ?? sectorFilter)}
+              onClear={() => { setSectorFilter(null); if (typeof window !== 'undefined') window.location.hash = '' }}
+            />
+          )}
+          {heldOnly && <FilterChip label="held positions" onClear={() => setHeldOnly(false)} />}
+          {hiringDeptFilter && (
+            <FilterChip label={'hiring: ' + hiringDeptFilter} onClear={() => setHiringDeptFilter(null)} />
+          )}
+        </div>
+      )}
+
+      {/* ----- Layer key — left rail (top), desktop only -----
+          Per-layer co count + today's signal count (8-K + news for cos in
+          that layer). Hidden on phone; back at md:. */}
+      <div className="pointer-events-auto absolute left-4 top-16 z-10 hidden w-48 space-y-0.5 text-[11px] font-mono text-fg-muted md:block">
         <div className="mb-1 text-label text-fg-dim">Layers · 24h</div>
         {[...data.layers].reverse().map((l) => {
           const layerCoIds = new Set(
@@ -642,8 +771,8 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         })}
       </div>
 
-      {/* Backer filter chips — left rail (bottom) */}
-      <div className="pointer-events-auto absolute bottom-4 left-4 z-10 max-w-[200px] space-y-1 text-[11px] font-mono">
+      {/* ----- Backer filter chips — left rail (bottom), desktop only ----- */}
+      <div className="pointer-events-auto absolute bottom-4 left-4 z-10 hidden max-w-[200px] space-y-1 text-[11px] font-mono md:block">
         <div className="mb-1 text-label text-fg-dim">Filter by backer</div>
         {data.investors.map((inv) => {
           const active = backerFilter === inv.id
@@ -674,8 +803,8 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         )}
       </div>
 
-      {/* Flow type legend — bottom right */}
-      <div className="pointer-events-none absolute bottom-4 right-4 z-10 space-y-1 text-[11px] font-mono text-fg-secondary">
+      {/* ----- Flow type legend — bottom right, desktop only ----- */}
+      <div className="pointer-events-none absolute bottom-4 right-4 z-10 hidden space-y-1 text-[11px] font-mono text-fg-secondary md:block">
         <div className="mb-1 text-label text-fg-dim">Flow types</div>
         {(Object.keys(FLOW_COLORS) as FlowType[]).map((k) => (
           <div key={k} className="flex items-center gap-2">
@@ -685,23 +814,51 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         ))}
       </div>
 
-      {/* Chrome telemetry — GasCity-style "instrument is live" bar at bottom-center */}
+      {/* ----- Chrome telemetry — bottom-center "instrument live" bar, desktop only ----- */}
       <ChromeTelemetry lastUpdates={data.lastUpdates} />
 
-      {/* Pulse Board — graph-wide "what mattered today" panel */}
+      {/* ----- Pulse Board — top-right panel, desktop only.
+          Mobile users reach the same content via the bottom-nav "Pulse" tab. */}
       <PulseBoard data={data} onSelect={(s) => setSelected(s)} />
 
-      {/* Supply Chain Strip — bottleneck dashboard across FUEL → POWER → GRID → FAB → DC → MODELS */}
+      {/* ----- Supply Chain Strip — top-center, desktop only.
+          Mobile users reach the same content via the bottom-nav "Chain" tab. */}
       <SupplyChainStrip data={data} />
 
-      {/* Hover tooltip */}
+      {/* ----- Hover tooltip ----- */}
       {hover && (
         <div
-          className="pointer-events-none absolute z-20 rounded-md border border-border-default bg-bg-overlay px-2 py-1 text-xs text-fg-primary backdrop-blur"
+          className="pointer-events-none absolute z-20 hidden rounded-md border border-border-default bg-bg-overlay px-2 py-1 text-xs text-fg-primary backdrop-blur md:block"
           style={{ left: hover.x + 12, top: hover.y + 12 }}
         >
           {hover.label}
         </div>
+      )}
+
+      {/* ----- Mobile bottom nav -----
+          Stripe Dashboard pattern: 4 fixed icons across the bottom. Tapping
+          one slides up a bottom sheet with that panel's content. Tapping the
+          active icon (or anywhere on the sheet's scrim) collapses the sheet
+          back to the full-viewport graph. */}
+      <MobileBottomNav
+        active={mobileSheet}
+        onChange={(id) => {
+          if (id === 'search') { setPaletteOpen(true); return }
+          setMobileSheet(prev => (prev === id ? null : id))
+        }}
+      />
+
+      {/* Mobile bottom sheets — Pulse + Chain content presented as a 70vh
+          sheet sliding up from the bottom. */}
+      {mobileSheet === 'pulse' && (
+        <MobileSheet title="Pulse Board" onClose={() => setMobileSheet(null)}>
+          <PulseBoard data={data} onSelect={(s) => { setSelected(s); setMobileSheet(null) }} variant="mobile" />
+        </MobileSheet>
+      )}
+      {mobileSheet === 'chain' && (
+        <MobileSheet title="Supply Chain" onClose={() => setMobileSheet(null)}>
+          <SupplyChainStrip data={data} variant="mobile" />
+        </MobileSheet>
       )}
 
       {selected && (
@@ -715,6 +872,127 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         />
       )}
     </div>
+  )
+}
+
+// ---------- Mobile bottom nav + sheet (phone only, < md) ----------
+
+interface MobileBottomNavProps {
+  active: 'pulse' | 'chain' | 'search' | null
+  onChange: (id: 'pulse' | 'chain' | 'search') => void
+}
+
+function MobileBottomNav({ active, onChange }: MobileBottomNavProps) {
+  // Each tab is a 44×44 target (per WCAG 2.5.5 / Apple HIG).
+  const tabs: Array<{ id: 'pulse' | 'chain' | 'search' | 'graph'; label: string; icon: string }> = [
+    { id: 'graph',  label: 'Graph',  icon: '🌐' },
+    { id: 'pulse',  label: 'Pulse',  icon: '📊' },
+    { id: 'chain',  label: 'Chain',  icon: '🔗' },
+    { id: 'search', label: 'Search', icon: '🔍' },
+  ]
+  return (
+    <nav
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-30 flex border-t border-border-default bg-bg-overlay/95 pb-[env(safe-area-inset-bottom)] backdrop-blur md:hidden"
+      aria-label="Mobile primary"
+    >
+      {tabs.map((t) => {
+        const isActive = t.id === 'graph' ? active === null : active === t.id
+        return (
+          <button
+            type="button"
+            key={t.id}
+            onClick={() => {
+              if (t.id === 'graph') {
+                // Going back to graph = close whatever sheet is open. We pipe
+                // through onChange by toggling the currently-active tab — but
+                // if nothing is active, this is a no-op.
+                if (active) onChange(active)
+                return
+              }
+              onChange(t.id)
+            }}
+            className={
+              'flex min-h-11 flex-1 flex-col items-center justify-center gap-0.5 py-2 text-meta uppercase tracking-wider transition-colors ' +
+              (isActive
+                ? 'text-accent-primary'
+                : 'text-fg-muted hover:text-fg-primary')
+            }
+            aria-pressed={isActive}
+          >
+            <span className="text-base leading-none">{t.icon}</span>
+            <span>{t.label}</span>
+          </button>
+        )
+      })}
+    </nav>
+  )
+}
+
+interface MobileSheetProps {
+  title: string
+  onClose: () => void
+  children: React.ReactNode
+}
+
+function MobileSheet({ title, onClose, children }: MobileSheetProps) {
+  return (
+    <>
+      {/* Scrim — tap to dismiss, only above bottom nav (so nav stays usable). */}
+      <button
+        type="button"
+        onClick={onClose}
+        aria-label="Close sheet"
+        className="fixed inset-0 z-20 bg-black/40 backdrop-blur-sm md:hidden"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 60px)' }}
+      />
+      {/* Sheet itself — slides up to 70vh with a drag handle. The bottom-nav
+          (60px tall + safe-area) stays visible below so users can tap a
+          different tab without dismissing first. */}
+      <div
+        className="fixed inset-x-0 z-30 flex flex-col overflow-hidden rounded-t-card border-x border-t border-border-default bg-bg-overlay text-fg-primary shadow-panel backdrop-blur md:hidden"
+        style={{ bottom: 'calc(env(safe-area-inset-bottom) + 60px)', height: '70vh' }}
+        role="dialog"
+        aria-label={title}
+      >
+        {/* Drag handle + header */}
+        <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
+          <div className="mx-auto h-1 w-10 rounded-full bg-border-strong" aria-hidden="true" />
+        </div>
+        <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2">
+          <span className="text-label text-fg-primary">{title}</span>
+          <button
+            type="button"
+            onClick={onClose}
+            className="flex min-h-11 min-w-11 items-center justify-center rounded-md text-body text-fg-muted hover:text-fg-primary"
+            aria-label="Close"
+          >
+            ×
+          </button>
+        </div>
+        {/* Sheet body — scrollable. */}
+        <div className="flex-1 overflow-y-auto">
+          {children}
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ---------- Active-filter chip (shown when ⌘K applies a sector / held / hiring filter) ----------
+
+function FilterChip({ label, onClear }: { label: string; onClear: () => void }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-md border border-accent-primary/40 bg-accent-primary/10 px-2 py-1 text-meta uppercase tracking-wider text-accent-primary shadow-card">
+      <span>{label}</span>
+      <button
+        type="button"
+        onClick={onClear}
+        className="text-fg-muted hover:text-fg-primary"
+        aria-label="clear filter"
+      >
+        ×
+      </button>
+    </span>
   )
 }
 
@@ -734,8 +1012,10 @@ function ChromeTelemetry({ lastUpdates }: { lastUpdates: GraphData['lastUpdates'
     { label: 'IP',      iso: lastUpdates.patents,  textColor: 'text-feed-patents',  dotColor: 'bg-feed-patents'  },
     { label: 'JOBS',    iso: lastUpdates.jobs,     textColor: 'text-feed-jobs',     dotColor: 'bg-feed-jobs'     },
   ]
+  // Mobile users get this same data inside the Pulse Board sheet via the
+  // recency badges already in each row, so we hide the strip itself.
   return (
-    <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 text-meta font-mono uppercase tracking-wider text-fg-muted shadow-panel backdrop-blur">
+    <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 hidden -translate-x-1/2 items-center gap-3 rounded-md border border-border-default bg-bg-overlay px-3 py-1.5 text-meta font-mono uppercase tracking-wider text-fg-muted shadow-panel backdrop-blur md:flex">
       <span className="text-fg-dim">LIVE</span>
       {entries.map((e) => (
         <span key={e.label} className="flex items-center gap-1">

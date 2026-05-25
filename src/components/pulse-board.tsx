@@ -24,9 +24,13 @@ import type { SelectedRef } from './compute-graph'
 interface Props {
   data: GraphData
   onSelect: (sel: SelectedRef) => void
+  /** 'desktop' = floating 320px panel at top-right (default). 'mobile' = full-
+      width content rendered inline (no border, no max-width) for use inside
+      the parent MobileSheet. */
+  variant?: 'desktop' | 'mobile'
 }
 
-export default function PulseBoard({ data, onSelect }: Props) {
+export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Props) {
   const [open, setOpen] = useState(true)
 
   const movers = useMovers(data)
@@ -36,8 +40,26 @@ export default function PulseBoard({ data, onSelect }: Props) {
   const hiring = useHiringRamps(data)
   const funding = useFunding90d(data)
 
+  // Mobile variant: no chrome, no collapsible header (the parent sheet's
+  // header already supplies title + close). Just stacked sections.
+  if (variant === 'mobile') {
+    return (
+      <div className="space-y-4 px-4 py-3 text-body text-fg-secondary">
+        <PulseSections
+          movers={movers}
+          filings={filings}
+          news={news}
+          insider={insider}
+          funding={funding}
+          hiring={hiring}
+          onSelect={onSelect}
+        />
+      </div>
+    )
+  }
+
   return (
-    <div className="pointer-events-auto absolute right-4 top-16 z-10 w-[320px] rounded-card border border-border-default bg-bg-overlay text-body text-fg-secondary shadow-panel backdrop-blur">
+    <div className="pointer-events-auto absolute right-4 top-16 z-10 hidden w-[320px] rounded-card border border-border-default bg-bg-overlay text-body text-fg-secondary shadow-panel backdrop-blur md:block">
       <button
         type="button"
         onClick={() => setOpen(v => !v)}
@@ -48,110 +70,136 @@ export default function PulseBoard({ data, onSelect }: Props) {
       </button>
       {open && (
         <div className="max-h-[calc(100vh-200px)] space-y-4 overflow-y-auto px-4 py-3">
-          <PulseSection title="Movers · 1d">
-            {movers.length === 0 ? <NoData /> : movers.map((m) => (
-              <PulseRow
-                key={m.id}
-                onClick={() => onSelect({ kind: 'company', id: m.id })}
-                left={<span className="text-fg-primary">{m.ticker ?? m.name}</span>}
-                right={
-                  <span className={'font-mono ' + (m.pct >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
-                    {m.pct >= 0 ? '+' : ''}{m.pct.toFixed(2)}%
-                  </span>
-                }
-              />
-            ))}
-          </PulseSection>
-
-          <PulseSection title="Filings · 8-K">
-            {filings.length === 0 ? <NoData /> : filings.map((f) => (
-              <PulseRow
-                key={f.id}
-                onClick={f.coId ? () => onSelect({ kind: 'company', id: f.coId! }) : undefined}
-                left={
-                  <span className="line-clamp-2 text-fg-primary">
-                    {f.coTicker && <span className="text-feed-filings">{f.coTicker} </span>}
-                    {f.headline}
-                  </span>
-                }
-                right={<span className="ml-2 text-fg-muted">{f.dateShort}</span>}
-              />
-            ))}
-          </PulseSection>
-
-          <PulseSection title="News">
-            {news.length === 0 ? <NoData /> : news.map((n) => (
-              <PulseRow
-                key={n.id}
-                onClick={n.coId ? () => onSelect({ kind: 'company', id: n.coId! }) : undefined}
-                left={
-                  <span className="line-clamp-2 text-fg-primary">
-                    {n.coTicker && <span className="text-signal-info">{n.coTicker} </span>}
-                    {n.headline}
-                  </span>
-                }
-                right={<span className="ml-2 text-fg-muted">{n.dateShort}</span>}
-              />
-            ))}
-          </PulseSection>
-
-          <PulseSection title="Insider · 7d">
-            {insider.length === 0 ? <NoData /> : insider.map((i) => (
-              <PulseRow
-                key={i.coId}
-                onClick={() => onSelect({ kind: 'company', id: i.coId })}
-                left={<span className="text-fg-primary">{i.coTicker ?? i.coName}</span>}
-                right={
-                  <span className={'font-mono ' + (i.netUsd >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
-                    {i.netUsd >= 0 ? '+' : '−'}{fmtUsd(Math.abs(i.netUsd))}
-                  </span>
-                }
-              />
-            ))}
-          </PulseSection>
-
-          <PulseSection title="Funding · 90d">
-            {funding.length === 0 ? <NoData /> : funding.map((f) => (
-              <PulseRow
-                key={f.id}
-                onClick={() => onSelect({ kind: 'company', id: f.coId })}
-                left={
-                  <span className="text-fg-primary">
-                    {f.coTicker ?? f.coName}
-                    <span className="ml-1 text-fg-muted">· {f.dateShort}</span>
-                  </span>
-                }
-                right={
-                  <span className="font-mono text-signal-healthy">
-                    {fmtUsd(f.amountUsd)}{f.indefinite ? '+' : ''}
-                  </span>
-                }
-              />
-            ))}
-          </PulseSection>
-
-          <PulseSection title="Hiring ramps · 7d">
-            {hiring.length === 0 ? <NoData /> : hiring.map((h) => (
-              <PulseRow
-                key={h.coId}
-                onClick={() => onSelect({ kind: 'company', id: h.coId })}
-                left={
-                  <span className="text-fg-primary">
-                    {h.coTicker ?? h.coName}
-                    <span className="ml-1 text-fg-muted">· {h.topDept ?? '—'}</span>
-                  </span>
-                }
-                right={
-                  <span className={'font-mono ' + (h.delta >= 0 ? 'text-feed-jobs' : 'text-fg-secondary')}>
-                    {h.delta >= 0 ? '+' : ''}{h.delta}
-                  </span>
-                }
-              />
-            ))}
-          </PulseSection>
+          <PulseSections
+            movers={movers}
+            filings={filings}
+            news={news}
+            insider={insider}
+            funding={funding}
+            hiring={hiring}
+            onSelect={onSelect}
+          />
         </div>
       )}
     </div>
+  )
+}
+
+interface PulseSectionsProps {
+  movers: MoverRow[]
+  filings: FilingRow[]
+  news: FilingRow[]
+  insider: InsiderRow[]
+  funding: FundingRow[]
+  hiring: HiringRow[]
+  onSelect: (sel: SelectedRef) => void
+}
+
+function PulseSections({ movers, filings, news, insider, funding, hiring, onSelect }: PulseSectionsProps) {
+  return (
+    <>
+      <PulseSection title="Movers · 1d">
+        {movers.length === 0 ? <NoData /> : movers.map((m) => (
+          <PulseRow
+            key={m.id}
+            onClick={() => onSelect({ kind: 'company', id: m.id })}
+            left={<span className="text-fg-primary">{m.ticker ?? m.name}</span>}
+            right={
+              <span className={'font-mono ' + (m.pct >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
+                {m.pct >= 0 ? '+' : ''}{m.pct.toFixed(2)}%
+              </span>
+            }
+          />
+        ))}
+      </PulseSection>
+
+      <PulseSection title="Filings · 8-K">
+        {filings.length === 0 ? <NoData /> : filings.map((f) => (
+          <PulseRow
+            key={f.id}
+            onClick={f.coId ? () => onSelect({ kind: 'company', id: f.coId! }) : undefined}
+            left={
+              <span className="line-clamp-2 text-fg-primary">
+                {f.coTicker && <span className="text-feed-filings">{f.coTicker} </span>}
+                {f.headline}
+              </span>
+            }
+            right={<span className="ml-2 text-fg-muted">{f.dateShort}</span>}
+          />
+        ))}
+      </PulseSection>
+
+      <PulseSection title="News">
+        {news.length === 0 ? <NoData /> : news.map((n) => (
+          <PulseRow
+            key={n.id}
+            onClick={n.coId ? () => onSelect({ kind: 'company', id: n.coId! }) : undefined}
+            left={
+              <span className="line-clamp-2 text-fg-primary">
+                {n.coTicker && <span className="text-signal-info">{n.coTicker} </span>}
+                {n.headline}
+              </span>
+            }
+            right={<span className="ml-2 text-fg-muted">{n.dateShort}</span>}
+          />
+        ))}
+      </PulseSection>
+
+      <PulseSection title="Insider · 7d">
+        {insider.length === 0 ? <NoData /> : insider.map((i) => (
+          <PulseRow
+            key={i.coId}
+            onClick={() => onSelect({ kind: 'company', id: i.coId })}
+            left={<span className="text-fg-primary">{i.coTicker ?? i.coName}</span>}
+            right={
+              <span className={'font-mono ' + (i.netUsd >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
+                {i.netUsd >= 0 ? '+' : '−'}{fmtUsd(Math.abs(i.netUsd))}
+              </span>
+            }
+          />
+        ))}
+      </PulseSection>
+
+      <PulseSection title="Funding · 90d">
+        {funding.length === 0 ? <NoData /> : funding.map((f) => (
+          <PulseRow
+            key={f.id}
+            onClick={() => onSelect({ kind: 'company', id: f.coId })}
+            left={
+              <span className="text-fg-primary">
+                {f.coTicker ?? f.coName}
+                <span className="ml-1 text-fg-muted">· {f.dateShort}</span>
+              </span>
+            }
+            right={
+              <span className="font-mono text-signal-healthy">
+                {fmtUsd(f.amountUsd)}{f.indefinite ? '+' : ''}
+              </span>
+            }
+          />
+        ))}
+      </PulseSection>
+
+      <PulseSection title="Hiring ramps · 7d">
+        {hiring.length === 0 ? <NoData /> : hiring.map((h) => (
+          <PulseRow
+            key={h.coId}
+            onClick={() => onSelect({ kind: 'company', id: h.coId })}
+            left={
+              <span className="text-fg-primary">
+                {h.coTicker ?? h.coName}
+                <span className="ml-1 text-fg-muted">· {h.topDept ?? '—'}</span>
+              </span>
+            }
+            right={
+              <span className={'font-mono ' + (h.delta >= 0 ? 'text-feed-jobs' : 'text-fg-secondary')}>
+                {h.delta >= 0 ? '+' : ''}{h.delta}
+              </span>
+            }
+          />
+        ))}
+      </PulseSection>
+    </>
   )
 }
 
@@ -180,7 +228,9 @@ function PulseRow({
       onClick={onClick}
       disabled={!isClickable}
       className={
-        'flex w-full items-baseline justify-between gap-2 rounded-md px-1.5 py-1.5 text-left transition-colors ' +
+        // min-h-11 keeps each row ≥44px on touch devices (WCAG 2.5.5 / Apple
+        // HIG); desktop still feels dense thanks to the inline content.
+        'flex min-h-11 w-full items-baseline justify-between gap-2 rounded-md px-1.5 py-2 text-left transition-colors md:min-h-0 md:py-1.5 ' +
         (isClickable ? 'cursor-pointer hover:bg-bg-hover/70' : 'cursor-default')
       }
     >
