@@ -77,6 +77,7 @@ export async function GET(req: NextRequest) {
   results.push(await call('jobs', '/api/cron/jobs'))
   results.push(await call('btc', '/api/cron/btc'))
   results.push(await call('gpu-spot', '/api/cron/gpu-spot'))
+  results.push(await call('leaderboard', '/api/cron/leaderboard'))
   // Weekly: fundamentals (Tuesdays = day 2) + 13F holdings (Sundays = day 0)
   if (day === 2) results.push(await call('fundamentals', '/api/cron/fundamentals'))
   if (day === 0) results.push(await call('13f-tracker', '/api/cron/13f-tracker'))

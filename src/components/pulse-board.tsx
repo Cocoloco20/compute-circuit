@@ -21,6 +21,7 @@ import { useMemo, useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
 import { topCapexRunRate, type CapexRunRateRow } from '@/lib/capex'
 import type { SelectedRef } from './compute-graph'
+import type { ModelLeaderboardEntry } from '@/types/db'
 
 interface Props {
   data: GraphData
@@ -42,6 +43,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
   const funding = useFunding90d(data)
   const gpuSpot = useGpuSpot24h(data)
   const capex = useCapexRunRateTop(data)
+  const leaderboardTop5 = useLeaderboardTop5(data)
 
   // Mobile variant: no chrome, no collapsible header (the parent sheet's
   // header already supplies title + close). Just stacked sections.
@@ -57,6 +59,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
           hiring={hiring}
           gpuSpot={gpuSpot}
           capex={capex}
+          leaderboardTop5={leaderboardTop5}
           companies={data.companies}
           onSelect={onSelect}
         />
@@ -85,6 +88,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
             hiring={hiring}
             gpuSpot={gpuSpot}
             capex={capex}
+            leaderboardTop5={leaderboardTop5}
             companies={data.companies}
             onSelect={onSelect}
           />
@@ -103,11 +107,12 @@ interface PulseSectionsProps {
   hiring: HiringRow[]
   gpuSpot: GpuSpotRow[]
   capex: CapexRunRateRow[]
+  leaderboardTop5: ModelLeaderboardEntry[]
   companies: GraphData['companies']
   onSelect: (sel: SelectedRef) => void
 }
 
-function PulseSections({ movers, filings, news, insider, funding, hiring, gpuSpot, capex, companies, onSelect }: PulseSectionsProps) {
+function PulseSections({ movers, filings, news, insider, funding, hiring, gpuSpot, capex, leaderboardTop5, companies, onSelect }: PulseSectionsProps) {
   return (
     <>
       <PulseSection title="Movers · 1d">
@@ -123,6 +128,32 @@ function PulseSections({ movers, filings, news, insider, funding, hiring, gpuSpo
             }
           />
         ))}
+      </PulseSection>
+
+      <PulseSection title="Frontier · top 5">
+        {leaderboardTop5.length === 0 ? <NoData /> : leaderboardTop5.map((m) => {
+          const co = companies.find(x => x.id === m.company_id)
+          const badgeText = co ? (co.ticker ?? co.name) : getCreatorGuess(m.model_name)
+          return (
+            <PulseRow
+              key={m.id}
+              onClick={m.company_id ? () => onSelect({ kind: 'company', id: m.company_id! }) : undefined}
+              left={
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <span className="truncate text-fg-primary">{m.model_name}</span>
+                  <span className="shrink-0 rounded bg-bg-hover/80 border border-border-subtle px-1 py-0.25 text-[10px] text-fg-muted font-mono leading-none">
+                    {badgeText}
+                  </span>
+                </div>
+              }
+              right={
+                <span className="font-mono text-fg-primary shrink-0">
+                  Rank {m.elo_rank}
+                </span>
+              }
+            />
+          )
+        })}
       </PulseSection>
 
       <PulseSection title="Filings · 8-K">
@@ -560,3 +591,38 @@ function fmtUsd(n: number): string {
   if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}k`
   return `$${n.toFixed(0)}`
 }
+
+function getCreatorGuess(modelName: string): string {
+  const nameLower = modelName.toLowerCase()
+  if (nameLower.includes('deepseek')) return 'DeepSeek'
+  if (nameLower.includes('qwen') || nameLower.includes('qwq')) return 'Alibaba'
+  if (nameLower.includes('yi-')) return '01.AI'
+  if (nameLower.includes('baichuan')) return 'Baichuan'
+  if (nameLower.includes('glm') || nameLower.includes('chatglm')) return 'Zhipu'
+  if (nameLower.includes('internlm')) return 'SenseTime'
+  if (nameLower.includes('minicpm')) return 'OpenBMB'
+  if (nameLower.includes('phi-')) return 'Microsoft'
+  if (nameLower.includes('gemma')) return 'Google'
+  if (nameLower.includes('llama')) return 'Meta'
+  if (nameLower.includes('mistral') || nameLower.includes('mixtral')) return 'Mistral'
+  if (nameLower.includes('grok')) return 'xAI'
+  if (nameLower.includes('claude')) return 'Anthropic'
+  if (nameLower.includes('gpt-') || nameLower.includes('o1-') || /^o\d+/.test(nameLower)) return 'OpenAI'
+  return 'Unknown'
+}
+
+function useLeaderboardTop5(data: GraphData): ModelLeaderboardEntry[] {
+  return useMemo(() => {
+    if (!data.modelLeaderboard || data.modelLeaderboard.length === 0) return []
+    let entries = data.modelLeaderboard.filter(e => e.source === 'lmarena')
+    if (entries.length === 0) {
+      entries = data.modelLeaderboard.filter(e => e.source === 'artificialanalysis')
+    }
+    if (entries.length === 0) return []
+    const dates = Array.from(new Set(entries.map(e => e.snapshot_date))).sort((a, b) => b.localeCompare(a))
+    const latestDate = dates[0]
+    const latest = entries.filter(e => e.snapshot_date === latestDate)
+    return latest.sort((a, b) => a.elo_rank - b.elo_rank).slice(0, 5)
+  }, [data])
+}
+

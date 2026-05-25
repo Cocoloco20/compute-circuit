@@ -23,6 +23,7 @@ import type {
   EiaFuelMixSnapshot,
   EiaInternationalSnapshot,
   AeoProjection,
+  ModelLeaderboardEntry,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -51,6 +52,7 @@ export interface GraphData {
   gridDemand: GridDemandSnapshot[] // EIA grid demand, last 35 days for delta
   patents: PatentSnapshotRow[]    // USPTO TTM snapshots, last 35 days for delta
   jobs: JobSnapshotRow[]          // Hiring pulse snapshots, last 35 days for delta
+  modelLeaderboard: ModelLeaderboardEntry[] // Chatbot Arena / AA model ELO rankings, last 35 days
   eiaCommodities: EiaCommoditySnapshot[]    // Henry Hub, coal stocks, nuke outage, ...
   eiaFuelMix: EiaFuelMixSnapshot[]          // Per-region generation mix + carbon intensity
   eiaInternational: EiaInternationalSnapshot[]  // Fab-country electricity stats
@@ -69,6 +71,7 @@ export interface GraphData {
     grid: string | null           // most-recent grid_demand_snapshots.snapshot_date
     patents: string | null        // most-recent patent_snapshots.snapshot_date
     jobs: string | null           // most-recent job_snapshots.snapshot_date
+    leaderboard: string | null    // most-recent model_leaderboard.snapshot_date
   }
 }
 
@@ -196,7 +199,7 @@ export async function fetchGraph(): Promise<GraphData> {
   //   patents:     21 cos × 35 = 735
   //   jobs:        10 cos × 35 = 350
   const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const [gd, pat, jb, eiaCom, eiaFmx, eiaIntl, aeo] = await Promise.all([
+  const [gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo] = await Promise.all([
     sb.from('grid_demand_snapshots').select('*')
       .gte('snapshot_date', thirtyFiveDaysAgo)
       .order('snapshot_date', { ascending: false }).limit(500),
@@ -206,6 +209,9 @@ export async function fetchGraph(): Promise<GraphData> {
     sb.from('job_snapshots').select('*')
       .gte('snapshot_date', thirtyFiveDaysAgo)
       .order('snapshot_date', { ascending: false }).limit(500),
+    sb.from('model_leaderboard').select('*')
+      .gte('snapshot_date', thirtyFiveDaysAgo)
+      .order('snapshot_date', { ascending: false }).limit(200),
     // Commodity series often update monthly/annual — pull a wider window
     // (180d) so we can always compute a delta-vs-prior.
     sb.from('eia_commodity_snapshots').select('*')
@@ -224,7 +230,7 @@ export async function fetchGraph(): Promise<GraphData> {
 
   // All optional signal tables — non-fatal on read error (table empty,
   // RLS denied, API key missing pre-cron).
-  for (const r of [gd, pat, jb, eiaCom, eiaFmx, eiaIntl, aeo] as Array<{ error: { message: string } | null }>) {
+  for (const r of [gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo] as Array<{ error: { message: string } | null }>) {
     if (r.error) {
       // eslint-disable-next-line no-console
       console.warn('[graph-data] optional signal table read failed:', r.error.message)
@@ -256,6 +262,7 @@ export async function fetchGraph(): Promise<GraphData> {
     gridDemand: (gd.data ?? []) as GridDemandSnapshot[],
     patents: (pat.data ?? []) as PatentSnapshotRow[],
     jobs: (jb.data ?? []) as JobSnapshotRow[],
+    modelLeaderboard: (ml.data ?? []) as ModelLeaderboardEntry[],
     eiaCommodities: (eiaCom.data ?? []) as EiaCommoditySnapshot[],
     eiaFuelMix: (eiaFmx.data ?? []) as EiaFuelMixSnapshot[],
     eiaInternational: (eiaIntl.data ?? []) as EiaInternationalSnapshot[],
@@ -313,6 +320,10 @@ export async function fetchGraph(): Promise<GraphData> {
         .sort()
         .at(-1) ?? null,
       jobs: ((jb.data ?? []) as JobSnapshotRow[])
+        .map(x => x.snapshot_date)
+        .sort()
+        .at(-1) ?? null,
+      leaderboard: ((ml.data ?? []) as ModelLeaderboardEntry[])
         .map(x => x.snapshot_date)
         .sort()
         .at(-1) ?? null,

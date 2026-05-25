@@ -344,6 +344,9 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
         <Stat label="Share" value={company.share != null ? `${(company.share * 100).toFixed(0)}%` : '—'} />
       </div>
       <SignalChips companyId={company.id} data={data} />
+      {company.layer_id === 'labs' && (
+        <ModelLeaderboardSection companyId={company.id} data={data} />
+      )}
       {company.thesis && <Section title="Thesis">{company.thesis}</Section>}
       {company.notes && <Section title="Notes"><div className="whitespace-pre-line">{company.notes}</div></Section>}
       {backers.length > 0 && (
@@ -1257,6 +1260,99 @@ function SignalChips({ companyId, data }: { companyId: string; data: GraphData }
       {patents.length > 0 && <RDVelocityChip    rows={patents} />}
       {github.length  > 0 && <GitHubActivityChip rows={github} companyName={company?.name ?? companyId} />}
     </div>
+  )
+}
+
+function ModelLeaderboardSection({ companyId, data }: { companyId: string; data: GraphData }) {
+  const entries = data.modelLeaderboard.filter(e => e.company_id === companyId)
+  if (entries.length === 0) return null
+
+  const dates = Array.from(new Set(entries.map(e => e.snapshot_date))).sort((a, b) => b.localeCompare(a))
+  if (dates.length === 0) return null
+
+  const latestDate = dates[0]
+  const latestMs = new Date(latestDate).getTime()
+  const targetMs = latestMs - 7 * 24 * 60 * 60 * 1000
+
+  let prevDate = dates[1] || null
+  let minDiff = prevDate ? Math.abs(new Date(prevDate).getTime() - targetMs) : Infinity
+  for (let i = 1; i < dates.length; i++) {
+    const diff = Math.abs(new Date(dates[i]).getTime() - targetMs)
+    if (diff < minDiff) {
+      minDiff = diff
+      prevDate = dates[i]
+    }
+  }
+
+  const latestModels = entries.filter(e => e.snapshot_date === latestDate)
+  latestModels.sort((a, b) => a.elo_rank - b.elo_rank)
+  const top3 = latestModels.slice(0, 3)
+
+  const prevModels = prevDate ? entries.filter(e => e.snapshot_date === prevDate) : []
+  const prevRankMap = new Map<string, number>()
+  for (const m of prevModels) {
+    const existing = prevRankMap.get(m.model_name)
+    if (existing === undefined || m.elo_rank < existing) {
+      prevRankMap.set(m.model_name, m.elo_rank)
+    }
+  }
+
+  return (
+    <Section title="Model Leaderboard">
+      <div className="space-y-1.5">
+        {top3.map((m) => {
+          const prevRank = prevRankMap.get(m.model_name)
+          const delta = prevRank !== undefined ? prevRank - m.elo_rank : null
+          
+          return (
+            <div
+              key={m.id}
+              className="rounded-card border border-border-default bg-bg-surface/30 px-3 py-1.5 flex items-center justify-between"
+            >
+              <div className="min-w-0 flex-1">
+                <div className="font-mono text-xs font-semibold text-fg-primary truncate" title={m.model_name}>
+                  {m.model_name}
+                </div>
+                <div className="flex items-center gap-1.5 mt-0.5 text-[11px] text-fg-muted font-mono">
+                  <span>Rank {m.elo_rank}</span>
+                  {m.elo_score != null && (
+                    <span>· ELO {m.elo_score}</span>
+                  )}
+                  {m.params_b != null && (
+                    <span>· {m.params_b}B</span>
+                  )}
+                  <span>· {m.source === 'lmarena' ? 'LMArena' : 'AA'}</span>
+                  {m.license && m.license !== 'unknown' && (
+                    <span className="uppercase text-[9px] px-1 border border-border-default rounded">
+                      {m.license}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="ml-3 shrink-0 text-right font-mono">
+                {delta !== null ? (
+                  delta > 0 ? (
+                    <span className="text-xs font-semibold text-signal-healthy">
+                      ▲{delta}
+                    </span>
+                  ) : delta < 0 ? (
+                    <span className="text-xs font-semibold text-signal-alert">
+                      ▼{Math.abs(delta)}
+                    </span>
+                  ) : (
+                    <span className="text-xs text-fg-muted">=</span>
+                  )
+                ) : (
+                  <span className="text-[10px] uppercase font-semibold text-accent-primary bg-accent-primary/10 px-1 rounded">
+                    new
+                  </span>
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+    </Section>
   )
 }
 

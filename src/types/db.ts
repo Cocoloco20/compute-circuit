@@ -188,6 +188,19 @@ export interface HfActivity {
   created_at: string
 }
 
+export interface ModelLeaderboardEntry {
+  id: string
+  snapshot_date: string
+  source: string                            // 'lmarena' | 'artificialanalysis'
+  model_name: string                        // e.g. 'claude-opus-4-7-thinking'
+  company_id: string | null                 // null if not in DB
+  elo_score: number | null                  // nullable; LMArena public page doesn't expose
+  elo_rank: number                          // 1 = best. Always populated.
+  params_b: number | null                   // model size in B params (best-effort)
+  license: string | null                    // 'open' | 'closed' | 'unknown'
+  created_at: string
+}
+
 export interface GithubActivity {
   id: string
   company_id: string
@@ -321,6 +334,7 @@ export interface Database {
       funding_rounds: { Row: FundingRound; Insert: Omit<FundingRound, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<FundingRound> }
       transcript_signals: { Row: TranscriptSignal; Insert: Omit<TranscriptSignal, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<TranscriptSignal> }
       hf_activity: { Row: HfActivity; Insert: Omit<HfActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<HfActivity> }
+      model_leaderboard: { Row: ModelLeaderboardEntry; Insert: Omit<ModelLeaderboardEntry, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<ModelLeaderboardEntry> }
       github_activity: { Row: GithubActivity; Insert: Omit<GithubActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GithubActivity> }
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
