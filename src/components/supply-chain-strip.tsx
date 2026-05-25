@@ -48,22 +48,22 @@ interface ChainLayerSummary {
 }
 
 const TONE_DOT: Record<string, string> = {
-  green:   'bg-emerald-400',
-  yellow:  'bg-amber-400',
-  red:     'bg-red-400',
-  neutral: 'bg-zinc-600',
+  green:   'bg-signal-healthy',
+  yellow:  'bg-signal-warn',
+  red:     'bg-signal-alert',
+  neutral: 'bg-fg-dim',
 }
 const TONE_TEXT: Record<string, string> = {
-  green:   'text-emerald-300',
+  green:   'text-signal-healthy',
   yellow:  'text-feed-hf',
-  red:     'text-red-300',
+  red:     'text-signal-alert',
   neutral: 'text-fg-secondary',
 }
 const TONE_RING: Record<string, string> = {
-  green:   'ring-emerald-500/30',
-  yellow:  'ring-amber-500/40',
-  red:     'ring-red-500/50',
-  neutral: 'ring-zinc-700',
+  green:   'ring-signal-healthy/30',
+  yellow:  'ring-signal-warn/40',
+  red:     'ring-signal-alert/50',
+  neutral: 'ring-border-strong',
 }
 
 function worstOf(tones: Array<ChainEntry['tone']>): ChainEntry['tone'] {
@@ -440,7 +440,7 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
 
   return (
     <div className="pointer-events-auto absolute left-1/2 top-14 z-10 -translate-x-1/2">
-      <div className="flex gap-1 rounded border border-zinc-800 bg-zinc-950/85 p-1 text-[10px] font-mono backdrop-blur">
+      <div className="flex gap-1 rounded-md border border-border-default bg-bg-overlay p-1 text-meta font-mono shadow-panel backdrop-blur">
         {summary.map((s) => {
           const isOpen = expanded === s.label
           const hasData = s.entries.length > 0
@@ -452,13 +452,13 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
               className={
                 'flex items-center gap-1.5 rounded px-2 py-1 ring-1 transition ' +
                 TONE_RING[s.worstTone] + ' ' +
-                (isOpen ? 'bg-zinc-900' : 'bg-transparent hover:bg-zinc-900/60') +
+                (isOpen ? 'bg-bg-surface' : 'bg-transparent hover:bg-bg-surface/60') +
                 (!hasData ? ' opacity-40' : '')
               }
             >
               <span className={'inline-block h-1.5 w-1.5 rounded-full ' + TONE_DOT[s.worstTone]} />
               <span className="text-fg-primary">{s.label}</span>
-              <span className={'text-[10px] ' + TONE_TEXT[s.worstTone]}>{s.headline}</span>
+              <span className={'text-meta ' + TONE_TEXT[s.worstTone]}>{s.headline}</span>
             </button>
           )
         })}
@@ -469,7 +469,7 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
         const s = summary.find(x => x.label === expanded)
         if (!s || s.entries.length === 0) return null
         return (
-          <div className="mt-1 max-h-[300px] w-[420px] overflow-y-auto rounded border border-zinc-800 bg-zinc-950/95 p-3 text-[11px] font-mono backdrop-blur">
+          <div className="mt-1 max-h-[300px] w-[420px] overflow-y-auto rounded-card border border-border-default bg-bg-overlay p-3 text-[11px] font-mono shadow-panel backdrop-blur">
             <div className="mb-2 flex items-baseline justify-between">
               <span className="uppercase tracking-wider text-fg-secondary">{s.emoji} {s.label} layer · {s.entries.length} series</span>
               <button
@@ -479,7 +479,7 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
             </div>
             <div className="space-y-1">
               {s.entries.map(e => (
-                <div key={e.series_id} className="flex items-baseline justify-between gap-2 rounded px-1 py-0.5 hover:bg-zinc-900/60">
+                <div key={e.series_id} className="flex items-baseline justify-between gap-2 rounded px-1 py-0.5 hover:bg-bg-surface/60">
                   <span className="flex items-center gap-1.5 truncate">
                     <span className={'inline-block h-1.5 w-1.5 shrink-0 rounded-full ' + TONE_DOT[e.tone]} />
                     <span className="text-fg-primary truncate">{e.label}</span>
@@ -487,7 +487,7 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
                   <span className="flex shrink-0 items-baseline gap-2 text-fg-secondary">
                     <span className={TONE_TEXT[e.tone]}>{fmtNum(e.value, e.unit)}</span>
                     {e.delta != null && (
-                      <span className={'text-[10px] ' + (e.delta >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
+                      <span className={'text-meta ' + (e.delta >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
                         {e.delta >= 0 ? '+' : ''}{e.delta.toFixed(1)}%
                       </span>
                     )}
@@ -529,11 +529,11 @@ function AeoForecastBlock({ projections }: { projections: GraphData['aeoProjecti
   const upRev2030 = ref25_2030 && cb_2030 ? ((cb_2030 - ref25_2030) / ref25_2030) * 100 : null
 
   return (
-    <div className="mt-3 border-t border-zinc-800 pt-2">
-      <div className="mb-1 text-[10px] uppercase tracking-widest text-fg-muted">
+    <div className="mt-3 border-t border-border-default pt-2">
+      <div className="mb-1 text-label text-fg-muted">
         AEO 2026 · US DC purchased electricity (TWh)
       </div>
-      <table className="w-full font-mono text-[10px]">
+      <table className="w-full font-mono text-meta">
         <thead className="text-[9px] uppercase text-fg-dim">
           <tr>
             <th className="text-left">scenario</th>
@@ -560,7 +560,7 @@ function AeoForecastBlock({ projections }: { projections: GraphData['aeoProjecti
         </tbody>
       </table>
       {upRev2030 != null && (
-        <div className="mt-1 text-[10px] text-amber-200">
+        <div className="mt-1 text-meta text-feed-hf">
           EIA revised 2030 baseline {upRev2030 >= 0 ? '+' : ''}{upRev2030.toFixed(0)}% vs AEO 2025
         </div>
       )}
