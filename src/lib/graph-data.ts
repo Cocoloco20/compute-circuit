@@ -11,7 +11,9 @@ import type {
   Holding,
   Fundamental,
   InsiderTransaction,
+  FundingRound,
   HfActivity,
+  GithubActivity,
   GridDemandSnapshot,
   PatentSnapshotRow,
   JobSnapshotRow,
@@ -39,7 +41,9 @@ export interface GraphData {
   holdings: Holding[]             // 13F holdings matched to our companies only
   fundamentals: Fundamental[]     // XBRL metrics, last 2 years per company
   insiders: InsiderTransaction[]  // Form 4 transactions, last 90 days
+  fundingRounds: FundingRound[]   // Form D filings, last 180 days
   hfActivity: HfActivity[]        // latest HF snapshot per company
+  githubActivity: GithubActivity[] // latest GitHub repo snapshot per company
   gridDemand: GridDemandSnapshot[] // EIA grid demand, last 35 days for delta
   patents: PatentSnapshotRow[]    // USPTO TTM snapshots, last 35 days for delta
   jobs: JobSnapshotRow[]          // Hiring pulse snapshots, last 35 days for delta
@@ -52,7 +56,9 @@ export interface GraphData {
     news: string | null           // most-recent signals.date where source='google-news'
     filings: string | null        // most-recent signals.date where source='sec-edgar'
     insider: string | null        // most-recent insider_transactions.filing_date
+    fundingRounds: string | null  // most-recent funding_rounds.filed_date
     hf: string | null             // most-recent hf_activity.snapshot_date
+    github: string | null         // most-recent github_activity.snapshot_date
     holdings: string | null       // most-recent holdings.period
     grid: string | null           // most-recent grid_demand_snapshots.snapshot_date
     patents: string | null        // most-recent patent_snapshots.snapshot_date
@@ -134,10 +140,28 @@ export async function fetchGraph(): Promise<GraphData> {
     .order('filing_date', { ascending: false })
     .limit(500)
 
+  // Funding rounds: last 180 days. Daily cron only scans private CIKed cos,
+  // each with 0-2 Form D filings/quarter — total volume is small (<200 rows).
+  const oneEightyDaysAgo = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10)
+  const fr = await sb
+    .from('funding_rounds')
+    .select('*')
+    .gte('filed_date', oneEightyDaysAgo)
+    .order('filed_date', { ascending: false })
+    .limit(200)
+
   // HF activity: most recent snapshot per company. With ~20 hf-tagged cos
   // × 1 snapshot/day this is trivial.
   const hf = await sb
     .from('hf_activity')
+    .select('*')
+    .order('snapshot_date', { ascending: false })
+    .limit(200)
+
+  // GitHub activity: most recent snapshot per company. Same shape as HF —
+  // ~20 cos × 1 snapshot/day.
+  const gh = await sb
+    .from('github_activity')
     .select('*')
     .order('snapshot_date', { ascending: false })
     .limit(200)
@@ -183,7 +207,7 @@ export async function fetchGraph(): Promise<GraphData> {
     }
   }
 
-  const errors = [l, i, c, b, f, bn, bb, s, sc, h, fnd, ins, hf].map(r => r.error).filter(Boolean)
+  const errors = [l, i, c, b, f, bn, bb, s, sc, h, fnd, ins, fr, hf, gh].map(r => r.error).filter(Boolean)
   if (errors.length > 0) {
     throw new Error('Supabase fetch failed: ' + errors.map(e => e!.message).join('; '))
   }
@@ -200,7 +224,9 @@ export async function fetchGraph(): Promise<GraphData> {
     holdings: (h.data ?? []) as Holding[],
     fundamentals: (fnd.data ?? []) as Fundamental[],
     insiders: (ins.data ?? []) as InsiderTransaction[],
+    fundingRounds: (fr.data ?? []) as FundingRound[],
     hfActivity: (hf.data ?? []) as HfActivity[],
+    githubActivity: (gh.data ?? []) as GithubActivity[],
     gridDemand: (gd.data ?? []) as GridDemandSnapshot[],
     patents: (pat.data ?? []) as PatentSnapshotRow[],
     jobs: (jb.data ?? []) as JobSnapshotRow[],
@@ -228,7 +254,15 @@ export async function fetchGraph(): Promise<GraphData> {
         .map(x => x.filing_date)
         .sort()
         .at(-1) ?? null,
+      fundingRounds: ((fr.data ?? []) as FundingRound[])
+        .map(x => x.filed_date)
+        .sort()
+        .at(-1) ?? null,
       hf: ((hf.data ?? []) as HfActivity[])
+        .map(x => x.snapshot_date)
+        .sort()
+        .at(-1) ?? null,
+      github: ((gh.data ?? []) as GithubActivity[])
         .map(x => x.snapshot_date)
         .sort()
         .at(-1) ?? null,

@@ -426,6 +426,118 @@ function Fundamentals({ companyId, data }: { companyId: string; data: GraphData 
   )
 }
 
+function FundingHistory({ companyId, data }: { companyId: string; data: GraphData }) {
+  const company = data.companies.find(c => c.id === companyId)
+  // Only render for private cos with at least one Form D in window.
+  if (!company || !company.private) return null
+  const rounds = data.fundingRounds
+    .filter(r => r.company_id === companyId)
+    .slice()
+    .sort((a, b) => b.filed_date.localeCompare(a.filed_date))
+  if (rounds.length === 0) return null
+
+  // Headline figures: total raised across the most recent 4 rounds (matches
+  // the "recent funding velocity" framing), plus the latest individual round.
+  const last4 = rounds.slice(0, 4)
+  let totalLast4Usd = 0
+  let anyIndefinite = false
+  for (const r of last4) {
+    if (r.total_amount_sold_usd != null) totalLast4Usd += r.total_amount_sold_usd
+    if (r.has_amount_indefinite) anyIndefinite = true
+  }
+  const latest = rounds[0]
+  const latestAmount = latest.total_amount_sold_usd ?? latest.total_offering_amount_usd
+
+  return <FundingHistoryInner
+    rounds={rounds}
+    totalLast4Usd={totalLast4Usd}
+    anyIndefinite={anyIndefinite}
+    latest={latest}
+    latestAmount={latestAmount}
+  />
+}
+
+function FundingHistoryInner({
+  rounds, totalLast4Usd, anyIndefinite, latest, latestAmount,
+}: {
+  rounds: FundingRound[]
+  totalLast4Usd: number
+  anyIndefinite: boolean
+  latest: FundingRound
+  latestAmount: number | null
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const shown = expanded ? rounds : rounds.slice(0, 3)
+  return (
+    <Section title={`Recent funding · 90d (${rounds.length})`}>
+      <div className="mb-2 flex items-baseline gap-2">
+        <span className="font-mono text-sm text-signal-healthy">
+          {fmtBigDollar(totalLast4Usd)}{anyIndefinite ? '+' : ''}
+        </span>
+        <span className="text-meta text-fg-muted">
+          · last {Math.min(rounds.length, 4)} round{rounds.length === 1 ? '' : 's'}
+        </span>
+      </div>
+      <div className="mb-2 text-xs">
+        <div className="text-fg-secondary">Latest round</div>
+        <div className="flex items-baseline gap-2">
+          <span className="font-mono text-meta text-fg-muted">{latest.filed_date}</span>
+          <span className="font-mono text-signal-healthy">
+            {latestAmount != null ? fmtBigDollar(latestAmount) : '—'}
+            {latest.has_amount_indefinite && '+'}
+          </span>
+          {latest.source_url && (
+            <a href={latest.source_url} target="_blank" rel="noreferrer" className="ml-auto text-meta text-fg-muted hover:text-fg-primary">↗</a>
+          )}
+        </div>
+        {latest.investors_named.length > 0 && (
+          <div className="mt-0.5 text-meta text-fg-muted">
+            {latest.investors_named.slice(0, 3).join(', ')}
+            {latest.investors_named.length > 3 && ` +${latest.investors_named.length - 3}`}
+          </div>
+        )}
+      </div>
+      <ul className="space-y-1">
+        {shown.map((r) => {
+          const amount = r.total_amount_sold_usd ?? r.total_offering_amount_usd
+          return (
+            <li key={r.id} className="text-xs leading-snug">
+              <div className="flex items-baseline gap-2">
+                <span className="font-mono text-meta text-fg-muted">{r.filed_date}</span>
+                <span className="text-meta uppercase text-fg-secondary">D</span>
+                <span className="font-mono text-signal-healthy">
+                  {amount != null ? fmtBigDollar(amount) : '—'}
+                  {r.has_amount_indefinite && '+'}
+                </span>
+                {r.source_url && (
+                  <a href={r.source_url} target="_blank" rel="noreferrer" className="ml-auto text-meta text-fg-muted hover:text-fg-primary">↗</a>
+                )}
+              </div>
+              {r.total_amount_remaining_usd != null && r.total_amount_remaining_usd > 0 && (
+                <div className="text-meta text-fg-muted">
+                  {fmtBigDollar(r.total_amount_remaining_usd)} remaining
+                </div>
+              )}
+            </li>
+          )
+        })}
+        {rounds.length > 3 && (
+          <li>
+            <button
+              type="button"
+              onClick={() => setExpanded(v => !v)}
+              className="text-meta text-fg-muted hover:text-fg-primary"
+            >
+              {expanded ? '− collapse' : `+${rounds.length - 3} more`}
+            </button>
+          </li>
+        )}
+      </ul>
+      <div className="mt-1 text-meta text-fg-dim">SEC Form D · last 90d</div>
+    </Section>
+  )
+}
+
 function InsiderFlow({ companyId, data }: { companyId: string; data: GraphData }) {
   const txns = data.insiders.filter(t => t.company_id === companyId)
   if (txns.length === 0) return null
@@ -929,16 +1041,80 @@ function RDVelocityChip({ rows }: { rows: PatentSnapshotRow[] }) {
   )
 }
 
+function GitHubActivityChip({ rows, companyName }: { rows: GithubActivity[]; companyName: string }) {
+  if (rows.length === 0) return null
+  // Most-recent snapshot — github_activity has one row per day per company.
+  const latest = rows.reduce((acc, r) => r.snapshot_date > acc.snapshot_date ? r : acc, rows[0])
+  const stars = latest.stars
+  const merged = latest.prs_30d_merged
+  const opened = latest.prs_30d_open
+  const contributors = latest.contributors_30d
+  const tag = latest.last_release_tag
+  const hot = merged >= 50  // arbitrary "moving fast" threshold
+  const daysSinceRelease = latest.last_release_date
+    ? Math.round((Date.now() - new Date(latest.last_release_date).getTime()) / 86_400_000)
+    : null
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1.5 shadow-card">
+      <div className="flex items-baseline justify-between">
+        <div className="text-label text-fg-muted">GitHub activity</div>
+        <div className="flex items-baseline gap-1">
+          <span className="font-mono text-sm text-fg-primary">★ {formatCount(stars)}</span>
+          {hot && <span className="ml-1 rounded bg-feed-github/15 px-1 py-0.5 text-[9px] uppercase text-feed-github">hot</span>}
+        </div>
+      </div>
+      {/* Headline format: "OpenAI · ★ 12,400 · +47 PRs/30d · v1.5.2" */}
+      <div className="mt-0.5 text-meta font-mono text-fg-secondary">
+        <span className="text-fg-primary">{companyName}</span>
+        <span className="mx-1 text-fg-dim">·</span>
+        <span className="text-fg-secondary">★ {stars.toLocaleString()}</span>
+        <span className="mx-1 text-fg-dim">·</span>
+        <span className={merged >= 20 ? 'text-feed-github' : 'text-fg-secondary'}>
+          +{merged} PRs/30d
+        </span>
+        {tag && (
+          <>
+            <span className="mx-1 text-fg-dim">·</span>
+            <span className="text-fg-secondary">{tag}</span>
+          </>
+        )}
+      </div>
+      <div className="mt-0.5 flex items-center gap-2 text-meta font-mono text-fg-muted">
+        <span>{opened} opened · {contributors} contrib</span>
+        {daysSinceRelease != null && (
+          <>
+            <span className="text-fg-dim">·</span>
+            <span>rel {daysSinceRelease === 0 ? 'today' : `${daysSinceRelease}d ago`}</span>
+          </>
+        )}
+      </div>
+      <div className="mt-0.5 text-[9px] text-fg-dim">
+        <a
+          href={`https://github.com/${latest.repo_full_name}`}
+          target="_blank"
+          rel="noreferrer"
+          className="hover:text-fg-secondary"
+        >
+          github.com/{latest.repo_full_name}
+        </a>
+      </div>
+    </div>
+  )
+}
+
 function SignalChips({ companyId, data }: { companyId: string; data: GraphData }) {
   const jobs = data.jobs.filter(j => j.company_id === companyId)
   const grid = data.gridDemand.filter(g => g.company_id === companyId)
   const patents = data.patents.filter(p => p.company_id === companyId)
-  if (jobs.length === 0 && grid.length === 0 && patents.length === 0) return null
+  const github = data.githubActivity.filter(g => g.company_id === companyId)
+  const company = data.companies.find(c => c.id === companyId)
+  if (jobs.length === 0 && grid.length === 0 && patents.length === 0 && github.length === 0) return null
   return (
     <div className="mb-4 grid grid-cols-1 gap-2">
       {jobs.length    > 0 && <HiringPulseChip   rows={jobs}    />}
       {grid.length    > 0 && <PowerPressureChip rows={grid}    />}
       {patents.length > 0 && <RDVelocityChip    rows={patents} />}
+      {github.length  > 0 && <GitHubActivityChip rows={github} companyName={company?.name ?? companyId} />}
     </div>
   )
 }

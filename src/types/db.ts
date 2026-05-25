@@ -62,6 +62,7 @@ export interface Company {
   price_updated_at: string | null
   price_history: Array<[string, number]>  // [[YYYY-MM-DD, close], ...] up to 90, oldest first
   hf_org: string | null  // Hugging Face org slug (e.g. 'nvidia', 'meta-llama')
+  github_repo: string | null  // GitHub "owner/name" of primary OSS repo (e.g. 'openai/openai-python')
   eia_region: string | null  // EIA balancing-authority code ('PJM', 'ERCO', 'FLA', 'US48')
   assignee_name: string | null  // USPTO assignee name for patent search (e.g. 'NVIDIA Corporation')
   created_at: string
@@ -124,6 +125,20 @@ export interface AeoProjection {
   extracted_at: string
 }
 
+export interface FundingRound {
+  id: string
+  company_id: string
+  filed_date: string                    // YYYY-MM-DD
+  accession: string                     // SEC accession; dedup key
+  total_amount_sold_usd: number | null
+  total_offering_amount_usd: number | null
+  total_amount_remaining_usd: number | null
+  has_amount_indefinite: boolean        // true if any of the amount fields was "Indefinite"
+  investors_named: string[]             // related-person names from Form D
+  source_url: string | null
+  created_at: string
+}
+
 export interface InsiderTransaction {
   id: string
   company_id: string
@@ -154,6 +169,20 @@ export interface HfActivity {
   total_downloads_30d: number
   top_model_id: string | null
   top_model_downloads: number | null
+  last_release_date: string | null
+  created_at: string
+}
+
+export interface GithubActivity {
+  id: string
+  company_id: string
+  snapshot_date: string
+  repo_full_name: string                // e.g. "openai/openai-python"
+  stars: number
+  prs_30d_merged: number
+  prs_30d_open: number
+  contributors_30d: number
+  last_release_tag: string | null
   last_release_date: string | null
   created_at: string
 }
@@ -262,7 +291,9 @@ export interface Database {
       holdings: { Row: Holding; Insert: Omit<Holding, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Holding> }
       fundamentals: { Row: Fundamental; Insert: Omit<Fundamental, 'id' | 'updated_at'> & { id?: string; updated_at?: string }; Update: Partial<Fundamental> }
       insider_transactions: { Row: InsiderTransaction; Insert: Omit<InsiderTransaction, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<InsiderTransaction> }
+      funding_rounds: { Row: FundingRound; Insert: Omit<FundingRound, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<FundingRound> }
       hf_activity: { Row: HfActivity; Insert: Omit<HfActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<HfActivity> }
+      github_activity: { Row: GithubActivity; Insert: Omit<GithubActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GithubActivity> }
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
       grid_demand_snapshots: { Row: GridDemandSnapshot; Insert: Omit<GridDemandSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GridDemandSnapshot> }

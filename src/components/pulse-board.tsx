@@ -34,6 +34,7 @@ export default function PulseBoard({ data, onSelect }: Props) {
   const news = useRecentNews(data)
   const insider = useInsiderWeek(data)
   const hiring = useHiringRamps(data)
+  const funding = useFunding90d(data)
 
   return (
     <div className="pointer-events-auto absolute right-4 top-16 z-10 w-[320px] rounded-card border border-border-default bg-bg-overlay text-body text-fg-secondary shadow-panel backdrop-blur">
@@ -103,6 +104,26 @@ export default function PulseBoard({ data, onSelect }: Props) {
                 right={
                   <span className={'font-mono ' + (i.netUsd >= 0 ? 'text-signal-healthy' : 'text-signal-alert')}>
                     {i.netUsd >= 0 ? '+' : '−'}{fmtUsd(Math.abs(i.netUsd))}
+                  </span>
+                }
+              />
+            ))}
+          </PulseSection>
+
+          <PulseSection title="Funding · 90d">
+            {funding.length === 0 ? <NoData /> : funding.map((f) => (
+              <PulseRow
+                key={f.id}
+                onClick={() => onSelect({ kind: 'company', id: f.coId })}
+                left={
+                  <span className="text-fg-primary">
+                    {f.coTicker ?? f.coName}
+                    <span className="ml-1 text-fg-muted">· {f.dateShort}</span>
+                  </span>
+                }
+                right={
+                  <span className="font-mono text-signal-healthy">
+                    {fmtUsd(f.amountUsd)}{f.indefinite ? '+' : ''}
                   </span>
                 }
               />
@@ -256,6 +277,42 @@ function useInsiderWeek(data: GraphData): InsiderRow[] {
       rows.push({ coId, coName: co.name, coTicker: co.ticker, netUsd })
     }
     return rows.sort((a, b) => Math.abs(b.netUsd) - Math.abs(a.netUsd)).slice(0, 5)
+  }, [data])
+}
+
+interface FundingRow {
+  id: string
+  coId: string
+  coName: string
+  coTicker: string | null
+  amountUsd: number
+  indefinite: boolean
+  dateShort: string
+}
+function useFunding90d(data: GraphData): FundingRow[] {
+  return useMemo(() => {
+    const cutoffMs = Date.now() - 90 * 86_400_000
+    const coById = new Map(data.companies.map(c => [c.id, c]))
+    const rows: FundingRow[] = []
+    for (const r of data.fundingRounds) {
+      const d = new Date(r.filed_date).getTime()
+      if (Number.isFinite(d) && d < cutoffMs) continue
+      // Use total_amount_sold_usd as the "raised" figure; fall back to offering amount.
+      const amount = r.total_amount_sold_usd ?? r.total_offering_amount_usd
+      if (amount == null) continue
+      const co = coById.get(r.company_id)
+      if (!co) continue
+      rows.push({
+        id: r.id,
+        coId: co.id,
+        coName: co.name,
+        coTicker: co.ticker,
+        amountUsd: amount,
+        indefinite: r.has_amount_indefinite,
+        dateShort: shortDate(r.filed_date),
+      })
+    }
+    return rows.sort((a, b) => b.amountUsd - a.amountUsd).slice(0, 5)
   }, [data])
 }
 

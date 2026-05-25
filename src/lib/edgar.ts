@@ -387,3 +387,168 @@ export async function fetchForm4(cik: string, accession: string, primaryDocument
     return []
   }
 }
+
+// ---------- Form D (private-co fundraising) ----------
+
+export interface FundingRoundData {
+  accession: string
+  filedDate: string                       // YYYY-MM-DD
+  totalAmountSoldUsd: number | null       // null when "Indefinite" or absent
+  totalOfferingAmountUsd: number | null
+  totalAmountRemainingUsd: number | null
+  hasAmountIndefinite: boolean            // any of the three amount fields was the literal "Indefinite"
+  investorsNamed: string[]                // related-person names
+  sourceUrl: string
+}
+
+/** Build the primary_doc.xml URL for a Form D filing.
+ *
+ * Form D filings always name the primary document "primary_doc.xml" — no
+ * XSL-prefix gymnastics needed (unlike Form 4). Both D and D/A use the
+ * same filename. */
+export function formDPrimaryDocUrl(cik: string, accession: string): string {
+  const cikInt = parseInt(cik, 10)
+  const accNoDashes = accession.replace(/-/g, '')
+  return `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/primary_doc.xml`
+}
+
+/**
+ * Parse a Form D primary_doc.xml document (X0708 schema).
+ *
+ * Critical nuance: the amount fields can be the literal string "Indefinite"
+ * for blank-check / continuous offerings — there is NO separate
+ * <isAmountIndefinite> element in the schema. We detect "Indefinite" and
+ * set hasAmountIndefinite=true while leaving the numeric value null. The
+ * UI can then render "$Xm raised + ongoing" instead of a misleading zero.
+ *
+ * Schema highlights:
+ *   <edgarSubmission>
+ *     <relatedPersonsList>
+ *       <relatedPersonInfo>
+ *         <relatedPersonName><firstName>...</firstName><lastName>...</lastName></relatedPersonName>
+ *         <relatedPersonRelationshipList><relationship>Executive Officer</relationship>...
+ *       </relatedPersonInfo>
+ *       ...
+ *     </relatedPersonsList>
+ *     <offeringData>
+ *       <offeringSalesAmounts>
+ *         <totalOfferingAmount>3555000</totalOfferingAmount>      <!-- or "Indefinite" -->
+ *         <totalAmountSold>3545000</totalAmountSold>
+ *         <totalRemaining>10000</totalRemaining>
+ *       </offeringSalesAmounts>
+ */
+export function parseFormD(xml: string): {
+  totalAmountSoldUsd: number | null
+  totalOfferingAmountUsd: number | null
+  totalAmountRemainingUsd: number | null
+  hasAmountIndefinite: boolean
+  investorsNamed: string[]
+} {
+  const parser = new XMLParser({ ignoreAttributes: true, removeNSPrefix: true, parseTagValue: false })
+  const root = parser.parse(xml) as { edgarSubmission?: Record<string, unknown> }
+  const sub = root.edgarSubmission
+  if (!sub) {
+    return {
+      totalAmountSoldUsd: null,
+      totalOfferingAmountUsd: null,
+      totalAmountRemainingUsd: null,
+      hasAmountIndefinite: false,
+      investorsNamed: [],
+    }
+  }
+
+  // ----- offering amounts -----
+  const offeringData = sub.offeringData as Record<string, unknown> | undefined
+  const salesAmounts = offeringData?.offeringSalesAmounts as Record<string, unknown> | undefined
+  const totalOfferingRaw = salesAmounts?.totalOfferingAmount
+  const totalSoldRaw = salesAmounts?.totalAmountSold
+  const totalRemainingRaw = salesAmounts?.totalRemaining
+
+  const parseAmount = (raw: unknown): { amount: number | null; indefinite: boolean } => {
+    if (raw == null) return { amount: null, indefinite: false }
+    const s = String(raw).trim()
+    if (!s) return { amount: null, indefinite: false }
+    if (s.toLowerCase() === 'indefinite') return { amount: null, indefinite: true }
+    const n = Number(s)
+    return Number.isFinite(n) ? { amount: n, indefinite: false } : { amount: null, indefinite: false }
+  }
+
+  const offering = parseAmount(totalOfferingRaw)
+  const sold = parseAmount(totalSoldRaw)
+  const remaining = parseAmount(totalRemainingRaw)
+  const hasAmountIndefinite = offering.indefinite || sold.indefinite || remaining.indefinite
+
+  // ----- related persons -----
+  const relList = sub.relatedPersonsList as Record<string, unknown> | undefined
+  const relRaw = relList?.relatedPersonInfo
+  const relArr = relRaw == null ? [] : Array.isArray(relRaw) ? relRaw : [relRaw]
+  const investorsNamed: string[] = []
+  for (const r of relArr as Array<Record<string, unknown>>) {
+    const nameNode = r.relatedPersonName as Record<string, unknown> | undefined
+    if (!nameNode) continue
+    const parts = [nameNode.firstName, nameNode.middleName, nameNode.lastName]
+      .map(p => (p == null ? '' : String(p).trim()))
+      .filter(Boolean)
+    const full = parts.join(' ').trim()
+    if (full) investorsNamed.push(full)
+  }
+
+  return {
+    totalAmountSoldUsd: sold.amount,
+    totalOfferingAmountUsd: offering.amount,
+    totalAmountRemainingUsd: remaining.amount,
+    hasAmountIndefinite,
+    investorsNamed,
+  }
+}
+
+/**
+ * High-level: pull submissions.json for a CIK, filter to recent (last 90 days)
+ * Form D / D/A filings, fetch each primary_doc.xml, and return the parsed
+ * offering data per filing.
+ *
+ * Caller is responsible for rate-limit pacing across many CIKs — this fn
+ * just sleeps 150ms between XML fetches inside a single CIK to stay under
+ * SEC's 10 req/sec ceiling.
+ */
+export async function fetchFormDOfferingForCik(
+  cik: string,
+  opts: { lookbackDays?: number } = {},
+): Promise<FundingRoundData[]> {
+  const lookbackDays = opts.lookbackDays ?? 90
+  const cutoff = new Date(Date.now() - lookbackDays * 86400_000).toISOString().slice(0, 10)
+
+  let subs: CompanySubmissions
+  try {
+    subs = await fetchCompanyFilings(cik)
+  } catch {
+    return []
+  }
+  const recentFormDs = subs.filings.filter(f =>
+    (f.form === 'D' || f.form === 'D/A') && f.filingDate >= cutoff,
+  )
+
+  const out: FundingRoundData[] = []
+  for (const f of recentFormDs) {
+    const url = formDPrimaryDocUrl(cik, f.accessionNumber)
+    try {
+      const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/xml' } })
+      if (!r.ok) {
+        await sleep(150)
+        continue
+      }
+      const xml = await r.text()
+      const parsed = parseFormD(xml)
+      out.push({
+        accession: f.accessionNumber,
+        filedDate: f.filingDate,
+        ...parsed,
+        sourceUrl: filingIndexUrl(cik, f.accessionNumber),
+      })
+    } catch {
+      // skip — partial result is still useful
+    }
+    await sleep(150)
+  }
+  return out
+}

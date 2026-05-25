@@ -71,6 +71,7 @@ const config: Config = {
         "feed-insider":  "#F87171",
         "feed-holdings": "#34D399",
         "feed-hf":       "#FCD34D",
+        "feed-github":   "#E879F9", // fuchsia-400 — open source / dev velocity
         "feed-grid":     "#FACC15",
         "feed-patents":  "#A78BFA",
         "feed-jobs":     "#F472B6",
