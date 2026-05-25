@@ -15,11 +15,10 @@
 
 import { useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound, TranscriptSignal, SocialMention } from '@/types/db'
+import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound, TranscriptSignal, SocialMention, InterestSignal } from '@/types/db'
 import { computeCapexTTM } from '@/lib/capex'
 import { CPC_SUBCLASS_LABELS } from '@/lib/uspto'
 import { getLogoUrl } from '@/lib/logo'
-import { rankSignalsForCo, type RankedSignal, type RenderKind } from '@/lib/signal-priority'
 import type { SelectedRef } from './compute-graph'
 
 function formatUsd(n: number | null | undefined): string {
@@ -329,34 +328,12 @@ function Tabs<T extends string>({
 
 // ----- Tab content -----
 
-/**
- * Overview tab — smart prioritization.
- *
- * With ~14 data sources feeding the drawer, surfacing them all top-of-fold
- * was overwhelming. We now run `rankSignalsForCo()` and render the top 3
- * signals as prominent cards, with the remaining lower-ranked signals folded
- * behind a "More signals" disclosure. The 4-stat grid (Layer / Weight /
- * Conviction / Share) becomes metadata at the bottom.
- *
- * Sticky-order under prioritized blocks:
- *   1. AiThesisCard      — analyst narrative (skipped when thesis_ai is null)
- *   2. Top-3 prioritized signal blocks (full-width cards)
- *   3. "More signals (n)" disclosure with the rest
- *   4. Labs-only: ModelLeaderboardSection (full table, not just chip)
- *   5. Manual thesis + notes
- *   6. Backers + bottleneck beneficiaries
- *   7. Stat grid (metadata)
- */
 function CompanyOverview({ company, data }: { company: GraphData['companies'][number]; data: GraphData }) {
   const layer = data.layers.find(l => l.id === company.layer_id)
   const backerIds = new Set(data.backers.filter(b => b.company_id === company.id).map(b => b.investor_id))
   const backers = data.investors.filter(i => backerIds.has(i.id))
   const beneIds = new Set(data.bottleneckBeneficiaries.filter(b => b.company_id === company.id).map(b => b.bottleneck_id))
   const beneBottlenecks = data.bottlenecks.filter(b => beneIds.has(b.id))
-
-  const ranked = rankSignalsForCo(company.id, data)
-  const topThree = ranked.slice(0, 3)
-  const more = ranked.slice(3)
 
   return (
     <>
@@ -365,28 +342,13 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
         riskAi={company.thesis_risk_ai}
         generatedAt={company.thesis_generated_at}
       />
-
-      {topThree.length > 0 && (
-        <div className="mb-4 space-y-2">
-          {topThree.map(r => (
-            <PrioritySignalBlock key={r.kind} ranked={r} company={company} data={data} />
-          ))}
-        </div>
-      )}
-
-      {more.length > 0 && (
-        <details className="mb-4 rounded-card border border-border-subtle bg-bg-surface/20 px-3 py-2">
-          <summary className="cursor-pointer text-label text-fg-muted hover:text-fg-secondary">
-            More signals ({more.length})
-          </summary>
-          <div className="mt-2 space-y-2">
-            {more.map(r => (
-              <PrioritySignalBlock key={r.kind} ranked={r} company={company} data={data} compact />
-            ))}
-          </div>
-        </details>
-      )}
-
+      <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+        <Stat label="Layer" value={layer?.name ?? '—'} />
+        <Stat label="Weight" value={String(company.weight)} />
+        <Stat label="Conviction" value={company.conviction ?? '—'} />
+        <Stat label="Share" value={company.share != null ? `${(company.share * 100).toFixed(0)}%` : '—'} />
+      </div>
+      <SignalChips companyId={company.id} data={data} />
       {company.layer_id === 'labs' && (
         <ModelLeaderboardSection companyId={company.id} data={data} />
       )}
@@ -415,349 +377,7 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
           </ul>
         </Section>
       )}
-
-      {/* Metadata — pinned to bottom now that signals own the top. */}
-      <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
-        <Stat label="Layer" value={layer?.name ?? '—'} />
-        <Stat label="Weight" value={String(company.weight)} />
-        <Stat label="Conviction" value={company.conviction ?? '—'} />
-        <Stat label="Share" value={company.share != null ? `${(company.share * 100).toFixed(0)}%` : '—'} />
-      </div>
     </>
-  )
-}
-
-/**
- * Maps a RankedSignal.kind to the appropriate existing chip / section.
- *
- * The wrapper styling is purposely consistent across all kinds — the brief
- * specifies "Top 3 priority blocks: rounded-card border border-border-default
- * bg-bg-surface p-3 shadow-card (slightly more prominent than secondary
- * chips)". `compact=true` halves the wrapper padding and skips the title
- * row — used by the "more signals" disclosure.
- *
- * If a kind doesn't have an existing chip (e.g. eight-k, insider-burst,
- * news-burst, funding-round), we render an inline fallback that surfaces the
- * same data the Activity tab would show, with a CTA to switch tabs for more.
- */
-function PrioritySignalBlock({
-  ranked, company, data, compact = false,
-}: {
-  ranked: RankedSignal
-  company: GraphData['companies'][number]
-  data: GraphData
-  compact?: boolean
-}) {
-  const inner = renderChip(ranked.kind, company, data)
-  if (inner == null) return null
-  const wrapperCls = compact
-    ? 'rounded-card border border-border-subtle bg-bg-surface/30 p-2'
-    : 'rounded-card border border-border-default bg-bg-surface p-3 shadow-card'
-  return (
-    <div className={wrapperCls}>
-      {inner}
-    </div>
-  )
-}
-
-function renderChip(
-  kind: RenderKind,
-  company: GraphData['companies'][number],
-  data: GraphData,
-): React.ReactNode {
-  switch (kind) {
-    case 'hiring-pulse': {
-      const rows = data.jobs.filter(j => j.company_id === company.id)
-      return <HiringPulseChip rows={rows} />
-    }
-    case 'patent-velocity': {
-      const rows = data.patents.filter(p => p.company_id === company.id)
-      return <RDVelocityChip rows={rows} />
-    }
-    case 'github-activity': {
-      const rows = data.githubActivity.filter(g => g.company_id === company.id)
-      return <GitHubActivityChip rows={rows} companyName={company.name} />
-    }
-    case 'hf-activity': {
-      // OpenSourceFootprint is a Section, not a chip — render inline.
-      return <OpenSourceFootprint companyId={company.id} data={data} />
-    }
-    case 'grid-pressure': {
-      const rows = data.gridDemand.filter(g => g.company_id === company.id)
-      return <PowerPressureChip rows={rows} />
-    }
-    case 'buzz-mentions': {
-      const rows = (data.socialMentions ?? []).filter(s => s.company_id === company.id)
-      return <BuzzChip rows={rows} />
-    }
-    case 'capex-runrate': {
-      return <CapexRunRateInline companyId={company.id} data={data} />
-    }
-    case 'leaderboard-top': {
-      return <LeaderboardInline companyId={company.id} data={data} />
-    }
-    case 'transcript-digest': {
-      return <TranscriptDigestInline companyId={company.id} data={data} />
-    }
-    case 'eight-k':
-      return <EightKInline companyId={company.id} data={data} />
-    case 'news-burst':
-      return <NewsBurstInline companyId={company.id} data={data} />
-    case 'insider-burst':
-      return <InsiderBurstInline companyId={company.id} data={data} />
-    case 'funding-round':
-      return <FundingRoundInline companyId={company.id} data={data} />
-    case 'price-move':
-      return <PriceMoveInline company={company} />
-    default:
-      return null
-  }
-}
-
-// ---------------- Inline priority-block renderers ----------------
-//
-// Each one is a small "headline + 1-2 supporting fields" pull from existing
-// data in GraphData. They mirror the chip aesthetic (label row + headline
-// row + meta row) so the top-3 area is visually cohesive whether a card is
-// a chip or an inline.
-//
-// These do NOT replace the corresponding Activity-tab sections (InsiderFlow,
-// FundingHistory, etc.) — those keep their fuller renderings. The inline
-// versions are purpose-built for the "decision-ready glance" top-of-fold.
-
-function PriorityHead({
-  label, value, accentClass = 'text-fg-primary',
-}: {
-  label: string
-  value: React.ReactNode
-  accentClass?: string
-}) {
-  return (
-    <div className="flex items-baseline justify-between">
-      <div className="text-label text-fg-muted">{label}</div>
-      <div className={'flex items-baseline gap-1 font-mono text-sm ' + accentClass}>{value}</div>
-    </div>
-  )
-}
-
-function PriceMoveInline({ company }: { company: GraphData['companies'][number] }) {
-  if (company.last_price == null || company.prev_close == null || company.prev_close === 0) return null
-  const change = company.last_price - company.prev_close
-  const pct = (change / company.prev_close) * 100
-  const positive = change >= 0
-  const color = positive ? 'text-signal-healthy' : 'text-signal-alert'
-  return (
-    <div>
-      <PriorityHead
-        label="Price move · today"
-        value={
-          <>
-            <span className="text-fg-primary">${company.last_price.toFixed(2)}</span>
-            <span className={color}>{positive ? '+' : ''}{pct.toFixed(2)}%</span>
-          </>
-        }
-      />
-      <div className="mt-0.5 text-meta text-fg-dim font-mono">
-        prev close ${company.prev_close.toFixed(2)} · {company.ticker ?? company.id}
-      </div>
-    </div>
-  )
-}
-
-function EightKInline({ companyId, data }: { companyId: string; data: GraphData }) {
-  const myIds = new Set(data.signalCompanies.filter(l => l.company_id === companyId).map(l => l.signal_id))
-  const filings = data.signals.filter(s => myIds.has(s.id) && s.form_type === '8-K')
-  if (filings.length === 0) return null
-  const latest = filings.slice().sort((a, b) => b.date.localeCompare(a.date))[0]
-  return (
-    <div>
-      <PriorityHead label="Latest 8-K" value={<span className="text-feed-filings">{latest.date}</span>} />
-      <div className="mt-0.5 line-clamp-2 text-xs text-fg-primary">{latest.headline}</div>
-      {latest.url && (
-        <div className="mt-0.5 text-meta text-fg-dim">
-          <a href={latest.url} target="_blank" rel="noreferrer" className="hover:text-fg-secondary">↗ SEC EDGAR</a>
-        </div>
-      )}
-    </div>
-  )
-}
-
-function NewsBurstInline({ companyId, data }: { companyId: string; data: GraphData }) {
-  const myIds = new Set(data.signalCompanies.filter(l => l.company_id === companyId).map(l => l.signal_id))
-  const news = data.signals
-    .filter(s => myIds.has(s.id) && s.form_type === 'news')
-    .slice()
-    .sort((a, b) => b.date.localeCompare(a.date))
-  if (news.length === 0) return null
-  const sevenAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10)
-  const recent = news.filter(s => s.date >= sevenAgo)
-  return (
-    <div>
-      <PriorityHead
-        label="News · 7d"
-        value={
-          <>
-            <span className="text-fg-primary">{recent.length}</span>
-            <span className="text-meta text-fg-muted">mentions</span>
-          </>
-        }
-      />
-      {news[0] && (
-        <div className="mt-0.5 line-clamp-2 text-xs text-fg-secondary">
-          {news[0].url ? (
-            <a href={news[0].url} target="_blank" rel="noreferrer" className="hover:text-fg-primary">{news[0].headline}</a>
-          ) : news[0].headline}
-        </div>
-      )}
-      <div className="mt-0.5 text-meta text-fg-dim">{news[0]?.date} · {news[0]?.source ?? 'news'}</div>
-    </div>
-  )
-}
-
-function InsiderBurstInline({ companyId, data }: { companyId: string; data: GraphData }) {
-  const txns = data.insiders.filter(t => t.company_id === companyId)
-  if (txns.length === 0) return null
-  const sevenAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10)
-  const recent = txns.filter(t => t.filing_date >= sevenAgo)
-  let netSignedUsd = 0
-  for (const t of recent) {
-    if (t.value_usd == null) continue
-    const sign = t.acquired_or_disposed === 'D' ? -1 : 1
-    netSignedUsd += sign * t.value_usd
-  }
-  const positive = netSignedUsd >= 0
-  const sample = recent.length > 0 ? recent[0] : txns[0]
-  return (
-    <div>
-      <PriorityHead
-        label="Insider · 7d"
-        value={
-          <>
-            <span className={positive ? 'text-signal-healthy' : 'text-signal-alert'}>
-              {positive ? '+' : ''}${(Math.abs(netSignedUsd) / 1_000_000).toFixed(1)}M
-            </span>
-            <span className="text-meta text-fg-muted">net</span>
-          </>
-        }
-      />
-      <div className="mt-0.5 text-xs text-fg-secondary">
-        {recent.length} txn{recent.length === 1 ? '' : 's'} in 7d
-        {sample && (
-          <>
-            <span className="text-fg-dim"> · </span>
-            <span className="text-fg-primary">{sample.reporting_owner ?? 'Unknown'}</span>
-          </>
-        )}
-      </div>
-      <div className="mt-0.5 text-meta text-fg-dim">SEC Form 4</div>
-    </div>
-  )
-}
-
-function FundingRoundInline({ companyId, data }: { companyId: string; data: GraphData }) {
-  const rounds = data.fundingRounds.filter(r => r.company_id === companyId)
-  if (rounds.length === 0) return null
-  const latest = rounds.slice().sort((a, b) => b.filed_date.localeCompare(a.filed_date))[0]
-  const amt = latest.total_amount_sold_usd ?? latest.total_offering_amount_usd
-  const amtStr = amt != null
-    ? (amt >= 1e9 ? `$${(amt / 1e9).toFixed(1)}B` : `$${(amt / 1e6).toFixed(0)}M`)
-    : '—'
-  return (
-    <div>
-      <PriorityHead
-        label="Funding · latest"
-        value={
-          <>
-            <span className="text-signal-healthy">{amtStr}{latest.has_amount_indefinite ? '+' : ''}</span>
-            <span className="text-meta text-fg-muted">{latest.filed_date}</span>
-          </>
-        }
-      />
-      {latest.investors_named.length > 0 && (
-        <div className="mt-0.5 line-clamp-1 text-xs text-fg-secondary">
-          {latest.investors_named.slice(0, 3).join(', ')}
-          {latest.investors_named.length > 3 && ` +${latest.investors_named.length - 3}`}
-        </div>
-      )}
-      <div className="mt-0.5 text-meta text-fg-dim">SEC Form D</div>
-    </div>
-  )
-}
-
-function CapexRunRateInline({ companyId, data }: { companyId: string; data: GraphData }) {
-  const { ttm, yoy_pct, latest_period } = computeCapexTTM(data.fundamentals, companyId)
-  if (ttm == null || latest_period == null) return null
-  const ttmStr = ttm >= 1e9 ? `$${(ttm / 1e9).toFixed(1)}B` : `$${(ttm / 1e6).toFixed(0)}M`
-  const yoyColor =
-    yoy_pct == null ? 'text-fg-secondary'
-    : yoy_pct >= 20 ? 'text-signal-healthy'
-    : yoy_pct >= 5 ? 'text-signal-warn'
-    : yoy_pct >= -1 ? 'text-fg-secondary'
-    : 'text-signal-alert'
-  return (
-    <div>
-      <PriorityHead
-        label="Capex · TTM"
-        value={
-          <>
-            <span className="text-fg-primary">{ttmStr}</span>
-            {yoy_pct != null && (
-              <span className={yoyColor}>{yoy_pct >= 0 ? '+' : ''}{yoy_pct.toFixed(1)}% YoY</span>
-            )}
-          </>
-        }
-      />
-      <div className="mt-0.5 text-meta text-fg-dim">period ending {latest_period}</div>
-    </div>
-  )
-}
-
-function LeaderboardInline({ companyId, data }: { companyId: string; data: GraphData }) {
-  const entries = data.modelLeaderboard.filter(e => e.company_id === companyId)
-  if (entries.length === 0) return null
-  const dates = Array.from(new Set(entries.map(e => e.snapshot_date))).sort((a, b) => b.localeCompare(a))
-  const latest = entries.filter(e => e.snapshot_date === dates[0]).sort((a, b) => a.elo_rank - b.elo_rank)[0]
-  if (!latest) return null
-  return (
-    <div>
-      <PriorityHead
-        label="LMArena · top model"
-        value={
-          <>
-            <span className="text-fg-primary">#{latest.elo_rank}</span>
-            {latest.elo_score != null && (
-              <span className="text-meta text-fg-muted">ELO {latest.elo_score}</span>
-            )}
-          </>
-        }
-      />
-      <div className="mt-0.5 line-clamp-1 text-xs text-fg-primary">{latest.model_name}</div>
-      <div className="mt-0.5 text-meta text-fg-dim">
-        {latest.source === 'lmarena' ? 'LMArena' : 'Artificial Analysis'} · {latest.snapshot_date}
-      </div>
-    </div>
-  )
-}
-
-function TranscriptDigestInline({ companyId, data }: { companyId: string; data: GraphData }) {
-  const rows = data.transcripts.filter(t => t.company_id === companyId)
-  if (rows.length === 0) return null
-  const latest = rows.slice().sort((a, b) => b.filed_date.localeCompare(a.filed_date))[0]
-  const tag = quarterTagForDate(latest.filed_date)
-  return (
-    <div>
-      <PriorityHead
-        label={`Transcript · ${tag}`}
-        value={
-          <>
-            <span className="text-feed-hf">AI×{latest.ai_mentions}</span>
-            <span className="text-feed-github">GPU×{latest.gpu_mentions}</span>
-            <span className="text-signal-warn">capex×{latest.capex_mentions}</span>
-          </>
-        }
-      />
-      <div className="mt-0.5 text-meta text-fg-dim">filed {latest.filed_date}</div>
-    </div>
   )
 }
 
@@ -1499,6 +1119,62 @@ function pickLatestAndPriors<T extends { snapshot_date: string }>(
   return { latest, d7: closest(target7), d30: closest(target30) }
 }
 
+function formatViews(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`
+  return n.toLocaleString()
+}
+
+function BuzzIndexChip({ rows }: { rows: InterestSignal[] }) {
+  if (rows.length === 0) return null
+  const latest = rows.slice().sort((a, b) => b.snapshot_date.localeCompare(a.snapshot_date))[0]
+  if (!latest) return null
+
+  const wiki7d = latest.wikipedia_views_7d
+  const yoy = latest.wikipedia_yoy_pct
+  const trends = latest.google_trends_score
+  const trendsDelta = latest.google_trends_7d_delta
+
+  if (wiki7d == null && trends == null) return null
+
+  let deltaColor = 'text-fg-secondary'
+  if (trendsDelta != null) {
+    if (trendsDelta >= 20) deltaColor = 'text-signal-healthy'
+    else if (trendsDelta >= 5) deltaColor = 'text-signal-warn'
+    else if (trendsDelta <= -20) deltaColor = 'text-signal-alert'
+  }
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1.5 shadow-card">
+      <div className="flex items-baseline justify-between">
+        <div className="text-label text-fg-muted">Buzz</div>
+        <div className="flex items-baseline gap-1 font-mono text-xs">
+          {wiki7d != null && (
+            <span className="text-fg-primary">
+              {formatViews(wiki7d)} <span className="text-meta text-fg-muted">views/7d</span>{' '}
+              {yoy != null && <span className="text-[10px] text-fg-muted">({yoy >= 0 ? '+' : ''}{Math.round(yoy)}%)</span>}
+            </span>
+          )}
+          {wiki7d != null && trends != null && <span className="text-fg-dim mx-1">·</span>}
+          {trends != null && (
+            <span className="text-fg-primary">
+              <span className="text-meta text-fg-muted">trends</span> {trends}{' '}
+              {trendsDelta != null && (
+                <span className={`text-[10px] font-semibold ${deltaColor}`}>
+                  ({trendsDelta >= 0 ? '+' : ''}{trendsDelta})
+                </span>
+              )}
+            </span>
+          )}
+        </div>
+      </div>
+      <div className="mt-0.5 text-[9px] text-fg-dim font-mono">
+        Wikipedia views + Google Trends active search interest
+      </div>
+    </div>
+  )
+}
+
 function HiringPulseChip({ rows }: { rows: JobSnapshotRow[] }) {
   if (rows.length === 0) return null
   const { latest, d7, d30 } = pickLatestAndPriors(rows)
@@ -1745,9 +1421,26 @@ function GitHubActivityChip({ rows, companyName }: { rows: GithubActivity[]; com
   )
 }
 
-// SignalChips removed — replaced by the priority-block layout in
-// CompanyOverview, which renders chips in `rankSignalsForCo()` order rather
-// than a fixed sequence.
+function SignalChips({ companyId, data }: { companyId: string; data: GraphData }) {
+  const jobs = data.jobs.filter(j => j.company_id === companyId)
+  const grid = data.gridDemand.filter(g => g.company_id === companyId)
+  const patents = data.patents.filter(p => p.company_id === companyId)
+  const github = data.githubActivity.filter(g => g.company_id === companyId)
+  const social = data.socialMentions?.filter(s => s.company_id === companyId) || []
+  const interest = data.interestSignals?.filter(i => i.company_id === companyId) || []
+  const company = data.companies.find(c => c.id === companyId)
+  if (jobs.length === 0 && grid.length === 0 && patents.length === 0 && github.length === 0 && social.length === 0 && interest.length === 0) return null
+  return (
+    <div className="mb-4 grid grid-cols-1 gap-2">
+      {jobs.length     > 0 && <HiringPulseChip   rows={jobs}    />}
+      {interest.length > 0 && <BuzzIndexChip     rows={interest} />}
+      {social.length   > 0 && <BuzzChip           rows={social}  />}
+      {grid.length     > 0 && <PowerPressureChip rows={grid}    />}
+      {patents.length  > 0 && <RDVelocityChip    rows={patents} />}
+      {github.length   > 0 && <GitHubActivityChip rows={github} companyName={company?.name ?? companyId} />}
+    </div>
+  )
+}
 
 function ModelLeaderboardSection({ companyId, data }: { companyId: string; data: GraphData }) {
   const entries = data.modelLeaderboard.filter(e => e.company_id === companyId)

@@ -70,8 +70,22 @@ export interface Company {
   thesis_ai: string | null
   thesis_risk_ai: string | null
   thesis_generated_at: string | null
+  wikipedia_slug: string | null
+  google_trends_term: string | null
   created_at: string
   updated_at: string
+}
+
+export interface InterestSignal {
+  id: string
+  company_id: string
+  snapshot_date: string
+  wikipedia_views_7d: number | null
+  wikipedia_views_28d: number | null
+  wikipedia_yoy_pct: number | null
+  google_trends_score: number | null
+  google_trends_7d_delta: number | null
+  created_at: string
 }
 
 export interface GridDemandSnapshot {
@@ -369,6 +383,7 @@ export interface Database {
       model_leaderboard: { Row: ModelLeaderboardEntry; Insert: Omit<ModelLeaderboardEntry, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<ModelLeaderboardEntry> }
       github_activity: { Row: GithubActivity; Insert: Omit<GithubActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GithubActivity> }
       social_mentions: { Row: SocialMention; Insert: Omit<SocialMention, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<SocialMention> }
+      interest_signals: { Row: InterestSignal; Insert: Omit<InterestSignal, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<InterestSignal> }
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
       gpu_spot_prices: { Row: GpuSpotPrice; Insert: Omit<GpuSpotPrice, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GpuSpotPrice> }
