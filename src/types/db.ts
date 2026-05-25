@@ -73,6 +73,7 @@ export interface Company {
   wikipedia_slug: string | null
   google_trends_term: string | null
   arxiv_affiliation: string | null
+  youtube_channel: string | null
   created_at: string
   updated_at: string
 }
@@ -196,6 +197,12 @@ export interface TranscriptSignal {
   token_mentions: number
   extracted_phrases: Array<{ phrase: string; context_snippet: string }>
   source_url: string | null
+  youtube_video_id: string | null
+  qna_ai_mentions: number | null
+  qna_gpu_mentions: number | null
+  qna_capex_mentions: number | null
+  qna_extracted_phrases: Array<{ phrase: string; context_snippet: string }> | null
+  total_qna_words: number | null
   created_at: string
 }
 

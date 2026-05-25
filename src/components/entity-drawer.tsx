@@ -460,41 +460,92 @@ function TranscriptDigest({ companyId, data }: { companyId: string; data: GraphD
   // Latest filing first.
   const latest: TranscriptSignal = mine.slice().sort((a, b) => b.filed_date.localeCompare(a.filed_date))[0]
   const tag = quarterTagForDate(latest.filed_date)
+  
   // Mention chips — drop ones at zero count.
-  type Chip = { label: string; count: number; color: string }
-  const chips: Chip[] = [
+  const preparedChips = [
     { label: 'AI',     count: latest.ai_mentions,           color: 'text-feed-hf' },
     { label: 'GPU',    count: latest.gpu_mentions,          color: 'text-feed-github' },
     { label: 'capex',  count: latest.capex_mentions,        color: 'text-signal-warn' },
     { label: 'DC',     count: latest.data_center_mentions,  color: 'text-feed-grid' },
     { label: 'tokens', count: latest.token_mentions,        color: 'text-signal-info' },
   ].filter(c => c.count > 0)
-  // Top phrase: just the first extracted phrase (cron orders them by sentence
-  // position, which roughly tracks salience inside press releases — they
-  // usually open with the most material claim).
-  const topPhrase = Array.isArray(latest.extracted_phrases) && latest.extracted_phrases[0]
+
+  const qnaChips = [
+    { label: 'AI',     count: latest.qna_ai_mentions ?? 0,    color: 'text-feed-hf' },
+    { label: 'GPU',    count: latest.qna_gpu_mentions ?? 0,   color: 'text-feed-github' },
+    { label: 'capex',  count: latest.qna_capex_mentions ?? 0,  color: 'text-signal-warn' },
+  ].filter(c => c.count > 0)
+
+  // Top phrases
+  const topRemarksPhrase = Array.isArray(latest.extracted_phrases) && latest.extracted_phrases[0]
     ? latest.extracted_phrases[0].phrase
     : null
+
+  const topQnaPhrase = Array.isArray(latest.qna_extracted_phrases) && latest.qna_extracted_phrases[0]
+    ? latest.qna_extracted_phrases[0].phrase
+    : null
+
   return (
     <Section title="Earnings transcript">
-      <div className="mb-1 flex flex-wrap items-baseline gap-x-2 gap-y-1">
+      <div className="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
         <span className="font-mono text-xs text-fg-primary">{tag} earnings</span>
-        {chips.length > 0 && <span className="text-fg-dim">·</span>}
-        {chips.map(c => (
-          <span key={c.label} className={'font-mono text-meta ' + c.color}>
-            {c.label}×{c.count}
-          </span>
-        ))}
       </div>
-      {topPhrase && (
-        <blockquote className="mt-1 border-l-2 border-border-strong pl-2 text-xs italic text-fg-secondary">
-          &ldquo;{topPhrase}&rdquo;
+      <div className="space-y-1.5 text-xs">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="text-fg-secondary">Prepared remarks:</span>
+          {preparedChips.length > 0 ? (
+            preparedChips.map(c => (
+              <span key={c.label} className={'font-mono text-[11px] ' + c.color}>
+                {c.label}×{c.count}
+              </span>
+            ))
+          ) : (
+            <span className="text-fg-muted font-mono text-[11px]">—</span>
+          )}
+        </div>
+        {latest.youtube_video_id && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-fg-secondary">Q&A session:</span>
+            {qnaChips.length > 0 ? (
+              qnaChips.map(c => (
+                <span key={c.label} className={'font-mono text-[11px] ' + c.color}>
+                  {c.label}×{c.count}
+                </span>
+              ))
+            ) : (
+              <span className="text-fg-muted font-mono text-[11px]">—</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {topRemarksPhrase && (
+        <blockquote className="mt-2 border-l-2 border-border-strong pl-2 text-xs italic text-fg-secondary">
+          &ldquo;{topRemarksPhrase}&rdquo;
+          <span className="ml-1 text-[10px] text-fg-muted not-italic font-mono">(remarks)</span>
         </blockquote>
       )}
-      <div className="mt-1 flex items-baseline gap-2 text-meta text-fg-dim">
+      {topQnaPhrase && (
+        <blockquote className="mt-2 border-l-2 border-border-strong pl-2 text-xs italic text-fg-secondary">
+          &ldquo;{topQnaPhrase}&rdquo;
+          <span className="ml-1 text-[10px] text-fg-muted not-italic font-mono">(Q&A)</span>
+        </blockquote>
+      )}
+
+      <div className="mt-2.5 flex items-baseline gap-2 text-meta text-fg-dim">
         <span>filed {latest.filed_date}</span>
         {latest.source_url && (
           <a href={latest.source_url} target="_blank" rel="noreferrer" className="hover:text-fg-secondary">↗ 8-K</a>
+        )}
+        {latest.youtube_video_id && (
+          <a
+            href={`https://www.youtube.com/watch?v=${latest.youtube_video_id}`}
+            target="_blank"
+            rel="noreferrer"
+            className="hover:text-fg-secondary"
+          >
+            ↗ YouTube
+          </a>
         )}
       </div>
     </Section>
