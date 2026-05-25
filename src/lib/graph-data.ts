@@ -14,6 +14,7 @@ import type {
   FundingRound,
   TranscriptSignal,
   GpuSpotPrice,
+  GpuHyperscalerPricing,
   HfActivity,
   GithubActivity,
   GridDemandSnapshot,
@@ -47,6 +48,7 @@ export interface GraphData {
   fundingRounds: FundingRound[]   // Form D filings, last 180 days
   transcripts: TranscriptSignal[] // Earnings-8K NLP signals, last 180 days
   gpuSpot: GpuSpotPrice[]         // GPU spot-price snapshots, last 35 days
+  gpuHyperscaler: GpuHyperscalerPricing[] // AWS/Azure/GCP spot pricing, last 14 days
   hfActivity: HfActivity[]        // latest HF snapshot per company
   githubActivity: GithubActivity[] // latest GitHub repo snapshot per company
   gridDemand: GridDemandSnapshot[] // EIA grid demand, last 35 days for delta
@@ -177,6 +179,19 @@ export async function fetchGraph(): Promise<GraphData> {
     .order('snapshot_date', { ascending: false })
     .limit(500)
 
+  // GPU hyperscaler spot pricing: last 14 days. Non-fatal — table may be empty
+  // until the cron has run at least once (don't throw on missing rows).
+  const gpuHs = await sb
+    .from('gpu_hyperscaler_pricing')
+    .select('*')
+    .gte('snapshot_date', new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10))
+    .order('snapshot_date', { ascending: false })
+    .limit(500)
+  if (gpuHs.error) {
+    // eslint-disable-next-line no-console
+    console.warn('[graph-data] gpu_hyperscaler_pricing read failed (table may not exist yet):', gpuHs.error.message)
+  }
+
   // HF activity: most recent snapshot per company. With ~20 hf-tagged cos
   // × 1 snapshot/day this is trivial.
   const hf = await sb
@@ -257,6 +272,7 @@ export async function fetchGraph(): Promise<GraphData> {
     fundingRounds: (fr.data ?? []) as FundingRound[],
     transcripts: (tr.data ?? []) as TranscriptSignal[],
     gpuSpot: (gpu.data ?? []) as GpuSpotPrice[],
+    gpuHyperscaler: (gpuHs.data ?? []) as GpuHyperscalerPricing[],
     hfActivity: (hf.data ?? []) as HfActivity[],
     githubActivity: (gh.data ?? []) as GithubActivity[],
     gridDemand: (gd.data ?? []) as GridDemandSnapshot[],

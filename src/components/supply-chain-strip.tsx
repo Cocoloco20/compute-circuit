@@ -14,6 +14,7 @@
  *   FAB     TWN 287 TWh +1.2% YoY
  *   DC      OpenAI hiring +49 7d
  *   MODELS  Google 1B downloads / 30d
+ *   GPU     $2.31/H100/hr (blended) · AWS $3.12 · Azure $3.45
  *
  * Click a chip → expands a tray showing all signals in that layer.
  *
@@ -472,7 +473,7 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
         label: 'SILICON',
         emoji: '💎',
         entries: siliconEntries,
-        worstTone: 'green',                              // informational, not tightness
+        worstTone: 'green' as const,
         headline: siliconEntries.length === 0
           ? 'no data'
           : `${siliconEntries[0].label} ${siliconEntries[0].value} TTM`,
@@ -492,7 +493,7 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
         label: 'MODELS',
         emoji: '🧠',
         entries: modelsEntries,
-        worstTone: 'green',
+        worstTone: 'green' as const,
         headline: modelsEntries.length === 0
           ? 'no data'
           : `${modelsEntries[0].label} ${fmtNum(modelsEntries[0].value, modelsEntries[0].unit)}`,
@@ -503,8 +504,6 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
         emoji: '🟩',
         entries: gpuEntries,
         worstTone: gpuChipTone,
-        // Headline: $/H100/hr blended median (falls back to whatever the
-        // top entry is if no headline H100 data yet).
         headline: gpuEntries.length === 0
           ? 'no data'
           : headlineGpu
@@ -517,17 +516,60 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
         emoji: '₿',
         entries: btcEntries,
         worstTone: worstOf(btcEntries.map(e => e.tone)),
-        // Headline: EH/s + ± last-adj %. e.g. "983 EH/s · +3.1% adj"
         headline: btcEntries.length === 0
           ? 'no data'
           : btcHash
             ? `${Math.round(btcHash.value)} EH/s${btcAdjPct != null ? ` · ${btcAdjPct >= 0 ? '+' : ''}${btcAdjPct.toFixed(1)}% adj` : ''}`
             : `${btcEntries[0].label} ${fmtNum(btcEntries[0].value, btcEntries[0].unit)}`,
       },
-    ]
+    ] as ChainLayerSummary[]
   }, [data])
 
   const hasAnyData = summary.some(s => s.entries.length > 0)
+
+  // Hyperscaler cheapest spot per (model, provider) — computed directly from data
+  // for the tray renderer. Defined before any early return so hook order is stable.
+  const hyperBest = useMemo(() => {
+    const m = new Map<string, { provider: string; region: string; spotPerGpu: number }>()
+    for (const row of data.gpuHyperscaler) {
+      if (row.spot_usd_per_gpu_hour == null) continue
+      const key = `${row.gpu_model}::${row.provider}`
+      const cur = m.get(key)
+      if (!cur || row.spot_usd_per_gpu_hour < cur.spotPerGpu) {
+        m.set(key, { provider: row.provider, region: row.region, spotPerGpu: row.spot_usd_per_gpu_hour })
+      }
+    }
+    return m
+  }, [data.gpuHyperscaler])
+
+  // Rental market availability squeeze signals: countries where Vast.ai listing
+  // count dropped >50% in the last 7 days for a GPU model.
+  const squeezeSignals = useMemo(() => {
+    const out: Array<{ gpu_model: string; country: string; todayCount: number; priorCount: number; dropPct: number }> = []
+    const cut7dDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+    const vastByModel = new Map<string, Array<{ date: string; byRegion: Record<string, number> }>>()
+    for (const row of data.gpuSpot) {
+      if (row.source !== 'vast.ai') continue
+      const byRegion = row.listing_count_by_region as Record<string, number> | null
+      if (!byRegion || Object.keys(byRegion).length === 0) continue
+      const arr = vastByModel.get(row.gpu_model) ?? []
+      arr.push({ date: row.snapshot_date, byRegion })
+      vastByModel.set(row.gpu_model, arr)
+    }
+    for (const [model, rows] of vastByModel) {
+      const sorted = rows.slice().sort((a, b) => b.date.localeCompare(a.date))
+      const latest = sorted[0]; if (!latest) continue
+      const prior = sorted.find(r => r.date <= cut7dDate); if (!prior) continue
+      for (const [country, todayCount] of Object.entries(latest.byRegion)) {
+        const priorCount = prior.byRegion[country] ?? 0
+        if (priorCount === 0) continue
+        const dropPct = ((priorCount - todayCount) / priorCount) * 100
+        if (dropPct >= 50) out.push({ gpu_model: model, country, todayCount, priorCount, dropPct })
+      }
+    }
+    return out
+  }, [data.gpuSpot])
+
   if (!hasAnyData) return null
 
   // ----- MOBILE variant: vertical stack inside the parent MobileSheet -----
@@ -581,6 +623,9 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
                     </div>
                   ))}
                   {s.label === 'POWER' && <AeoForecastBlock projections={data.aeoProjections} />}
+                  {s.label === 'GPU' && (
+                    <GpuHyperscalerTable hyperBest={hyperBest} squeezeSignals={squeezeSignals} />
+                  )}
                 </div>
               )}
             </div>
@@ -628,7 +673,7 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
         const s = summary.find(x => x.label === expanded)
         if (!s || s.entries.length === 0) return null
         return (
-          <div className="mt-1 max-h-[300px] w-[min(420px,calc(100vw-2rem))] overflow-y-auto rounded-card border border-border-default bg-bg-overlay p-3 text-[11px] font-mono shadow-panel backdrop-blur">
+          <div className="mt-1 max-h-[400px] w-[min(480px,calc(100vw-2rem))] overflow-y-auto rounded-card border border-border-default bg-bg-overlay p-3 text-[11px] font-mono shadow-panel backdrop-blur">
             <div className="mb-2 flex items-baseline justify-between">
               <span className="uppercase tracking-wider text-fg-secondary">{s.emoji} {s.label} layer · {s.entries.length} series</span>
               <button
@@ -657,6 +702,10 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
             </div>
             {/* POWER tray gets the AEO 2026 long-term forecast block */}
             {s.label === 'POWER' && <AeoForecastBlock projections={data.aeoProjections} />}
+            {/* GPU tray gets the hyperscaler cloud pricing table */}
+            {s.label === 'GPU' && (
+              <GpuHyperscalerTable hyperBest={hyperBest} squeezeSignals={squeezeSignals} />
+            )}
           </div>
         )
       })()}
@@ -664,7 +713,103 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
   )
 }
 
-// ---------- AEO 2026 long-term forecast block ----------
+
+
+// ---------- GPU Hyperscaler Spot Pricing Table ----------
+//
+// Shown in the GPU tray below the per-model blended-median rows.
+// 2-column table: GPU model × provider, cheapest spot per combo.
+// Squeeze signals are shown as red sub-labels when Vast.ai availability
+// dropped >50% in a country vs 7d ago.
+
+type HyperscalerCellType = { provider: string; region: string; spotPerGpu: number }
+type SqueezeSignalType = { gpu_model: string; country: string; todayCount: number; priorCount: number; dropPct: number }
+
+const CLOUD_PROVIDERS = ['aws', 'azure'] as const
+const HYPERSCALER_GPU_MODELS = ['H100 80GB SXM5', 'H200', 'B200', 'A100 80GB'] as const
+
+function GpuHyperscalerTable({
+  hyperBest,
+  squeezeSignals,
+}: {
+  hyperBest: Map<string, HyperscalerCellType>
+  squeezeSignals: SqueezeSignalType[]
+}) {
+  // Only render if we have any hyperscaler data
+  const hasAny = HYPERSCALER_GPU_MODELS.some(m =>
+    CLOUD_PROVIDERS.some(p => hyperBest.has(`${m}::${p}`))
+  )
+  if (!hasAny) return null
+
+  // Build squeeze lookup: model → [countries with >50% drop]
+  const squeezeByModel = new Map<string, SqueezeSignalType[]>()
+  for (const s of squeezeSignals) {
+    const arr = squeezeByModel.get(s.gpu_model) ?? []
+    arr.push(s)
+    squeezeByModel.set(s.gpu_model, arr)
+  }
+
+  return (
+    <div className="mt-3 border-t border-border-default pt-2">
+      <div className="mb-1.5 text-[9px] uppercase tracking-wider text-fg-dim">
+        Cloud Spot Prices · cheapest region / provider
+      </div>
+      <table className="w-full text-[10px] font-mono">
+        <thead>
+          <tr className="text-[9px] uppercase text-fg-dim">
+            <th className="text-left pb-1">GPU</th>
+            {CLOUD_PROVIDERS.map(p => (
+              <th key={p} className="text-right pb-1 uppercase">{p}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {HYPERSCALER_GPU_MODELS.map(model => {
+            const squeezes = squeezeByModel.get(model) ?? []
+            const cells = CLOUD_PROVIDERS.map(p => hyperBest.get(`${model}::${p}`) ?? null)
+            // Skip row if no data for any provider
+            if (cells.every(c => c === null)) return null
+            return (
+              <tr key={model} className="border-t border-border-subtle/30">
+                <td className="py-0.5 pr-2 text-fg-secondary">
+                  {model.replace(' 80GB', '').replace(' SXM5', ' SXM')}
+                  {squeezes.length > 0 && (
+                    <span className="ml-1 text-signal-alert" title={`Availability squeeze: ${squeezes.map(s => `${s.country} −1${s.dropPct.toFixed(0)}%`).join(', ')}`}>
+                      ⚠
+                    </span>
+                  )}
+                </td>
+                {cells.map((cell, i) => (
+                  <td key={CLOUD_PROVIDERS[i]} className="py-0.5 text-right">
+                    {cell ? (
+                      <span className="text-fg-primary">
+                        ${cell.spotPerGpu.toFixed(2)}
+                        <span className="ml-0.5 text-[8px] text-fg-dim">{cell.region}</span>
+                      </span>
+                    ) : (
+                      <span className="text-fg-dim">—</span>
+                    )}
+                  </td>
+                ))}
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+      {squeezeSignals.length > 0 && (
+        <div className="mt-1.5 space-y-0.5">
+          {squeezeSignals.map((s, i) => (
+            <div key={i} className="text-[9px] text-signal-alert">
+              ⚠ GPU squeeze: {s.country} {s.gpu_model.split(' ')[0]} −{s.dropPct.toFixed(0)}% listings vs 7d
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 //
 // Shown only in the POWER tray. Surfaces EIA's official AEO data center
 // purchased-electricity projection across the 3 scenarios for 2030 + 2050,

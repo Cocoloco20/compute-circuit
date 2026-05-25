@@ -245,7 +245,19 @@ export interface GpuSpotPrice {
   p25_usd_per_hour: number | null
   p75_usd_per_hour: number | null
   listing_count: number
+  listing_count_by_region: Record<string, number> | null  // Vast.ai only: {"US":34,"DE":8}
   source: 'vast.ai' | 'runpod' | 'blended'
+  created_at: string
+}
+
+export interface GpuHyperscalerPricing {
+  id: string
+  snapshot_date: string
+  gpu_model: string                   // 'H100 80GB SXM5' | 'H200' | 'B200' | 'A100 80GB'
+  provider: string                    // 'aws' | 'azure' | 'gcp'
+  region: string                      // provider-native region: 'us-east-1', 'eastus'
+  spot_usd_per_gpu_hour: number | null
+  on_demand_usd_per_gpu_hour: number | null
   created_at: string
 }
 
@@ -339,6 +351,7 @@ export interface Database {
       patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
       job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
       gpu_spot_prices: { Row: GpuSpotPrice; Insert: Omit<GpuSpotPrice, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GpuSpotPrice> }
+      gpu_hyperscaler_pricing: { Row: GpuHyperscalerPricing; Insert: Omit<GpuHyperscalerPricing, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GpuHyperscalerPricing> }
       grid_demand_snapshots: { Row: GridDemandSnapshot; Insert: Omit<GridDemandSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GridDemandSnapshot> }
       eia_commodity_snapshots: { Row: EiaCommoditySnapshot; Insert: Omit<EiaCommoditySnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaCommoditySnapshot> }
       eia_fuelmix_snapshots: { Row: EiaFuelMixSnapshot; Insert: Omit<EiaFuelMixSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<EiaFuelMixSnapshot> }
