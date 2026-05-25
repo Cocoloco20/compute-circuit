@@ -84,6 +84,15 @@ export async function GET(req: NextRequest) {
   // Monthly: VC portfolio scraper (1st of month)
   if (date === 1) results.push(await call('portfolio-scraper', '/api/cron/portfolio-scraper'))
 
+  // Digest: only if Resend is configured. Runs after all data crons so it
+  // gets fresh numbers. The digest has its own separate Vercel cron at 8am ET,
+  // but calling it here too means the nightly data run always sends one too.
+  // Skip silently if RESEND_API_KEY is absent so the daily cron stays green
+  // even before the user configures email.
+  if (process.env.RESEND_API_KEY) {
+    results.push(await call('digest', '/api/cron/digest'))
+  }
+
   return NextResponse.json({
     ok: results.every(r => r.ok),
     timestamp: now.toISOString(),
