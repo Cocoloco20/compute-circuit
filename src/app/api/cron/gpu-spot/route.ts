@@ -8,17 +8,28 @@ import {
   type GpuSpotSnapshot,
 } from '@/lib/gpu-spot'
 
+import {
+  fetchAwsSpotPricing,
+  fetchAzureSpotPricing,
+  sleep,
+  type GpuHyperscalerRow,
+} from '@/lib/gpu-hyperscaler'
+
 /**
- * Daily GPU spot-price snapshot — median $/GPU-hr across the public rental market.
+ * Daily GPU spot-price + hyperscaler availability snapshot.
  *
- * Pulls Vast.ai's verified+rentable order book + RunPod's gpuTypes catalog in
- * parallel, aggregates each provider into per-(model,source) medians, then
- * emits a third 'blended' row per model using the combined order book.
+ * Tier 1 (rental market): Vast.ai + RunPod — unchanged, blended median per
+ * (model, source). Now also captures listing_count_by_region per Vast.ai row.
  *
- * Upserts into gpu_spot_prices with unique constraint on
- * (snapshot_date, gpu_model, source) — safe to re-run.
+ * Tier 2 (hyperscalers): AWS p-series + Azure ND/NC H100 series spot pricing.
+ * Results go into gpu_hyperscaler_pricing with 1s politeness gap between
+ * providers. Hyperscaler failures are non-fatal: they log a warning and the
+ * route still returns ok=true as long as Tier 1 succeeds.
  *
- * Wall clock: ~2-3s (two parallel HTTPs + one batched upsert).
+ * Upserts into gpu_spot_prices: unique (snapshot_date, gpu_model, source).
+ * Upserts into gpu_hyperscaler_pricing: unique (snapshot_date, gpu_model, provider, region).
+ *
+ * Wall clock: ~5-8s (two parallel HTTPs + two serial hyperscaler calls + upserts).
  */
 
 export const runtime = 'nodejs'
@@ -36,6 +47,9 @@ export async function GET(req: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
 
   const t0 = Date.now()
+  const snapshotDate = new Date().toISOString().slice(0, 10)
+
+  // ── Tier 1: Vast.ai + RunPod (parallel) ───────────────────────────────────
   const [bundles, runpods] = await Promise.all([
     fetchVastAiBundles(),
     fetchRunpodGpuTypes(),
@@ -50,7 +64,7 @@ export async function GET(req: NextRequest) {
     }, { status: 502 })
   }
 
-  const snapshots = aggregateGpuSpot(bundles, runpods)
+  const snapshots = aggregateGpuSpot(bundles, runpods, snapshotDate)
   if (snapshots.length === 0) {
     return NextResponse.json({
       ok: false,
@@ -68,7 +82,44 @@ export async function GET(req: NextRequest) {
   }).upsert(snapshots, { onConflict: 'snapshot_date,gpu_model,source' })
   if (up.error) return NextResponse.json({ error: up.error.message }, { status: 500 })
 
-  // Compact summary for the response — caller-friendly view of what got written.
+  // ── Tier 2: Hyperscalers (serial with 1s gap for politeness) ─────────────
+  const hyperscalerRows: GpuHyperscalerRow[] = []
+  const hyperscalerErrors: string[] = []
+
+  try {
+    const awsRows = await fetchAwsSpotPricing(snapshotDate)
+    hyperscalerRows.push(...awsRows)
+  } catch (err) {
+    hyperscalerErrors.push(`aws: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  await sleep(1000)
+
+  try {
+    const azureRows = await fetchAzureSpotPricing(snapshotDate)
+    hyperscalerRows.push(...azureRows)
+  } catch (err) {
+    hyperscalerErrors.push(`azure: ${err instanceof Error ? err.message : String(err)}`)
+  }
+
+  let hyperscalerWritten = 0
+  if (hyperscalerRows.length > 0) {
+    const upHs = await (sb.from('gpu_hyperscaler_pricing') as unknown as {
+      upsert: (rows: GpuHyperscalerRow[], opts: { onConflict: string }) =>
+        Promise<{ error: { message: string } | null }>
+    }).upsert(hyperscalerRows, { onConflict: 'snapshot_date,gpu_model,provider,region' })
+    if (upHs.error) {
+      hyperscalerErrors.push(`upsert: ${upHs.error.message}`)
+    } else {
+      hyperscalerWritten = hyperscalerRows.length
+    }
+  }
+  if (hyperscalerErrors.length > 0) {
+    // eslint-disable-next-line no-console
+    console.warn('[gpu-spot] hyperscaler fetch partial failure:', hyperscalerErrors.join('; '))
+  }
+
+  // ── Response ──────────────────────────────────────────────────────────────
   const byModelBlended = snapshots
     .filter(s => s.source === 'blended')
     .map(s => ({
@@ -76,6 +127,12 @@ export async function GET(req: NextRequest) {
       median: s.median_usd_per_hour,
       n: s.listing_count,
     }))
+
+  // Summarize hyperscaler rows by provider
+  const hyperscalerSummary = hyperscalerRows.reduce<Record<string, number>>((acc, r) => {
+    acc[r.provider] = (acc[r.provider] ?? 0) + 1
+    return acc
+  }, {})
 
   return NextResponse.json({
     ok: true,
@@ -85,5 +142,11 @@ export async function GET(req: NextRequest) {
     runpodCount: runpods.length,
     rowsWritten: snapshots.length,
     blended: byModelBlended,
+    hyperscaler: {
+      rowsWritten: hyperscalerWritten,
+      byProvider: hyperscalerSummary,
+      errors: hyperscalerErrors.length > 0 ? hyperscalerErrors : undefined,
+    },
   })
 }
+

@@ -108,6 +108,7 @@ export interface VastBundle {
   gpu_ram: number            // single-GPU VRAM in MB
   verification?: string
   rentable?: boolean
+  geolocation?: string | null // e.g. "US,CA" or "DE,BY" — first token is country ISO
 }
 
 export interface RunpodGpuType {
@@ -127,6 +128,8 @@ export interface GpuSpotSnapshot {
   p25_usd_per_hour: number | null
   p75_usd_per_hour: number | null
   listing_count: number
+  /** Vast.ai only: per-country ISO listing counts, e.g. {"US":34,"DE":8}. null for RunPod/blended. */
+  listing_count_by_region: Record<string, number> | null
 }
 
 // ---------- fetchers ----------
@@ -193,9 +196,9 @@ function percentile(arr: number[], p: number): number | null {
   return s[i]
 }
 
-/** Vast.ai → per-GPU rate, but only for our canonical models. */
-function vastPricesByModel(bundles: VastBundle[]): Map<string, number[]> {
-  const out = new Map<string, number[]>()
+/** Vast.ai → per-GPU rate AND per-country listing count, for canonical models only. */
+function vastDataByModel(bundles: VastBundle[]): Map<string, { prices: number[]; byRegion: Record<string, number> }> {
+  const out = new Map<string, { prices: number[]; byRegion: Record<string, number> }>()
   for (const b of bundles) {
     if (!b.rentable || b.verification !== 'verified') continue
     const n = Number(b.num_gpus)
@@ -209,6 +212,9 @@ function vastPricesByModel(bundles: VastBundle[]): Map<string, number[]> {
     const name = (b.gpu_name ?? '').trim()
     if (!name) continue
     const vram = Number(b.gpu_ram) || 0   // single-GPU VRAM, MB
+
+    // Country ISO from geolocation string like "US,CA" or "DE,BY"
+    const countryIso = (typeof b.geolocation === 'string' ? b.geolocation.split(',')[0] : 'XX').toUpperCase() || 'XX'
 
     // Exclude "Ti" variants for plain RTX 4090 / RTX 3090 (separate chips).
     const isPlainRtx4090 = /\bRTX\s*4090\b/i.test(name) && !/\bTi\b/i.test(name)
@@ -226,9 +232,10 @@ function vastPricesByModel(bundles: VastBundle[]): Map<string, number[]> {
         return true
       })
       if (!hit) continue
-      const arr = out.get(spec.canonical) ?? []
-      arr.push(perGpu)
-      out.set(spec.canonical, arr)
+      const bucket = out.get(spec.canonical) ?? { prices: [], byRegion: {} }
+      bucket.prices.push(perGpu)
+      bucket.byRegion[countryIso] = (bucket.byRegion[countryIso] ?? 0) + 1
+      out.set(spec.canonical, bucket)
       break  // first canonical match wins
     }
   }
@@ -276,13 +283,15 @@ export function aggregateGpuSpot(
   runpods: RunpodGpuType[],
   snapshotDate: string = new Date().toISOString().slice(0, 10),
 ): GpuSpotSnapshot[] {
-  const vastByModel = vastPricesByModel(bundles)
+  const vastDataMap = vastDataByModel(bundles)
   const runpodByModel = runpodPricesByModel(runpods)
 
   const rows: GpuSpotSnapshot[] = []
 
   for (const spec of CANONICAL_GPUS) {
-    const vast = vastByModel.get(spec.canonical) ?? []
+    const vastData = vastDataMap.get(spec.canonical)
+    const vast = vastData?.prices ?? []
+    const byRegion = vastData?.byRegion ?? null
     const runpod = runpodByModel.get(spec.canonical) ?? []
     const blended = vast.concat(runpod)
 
@@ -295,6 +304,7 @@ export function aggregateGpuSpot(
         p25_usd_per_hour: roundOrNull(percentile(vast, 25)),
         p75_usd_per_hour: roundOrNull(percentile(vast, 75)),
         listing_count: vast.length,
+        listing_count_by_region: Object.keys(byRegion ?? {}).length > 0 ? byRegion : null,
       })
     }
     if (runpod.length > 0) {
@@ -306,6 +316,7 @@ export function aggregateGpuSpot(
         p25_usd_per_hour: roundOrNull(percentile(runpod, 25)),
         p75_usd_per_hour: roundOrNull(percentile(runpod, 75)),
         listing_count: runpod.length,
+        listing_count_by_region: null,  // RunPod doesn't expose per-listing geography
       })
     }
     if (blended.length > 0) {
@@ -317,6 +328,7 @@ export function aggregateGpuSpot(
         p25_usd_per_hour: roundOrNull(percentile(blended, 25)),
         p75_usd_per_hour: roundOrNull(percentile(blended, 75)),
         listing_count: blended.length,
+        listing_count_by_region: null,  // blended aggregate doesn't break out by region
       })
     }
   }
