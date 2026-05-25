@@ -38,7 +38,7 @@ interface ChainEntry {
 }
 
 interface ChainLayerSummary {
-  layer: ChainLayer | 'fab' | 'dc' | 'models'
+  layer: ChainLayer | 'fab' | 'dc' | 'models' | 'btc'
   label: string
   emoji: string
   worstTone: 'green' | 'yellow' | 'red' | 'neutral'
@@ -295,6 +295,59 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
     }
     modelsEntries.sort((a, b) => b.value - a.value)
 
+    // ----- BTC — global mining as a "compute spend" proxy. Hashrate ↑ ⇒ the
+    // world is buying more ASICs and renting more grid power, which competes
+    // with hyperscaler buildout. We pull three series from eia_commodity_snapshots
+    // that the /api/cron/btc route populates from mempool.space.
+    //
+    // Tone rule per task spec: difficulty rising (last_adj_pct > 0, parsed
+    // out of the BTC.DIFFICULTY.D label) = healthy (more demand for compute),
+    // falling = warn.
+    const btcEntries: ChainEntry[] = []
+    const btcHash = bySeriesLatest.get('BTC.HASHRATE.D')
+    const btcDiff = bySeriesLatest.get('BTC.DIFFICULTY.D')
+    const btcPower = bySeriesLatest.get('BTC.NETWORK_POWER.D')
+    // Parse adjustment % from the difficulty label, e.g. "BTC difficulty (last adj +3.12%)"
+    let btcAdjPct: number | null = null
+    if (btcDiff) {
+      const m = (btcDiff.label ?? '').match(/last adj ([+-]?[0-9.]+)%/)
+      if (m) btcAdjPct = Number(m[1])
+    }
+    const diffTone: ChainEntry['tone'] =
+      btcAdjPct == null ? 'neutral' : btcAdjPct >= 0 ? 'green' : 'yellow'
+    if (btcHash) {
+      btcEntries.push({
+        series_id: 'BTC.HASHRATE.D',
+        label: 'Network hashrate',
+        value: btcHash.value,
+        unit: btcHash.unit,
+        tone: diffTone,                  // hashrate inherits the difficulty trend tone
+        date: btcHash.snapshot_date,
+      })
+    }
+    if (btcDiff) {
+      btcEntries.push({
+        series_id: 'BTC.DIFFICULTY.D',
+        label: 'Difficulty',
+        // Display difficulty in trillions for readability (raw ~136T)
+        value: btcDiff.value / 1e12,
+        unit: 'T',
+        tone: diffTone,
+        delta: btcAdjPct,
+        date: btcDiff.snapshot_date,
+      })
+    }
+    if (btcPower) {
+      btcEntries.push({
+        series_id: 'BTC.NETWORK_POWER.D',
+        label: 'Est. network draw',
+        value: btcPower.value,
+        unit: btcPower.unit,
+        tone: diffTone,
+        date: btcPower.snapshot_date,
+      })
+    }
+
     return [
       {
         layer: 'fuel',
@@ -365,6 +418,19 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
         headline: modelsEntries.length === 0
           ? 'no data'
           : `${modelsEntries[0].label} ${fmtNum(modelsEntries[0].value, modelsEntries[0].unit)}`,
+      },
+      {
+        layer: 'btc',
+        label: 'BTC',
+        emoji: '₿',
+        entries: btcEntries,
+        worstTone: worstOf(btcEntries.map(e => e.tone)),
+        // Headline: EH/s + ± last-adj %. e.g. "983 EH/s · +3.1% adj"
+        headline: btcEntries.length === 0
+          ? 'no data'
+          : btcHash
+            ? `${Math.round(btcHash.value)} EH/s${btcAdjPct != null ? ` · ${btcAdjPct >= 0 ? '+' : ''}${btcAdjPct.toFixed(1)}% adj` : ''}`
+            : `${btcEntries[0].label} ${fmtNum(btcEntries[0].value, btcEntries[0].unit)}`,
       },
     ]
   }, [data])
