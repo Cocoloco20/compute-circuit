@@ -87,6 +87,11 @@ export async function GET(req: NextRequest) {
   // Monthly: VC portfolio scraper (1st of month)
   if (date === 1) results.push(await call('portfolio-scraper', '/api/cron/portfolio-scraper'))
 
+  // Logo maintenance — runs AFTER all new-co-inserting crons (form-d,
+  // portfolio-scraper) so any rows they added are picked up the same night.
+  // Bounded to 30 cos/run; no-op when there's no work.
+  results.push(await call('logo-maintenance', '/api/cron/logo-maintenance'))
+
   // Digest: only if Resend is configured. Runs after all data crons so it
   // gets fresh numbers. The digest has its own separate Vercel cron at 8am ET,
   // but calling it here too means the nightly data run always sends one too.

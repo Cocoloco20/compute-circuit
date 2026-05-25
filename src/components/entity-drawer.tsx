@@ -170,7 +170,10 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
 // ----- Sticky "DES"-style header -----
 
 function StickyHeader({ company }: { company: GraphData['companies'][number] }) {
-  const url = getLogoUrl(company.domain)
+  // Pass the whole row so getLogoUrl() picks up the logo_url override (mig 0040).
+  // If logo_status is 'missing' we render a hash-colored monogram instead of a
+  // broken-image placeholder.
+  const url = company.logo_status === 'missing' ? null : getLogoUrl(company)
   const sub = company.ticker || (company.private ? 'private' : null)
   const change = company.last_price != null && company.prev_close != null
     ? company.last_price - company.prev_close
@@ -194,9 +197,7 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
             <img src={url} alt={company.name} className="h-full w-full object-contain" />
           </div>
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-bg-surface text-xs text-fg-muted ring-1 ring-border-default">
-            {company.name.slice(0, 2).toUpperCase()}
-          </div>
+          <Monogram id={company.id} name={company.name} />
         )}
         <div className="flex-1">
           <div className="text-base font-semibold text-fg-primary">{company.name}</div>
@@ -251,6 +252,36 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ----- Monogram fallback -----
+//
+// Rendered in place of a logo when logo_status='missing' (no domain + no
+// resolvable Wikipedia/DuckDuckGo result) OR when no domain is set at all.
+// Background color is seeded from company.id hash so the same co always
+// gets the same color across page loads — better visual identity than a
+// generic gray box.
+const MONOGRAM_COLORS = [
+  '#7c3aed', '#0891b2', '#059669', '#d97706', '#dc2626',
+  '#db2777', '#4f46e5', '#ca8a04', '#0ea5e9', '#65a30d',
+] as const
+
+function Monogram({ id, name, size = 40 }: { id: string; name: string; size?: number }) {
+  let hash = 0
+  for (let i = 0; i < id.length; i++) hash = ((hash << 5) - hash + id.charCodeAt(i)) | 0
+  const color = MONOGRAM_COLORS[Math.abs(hash) % MONOGRAM_COLORS.length]
+  const initials = name
+    .split(/\s+/).filter(Boolean).slice(0, 2)
+    .map(w => w[0]).join('').toUpperCase().slice(0, 2) || name.slice(0, 2).toUpperCase()
+  return (
+    <div
+      className="flex items-center justify-center rounded-md font-mono text-xs font-semibold text-white ring-1 ring-black/10"
+      style={{ width: size, height: size, backgroundColor: color }}
+      aria-label={`${name} monogram`}
+    >
+      {initials}
     </div>
   )
 }

@@ -336,7 +336,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       ctx.restore()
     }
 
-    function makeBadge(opts: { domain: string | null; ringColor: string; initials: string; scale: number }): THREE.Sprite {
+    function makeBadge(opts: { domain: string | null; logoUrl?: string | null; logoStatus?: string | null; ringColor: string; initials: string; scale: number }): THREE.Sprite {
       const canvas = document.createElement('canvas')
       canvas.width = canvas.height = 128
       paintBadgeFallback(canvas, opts.ringColor, opts.initials)
@@ -348,7 +348,11 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const sprite = new THREE.Sprite(mat)
       sprite.scale.set(opts.scale, opts.scale, 1)
 
-      const url = getLogoUrl(opts.domain)
+      // Skip the upstream fetch when the maintenance cron has already flagged
+      // this row as missing — saves a 404 round-trip per node on first render.
+      const url = opts.logoStatus === 'missing'
+        ? null
+        : getLogoUrl({ domain: opts.domain, logo_url: opts.logoUrl ?? null })
       if (url) {
         const img = new Image()
         img.crossOrigin = 'anonymous'
@@ -424,7 +428,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const ringHex = c.position_held ? '#fbbf24' : c.private ? '#60a5fa' : '#475569'
       const initials = c.ticker ?? c.name
 
-      const badge = makeBadge({ domain: c.domain, ringColor: ringHex, initials, scale })
+      const badge = makeBadge({ domain: c.domain, logoUrl: c.logo_url, logoStatus: c.logo_status, ringColor: ringHex, initials, scale })
       badge.position.set(pos.x, pos.y, pos.z)
       badge.userData = { kind: 'company', id: c.id, label: `${c.name}${c.ticker ? ` · ${c.ticker}` : ''}` }
       applyFilterToMaterial(badge.material, !filterSet || filterSet.companies.has(c.id))

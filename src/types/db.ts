@@ -98,6 +98,11 @@ export interface Company {
   hq_city: string | null
   // Phase 7A: ISO 3166-1 alpha-2 country of HQ / primary listing.
   country: string | null
+  // Logo pipeline (migration 0040). logo_status drives the StickyHeader's
+  // monogram fallback when no usable image exists.
+  logo_url: string | null
+  logo_status: 'pending' | 'verified' | 'fallback' | 'missing' | null
+  logo_verified_at: string | null
   created_at: string
   updated_at: string
 }
