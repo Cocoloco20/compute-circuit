@@ -210,6 +210,32 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
     }
     fabEntries.sort((a, b) => (a.delta ?? 0) - (b.delta ?? 0))
 
+    // ----- SILICON — patent R&D velocity per co. The chips/foundry/equipment
+    // layer of the stack, signalled by USPTO TTM filings + CPC distribution. -----
+    const siliconEntries: ChainEntry[] = []
+    const patentsByCo = new Map<string, GraphData['patents'][number]>()
+    for (const p of data.patents) {
+      const cur = patentsByCo.get(p.company_id)
+      if (!cur || p.snapshot_date > cur.snapshot_date) patentsByCo.set(p.company_id, p)
+    }
+    for (const [coId, p] of patentsByCo) {
+      const co = data.companies.find(c => c.id === coId)
+      if (!co) continue
+      // Top CPC subclass distills "what kind of R&D" — useful one-line label
+      const topCpc = Array.isArray(p.top_subclasses) && p.top_subclasses[0]
+        ? p.top_subclasses[0].code
+        : null
+      siliconEntries.push({
+        series_id: `IP.${coId}`,
+        label: `${co.ticker ?? co.name}${topCpc ? ' · ' + topCpc : ''}`,
+        value: p.ttm_count,
+        unit: 'TTM',
+        tone: 'green',                                  // patent count is informational not tightness
+        date: p.snapshot_date,
+      })
+    }
+    siliconEntries.sort((a, b) => b.value - a.value)
+
     // ----- DC — hiring ramps + power-pressure cos -----
     const dcEntries: ChainEntry[] = []
     const jobsByCo = new Map<string, GraphData['jobs']>()
@@ -309,6 +335,16 @@ export default function SupplyChainStrip({ data }: { data: GraphData }) {
         headline: fabEntries.length === 0
           ? 'no data'
           : `${fabEntries[0].label.split(' ')[0]} ${fmtNum(fabEntries[0].value, fabEntries[0].unit)}`,
+      },
+      {
+        layer: 'silicon',
+        label: 'SILICON',
+        emoji: '💎',
+        entries: siliconEntries,
+        worstTone: 'green',                              // informational, not tightness
+        headline: siliconEntries.length === 0
+          ? 'no data'
+          : `${siliconEntries[0].label} ${siliconEntries[0].value} TTM`,
       },
       {
         layer: 'dc',
