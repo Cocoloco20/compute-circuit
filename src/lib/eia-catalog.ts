@@ -144,6 +144,122 @@ export const EIA_SERIES_CATALOG: EiaSeriesSpec[] = [
     valueColumn: 'value',
     unit: 'MMT CO2',
   },
+
+  // ============ STEO — Short-Term Energy Outlook (24-month forward) ============
+  // STEO is EIA's monthly forecast. Critical for "what's coming in gas/elec
+  // prices over the next 6-18 months" — directly informs CEG/VST/NEE hedging
+  // outlook and the AI buildout's marginal-cost trajectory.
+  //
+  // Series IDs from /v2/steo/data/ — frequency: monthly forecast points.
+  // We grab the most-recent published value (which is the *next* month
+  // forecast — that's the signal).
+  {
+    id: 'STEO.NG_HENRY_HUB.M',
+    label: 'STEO: Henry Hub forecast',
+    layer: 'fuel',
+    endpoint: 'steo/data',
+    frequency: 'monthly',
+    facets: { seriesId: ['NGHHMCF'] },                     // Henry Hub spot, monthly
+    data: ['value'],
+    valueColumn: 'value',
+    unit: 'USD/MMBtu',
+    tightnessRule: { direction: 'high-is-tight', warnAt: 4.0, alertAt: 6.0 },
+  },
+  {
+    id: 'STEO.ELEC_RETAIL.M',
+    label: 'STEO: retail elec forecast',
+    layer: 'power',
+    endpoint: 'steo/data',
+    frequency: 'monthly',
+    facets: { seriesId: ['ESRMNUS'] },                     // residential retail price national
+    data: ['value'],
+    valueColumn: 'value',
+    unit: 'cents/kWh',
+    tightnessRule: { direction: 'high-is-tight', warnAt: 14.0, alertAt: 16.0 },
+  },
+  {
+    id: 'STEO.GEN_RENEW_SHARE.M',
+    label: 'STEO: renewable gen share',
+    layer: 'power',
+    endpoint: 'steo/data',
+    frequency: 'monthly',
+    facets: { seriesId: ['GETPRNUS'] },                    // % renewable generation
+    data: ['value'],
+    valueColumn: 'value',
+    unit: '%',
+  },
+
+  // ============ SEDS — State Energy Data System (annual per-state) ============
+  // Data-center corridor states. Annual cadence, lagged ~2 years, but the
+  // only authoritative source for state-level total energy consumption.
+  // Useful when an 8-K says "we're siting in Virginia" — quick context on
+  // how stressed VA's grid already is.
+  {
+    id: 'SEDS.TOTAL_CONSUMPTION.VA.A',
+    label: 'Virginia total energy consumption',
+    layer: 'grid',
+    endpoint: 'seds/data',
+    frequency: 'annual',
+    facets: { seriesId: ['TETCB.VA.A'] },                  // TETCB = total energy consumed, billion BTU
+    data: ['value'],
+    valueColumn: 'value',
+    unit: 'billion Btu',
+  },
+  {
+    id: 'SEDS.TOTAL_CONSUMPTION.TX.A',
+    label: 'Texas total energy consumption',
+    layer: 'grid',
+    endpoint: 'seds/data',
+    frequency: 'annual',
+    facets: { seriesId: ['TETCB.TX.A'] },
+    data: ['value'],
+    valueColumn: 'value',
+    unit: 'billion Btu',
+  },
+  {
+    id: 'SEDS.TOTAL_CONSUMPTION.AZ.A',
+    label: 'Arizona total energy consumption',
+    layer: 'grid',
+    endpoint: 'seds/data',
+    frequency: 'annual',
+    facets: { seriesId: ['TETCB.AZ.A'] },
+    data: ['value'],
+    valueColumn: 'value',
+    unit: 'billion Btu',
+  },
+  {
+    id: 'SEDS.TOTAL_CONSUMPTION.OR.A',
+    label: 'Oregon total energy consumption',
+    layer: 'grid',
+    endpoint: 'seds/data',
+    frequency: 'annual',
+    facets: { seriesId: ['TETCB.OR.A'] },
+    data: ['value'],
+    valueColumn: 'value',
+    unit: 'billion Btu',
+  },
+  {
+    id: 'SEDS.TOTAL_CONSUMPTION.IA.A',
+    label: 'Iowa total energy consumption',
+    layer: 'grid',
+    endpoint: 'seds/data',
+    frequency: 'annual',
+    facets: { seriesId: ['TETCB.IA.A'] },
+    data: ['value'],
+    valueColumn: 'value',
+    unit: 'billion Btu',
+  },
+  {
+    id: 'SEDS.TOTAL_CONSUMPTION.GA.A',
+    label: 'Georgia total energy consumption',
+    layer: 'grid',
+    endpoint: 'seds/data',
+    frequency: 'annual',
+    facets: { seriesId: ['TETCB.GA.A'] },
+    data: ['value'],
+    valueColumn: 'value',
+    unit: 'billion Btu',
+  },
 ]
 
 /**

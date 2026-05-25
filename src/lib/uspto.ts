@@ -170,7 +170,7 @@ interface FetchOpts {
  * Returns null on auth or transport failure so callers can decide whether
  * to skip (cron) or surface the error (UI).
  */
-async function fetchApplications(name: string, opts: FetchOpts = {}): Promise<OdpRecord[] | null> {
+async function fetchApplicationsOnce(name: string, opts: FetchOpts = {}): Promise<OdpRecord[] | null> {
   const apiKey = opts.apiKey ?? process.env.USPTO_API_KEY
   if (!apiKey) {
     // eslint-disable-next-line no-console
@@ -258,6 +258,21 @@ async function fetchApplications(name: string, opts: FetchOpts = {}): Promise<Od
     if (bag.length < pageSize) break
   }
   return all
+}
+
+/**
+ * Wraps fetchApplicationsOnce with one retry on transient failure.
+ *
+ * USPTO returns intermittent timeouts/500s when hit from Vercel egress IPs,
+ * especially for high-volume assignees (Microsoft Technology Licensing, Avago
+ * Technologies). A simple retry-after-2s recovers most of these.
+ */
+async function fetchApplications(name: string, opts: FetchOpts = {}): Promise<OdpRecord[] | null> {
+  const first = await fetchApplicationsOnce(name, opts)
+  if (first !== null) return first
+  // 2s backoff then one more attempt
+  await new Promise(r => setTimeout(r, 2000))
+  return fetchApplicationsOnce(name, opts)
 }
 
 export async function fetchPatentsForAssignee(name: string): Promise<PatentSnapshot | null> {
