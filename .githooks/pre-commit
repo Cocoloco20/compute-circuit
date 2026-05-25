@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Block commits that contain Supabase service-role-key shapes or other obvious secrets
+LEAK_PATTERN='(sb_secret_[A-Za-z0-9_-]{20,}|eyJ[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{20,}|sk-ant-[A-Za-z0-9_-]{30,}|re_[A-Za-z0-9_-]{30,})'
+if git diff --cached -U0 | grep -E "^\+" | grep -vE "^\+\+\+" | grep -qE "$LEAK_PATTERN"; then
+  echo "ERROR: Possible secret detected in staged diff. Aborting commit."
+  echo "Search for: $LEAK_PATTERN"
+  git diff --cached | grep -nE "$LEAK_PATTERN" | head -3
+  exit 1
+fi

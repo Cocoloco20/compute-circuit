@@ -33,10 +33,16 @@ import type {
   AeoProjection,
 } from '../src/types/db'
 
-const sb = createClient(
-  'https://moeqxxsmksjdayaeblit.supabase.co',
-  'sb_secret_MtIjBt8O3zOb-YT0JMEDfQ_42In6wOg',
-)
+// Read from env — NEVER hardcode the service-role key in committed code.
+// Run with: NEXT_PUBLIC_SUPABASE_URL=... SUPABASE_SERVICE_ROLE_KEY=... tsx scripts/test_ranking.ts
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error(
+    'NEXT_PUBLIC_SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY env vars required',
+  )
+}
+const sb = createClient(supabaseUrl, supabaseKey)
 
 async function main() {
   const yearAgo = new Date(Date.now() - 365 * 86_400_000).toISOString().slice(0, 10)

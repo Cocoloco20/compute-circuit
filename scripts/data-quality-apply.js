@@ -39,9 +39,16 @@ require('dotenv').config({ path: '/Users/luiguisanchez/compute-circuit/.env.loca
 ;(async () => {
   const u = new URL(process.env.DATABASE_URL)
   const password = decodeURIComponent(u.password)
+    // Derive pooler connection from DATABASE_URL — never hardcode project ID
+  const dbUrl = new URL(process.env.DATABASE_URL)
+  const projectRef = dbUrl.hostname.split('.')[0].replace(/^db\./, '')
+  // Supabase pooler host pattern: aws-1-{region}.pooler.supabase.com
+  // We don't store the region — assume us-west-1 unless POOLER_REGION env var is set
+  const poolerHost = process.env.POOLER_HOST || `aws-1-${process.env.POOLER_REGION || 'us-west-1'}.pooler.supabase.com`
+  const poolerUser = `postgres.${projectRef}`
   const c = new Client({
-    host: 'aws-1-us-west-1.pooler.supabase.com', port: 5432,
-    user: 'postgres.moeqxxsmksjdayaeblit', password, database: 'postgres',
+    host: poolerHost, port: 5432,
+    user: poolerUser, password, database: 'postgres',
     ssl: { rejectUnauthorized: false }, connectionTimeoutMillis: 6000,
   })
   await c.connect()
