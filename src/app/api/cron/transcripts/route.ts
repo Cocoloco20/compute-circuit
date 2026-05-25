@@ -8,6 +8,7 @@ import {
   filingIndexUrl,
 } from '@/lib/edgar'
 import { extractTranscriptSignal, totalMentions } from '@/lib/transcripts'
+import { findEarningsCallVideo, fetchTranscript, separateRemarksFromQna } from '@/lib/youtube-transcripts'
 
 /**
  * Daily earnings-transcript NLP scan.
@@ -47,6 +48,8 @@ const BATCH_SIZE = 5
 interface CompanyRow {
   id: string
   cik: string
+  name: string
+  youtube_channel: string | null
 }
 
 interface TranscriptSignalInsert {
@@ -60,6 +63,12 @@ interface TranscriptSignalInsert {
   token_mentions: number
   extracted_phrases: Array<{ phrase: string; context_snippet: string }>
   source_url: string | null
+  youtube_video_id: string | null
+  qna_ai_mentions: number | null
+  qna_gpu_mentions: number | null
+  qna_capex_mentions: number | null
+  qna_extracted_phrases: Array<{ phrase: string; context_snippet: string }> | null
+  total_qna_words: number | null
 }
 
 export async function GET(req: NextRequest) {
@@ -76,7 +85,7 @@ export async function GET(req: NextRequest) {
   // Only PUBLIC cos with CIK. Private cos don't file earnings 8-Ks.
   const cosResp = await sb
     .from('companies')
-    .select('id, cik')
+    .select('id, cik, name, youtube_channel')
     .eq('private', false)
     .not('cik', 'is', null)
   if (cosResp.error) return NextResponse.json({ error: cosResp.error.message }, { status: 500 })
@@ -90,11 +99,13 @@ export async function GET(req: NextRequest) {
   // for the whole table is cheap (we expect ≤ ~200 rows steady-state).
   const existingResp = await sb
     .from('transcript_signals')
-    .select('company_id, accession')
+    .select('company_id, accession, youtube_video_id')
   if (existingResp.error) return NextResponse.json({ error: existingResp.error.message }, { status: 500 })
   const seen = new Set<string>()
-  for (const r of (existingResp.data ?? []) as Array<{ company_id: string; accession: string }>) {
-    seen.add(`${r.company_id}|${r.accession}`)
+  for (const r of (existingResp.data ?? []) as Array<{ company_id: string; accession: string; youtube_video_id: string | null }>) {
+    if (r.youtube_video_id) {
+      seen.add(`${r.company_id}|${r.accession}`)
+    }
   }
 
   const cutoff = new Date(Date.now() - LOOKBACK_DAYS * 86400_000).toISOString().slice(0, 10)
@@ -126,9 +137,44 @@ export async function GET(req: NextRequest) {
             // release is probably non-tech (e.g. a financial-services
             // partner) — wasted DB row.
             if (totalMentions(signal) === 0) { stats.skipped++; continue }
+
+            // Extract YouTube transcript Q&A portion
+            let youtubeVideoId: string | null = null
+            let qnaAiMentions: number | null = null
+            let qnaGpuMentions: number | null = null
+            let qnaCapexMentions: number | null = null
+            let qnaExtractedPhrases: Array<{ phrase: string; context_snippet: string }> | null = null
+            let totalQnaWords: number | null = null
+
+            const dateStr = f.reportDate || f.filingDate
+            const { quarter, year } = getQuarterAndYear(dateStr)
+
+            try {
+              const videoId = await findEarningsCallVideo(co.name, quarter, year, co.youtube_channel)
+              if (videoId) {
+                youtubeVideoId = videoId
+                await sleep(1000) // Politeness pause before fetching transcript
+                const ytTranscript = await fetchTranscript(videoId)
+                if (ytTranscript) {
+                  const { qna } = separateRemarksFromQna(ytTranscript)
+                  if (qna) {
+                    const qnaSignal = extractTranscriptSignal(qna)
+                    qnaAiMentions = qnaSignal.ai_mentions
+                    qnaGpuMentions = qnaSignal.gpu_mentions
+                    qnaCapexMentions = qnaSignal.capex_mentions
+                    qnaExtractedPhrases = qnaSignal.extracted_phrases
+                    totalQnaWords = qna.split(/\s+/).filter(Boolean).length
+                  }
+                }
+              }
+            } catch (ytErr) {
+              // eslint-disable-next-line no-console
+              console.warn(`[youtube-cron] Failed to process youtube transcript for ${co.id} accession ${f.accessionNumber}:`, ytErr)
+            }
+
             out.push({
               company_id: co.id,
-              filed_date: f.reportDate || f.filingDate,
+              filed_date: dateStr,
               accession: f.accessionNumber,
               ai_mentions: signal.ai_mentions,
               gpu_mentions: signal.gpu_mentions,
@@ -137,6 +183,12 @@ export async function GET(req: NextRequest) {
               token_mentions: signal.token_mentions,
               extracted_phrases: signal.extracted_phrases,
               source_url: filingIndexUrl(co.cik, f.accessionNumber),
+              youtube_video_id: youtubeVideoId,
+              qna_ai_mentions: qnaAiMentions,
+              qna_gpu_mentions: qnaGpuMentions,
+              qna_capex_mentions: qnaCapexMentions,
+              qna_extracted_phrases: qnaExtractedPhrases,
+              total_qna_words: totalQnaWords,
             })
             stats.processed++
           }
@@ -189,3 +241,29 @@ export async function GET(req: NextRequest) {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
+
+function getQuarterAndYear(dateStr: string): { quarter: number; year: number } {
+  const date = new Date(dateStr)
+  const month = date.getUTCMonth() + 1
+  const year = date.getUTCFullYear()
+  
+  let quarter = 1
+  let qYear = year
+  
+  if (month >= 1 && month <= 3) {
+    quarter = 4
+    qYear = year - 1
+  } else if (month >= 4 && month <= 6) {
+    quarter = 1
+    qYear = year
+  } else if (month >= 7 && month <= 9) {
+    quarter = 2
+    qYear = year
+  } else {
+    quarter = 3
+    qYear = year
+  }
+  
+  return { quarter, year: qYear }
+}
+
