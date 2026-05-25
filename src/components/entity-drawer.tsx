@@ -5,9 +5,15 @@
  * Same component handles companies, investors, and bottlenecks — we branch
  * on `selected.kind` inside the body.
  *
+ * CompanyBody uses tabs (Overview / Financials / Activity / Holders / OSS)
+ * with a sticky "DES"-style header (price + day change + key stats) that
+ * never scrolls away. Bloomberg pattern: anchor the most-decision-relevant
+ * numbers at the top, push deep data behind tabs vs infinite scroll.
+ *
  * All data lookups are pure derivations from the GraphData prop (no fetches).
  */
 
+import { useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
 import type { Flow, Holding, Fundamental, HfActivity } from '@/types/db'
 import { getLogoUrl } from '@/lib/logo'
@@ -68,51 +74,190 @@ function renderBody(selected: SelectedRef, data: GraphData): React.ReactNode {
   return <BottleneckBody id={selected.id} data={data} />
 }
 
-// ---------- Company ----------
+// ---------- Company (tabbed) ----------
+
+type CompanyTab = 'overview' | 'financials' | 'activity' | 'holders' | 'oss'
 
 function CompanyBody({ id, data }: { id: string; data: GraphData }) {
   const company = data.companies.find(c => c.id === id)
+  const [tab, setTab] = useState<CompanyTab>('overview')
   if (!company) return <Empty msg="Company not found" />
+
+  // Pre-compute counts so tab labels can show them
+  const signalIdsForCo = new Set(
+    data.signalCompanies.filter(sc => sc.company_id === id).map(sc => sc.signal_id),
+  )
+  const activityCount =
+    data.signals.filter(s => signalIdsForCo.has(s.id)).length +
+    data.insiders.filter(i => i.company_id === id).length
+  const holderCount =
+    new Set(data.holdings.filter(h => h.company_id === id).map(h => h.investor_id)).size +
+    new Set(data.backers.filter(b => b.company_id === id).map(b => b.investor_id)).size
+  const ossActive = data.hfActivity.some(h => h.company_id === id && h.model_count > 0)
+
+  return (
+    <>
+      <StickyHeader company={company} />
+      <Tabs
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { id: 'overview',   label: 'Overview' },
+          { id: 'financials', label: 'Financials' },
+          { id: 'activity',   label: 'Activity', count: activityCount },
+          { id: 'holders',    label: 'Holders',  count: holderCount },
+          ...(ossActive ? [{ id: 'oss' as const, label: 'OSS' }] : []),
+        ]}
+      />
+      <div className="mt-3">
+        {tab === 'overview'   && <CompanyOverview   company={company} data={data} />}
+        {tab === 'financials' && <CompanyFinancials companyId={id} data={data} />}
+        {tab === 'activity'   && <CompanyActivity   companyId={id} data={data} />}
+        {tab === 'holders'    && <CompanyHolders    companyId={id} data={data} />}
+        {tab === 'oss'        && <OpenSourceFootprint companyId={id} data={data} />}
+      </div>
+    </>
+  )
+}
+
+// ----- Sticky "DES"-style header -----
+
+function StickyHeader({ company }: { company: GraphData['companies'][number] }) {
+  const url = getLogoUrl(company.domain)
+  const sub = company.ticker || (company.private ? 'private' : null)
+  const change = company.last_price != null && company.prev_close != null
+    ? company.last_price - company.prev_close
+    : null
+  const changePct = change != null && company.prev_close
+    ? (change / company.prev_close) * 100
+    : null
+  const positive = change != null && change >= 0
+  // 52w-range bar position 0..1
+  const rangePos = (company.last_price != null && company.fifty_two_week_low != null && company.fifty_two_week_high != null
+    && company.fifty_two_week_high > company.fifty_two_week_low)
+    ? Math.max(0, Math.min(1, (company.last_price - company.fifty_two_week_low) / (company.fifty_two_week_high - company.fifty_two_week_low)))
+    : null
+
+  return (
+    <div className="sticky -top-5 z-10 -mx-5 mb-3 border-b border-zinc-800 bg-zinc-950/95 px-5 pb-3 pt-1 backdrop-blur">
+      <div className="mb-2 flex items-center gap-3">
+        {url ? (
+          <div className="h-10 w-10 overflow-hidden rounded-md bg-zinc-900 ring-1 ring-zinc-800">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={url} alt={company.name} className="h-full w-full object-contain" />
+          </div>
+        ) : (
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-zinc-900 text-xs text-zinc-500 ring-1 ring-zinc-800">
+            {company.name.slice(0, 2).toUpperCase()}
+          </div>
+        )}
+        <div className="flex-1">
+          <div className="text-base font-semibold text-white">{company.name}</div>
+          <div className="text-xs text-zinc-500">
+            {sub} · {company.layer_id ?? 'unplaced'}
+            {company.conviction && <> · <span className="text-zinc-400">{company.conviction}</span></>}
+          </div>
+        </div>
+        {company.position_held && (
+          <span className="rounded border border-amber-600/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+            ★ HELD
+          </span>
+        )}
+      </div>
+      {company.last_price != null && (
+        <div className="space-y-1">
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-2xl text-white">
+              {company.price_currency === 'USD' ? '$' : ''}{company.last_price.toFixed(2)}
+            </span>
+            {change != null && (
+              <span className={'font-mono text-sm ' + (positive ? 'text-emerald-400' : 'text-red-400')}>
+                {positive ? '+' : ''}{change.toFixed(2)}
+                {changePct != null && <> ({positive ? '+' : ''}{changePct.toFixed(2)}%)</>}
+              </span>
+            )}
+          </div>
+          {rangePos != null && (
+            <div>
+              <div className="relative h-1 rounded-full bg-zinc-800">
+                <div
+                  className="absolute top-1/2 h-2 w-0.5 -translate-y-1/2 bg-zinc-300"
+                  style={{ left: `${rangePos * 100}%` }}
+                />
+              </div>
+              <div className="mt-0.5 flex justify-between font-mono text-[10px] text-zinc-500">
+                <span>${company.fifty_two_week_low?.toFixed(2)}</span>
+                <span>52w</span>
+                <span>${company.fifty_two_week_high?.toFixed(2)}</span>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ----- Tabs -----
+
+interface TabDef<T extends string> { id: T; label: string; count?: number }
+
+function Tabs<T extends string>({
+  active, onChange, tabs,
+}: {
+  active: T
+  onChange: (id: T) => void
+  tabs: Array<TabDef<T>>
+}) {
+  return (
+    <div className="-mx-5 flex gap-0 border-b border-zinc-800 px-5 text-[11px] font-mono uppercase tracking-wider">
+      {tabs.map((t) => {
+        const isActive = t.id === active
+        return (
+          <button
+            key={t.id}
+            type="button"
+            onClick={() => onChange(t.id)}
+            className={
+              'border-b-2 py-2 transition-colors first:pl-0 ' +
+              (isActive
+                ? 'border-cyan-400 text-white'
+                : 'border-transparent text-zinc-500 hover:text-zinc-200')
+            }
+            style={{ paddingLeft: '0.5rem', paddingRight: '0.75rem' }}
+          >
+            {t.label}
+            {t.count != null && (
+              <span className={'ml-1 ' + (isActive ? 'text-cyan-400' : 'text-zinc-600')}>
+                {t.count}
+              </span>
+            )}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ----- Tab content -----
+
+function CompanyOverview({ company, data }: { company: GraphData['companies'][number]; data: GraphData }) {
   const layer = data.layers.find(l => l.id === company.layer_id)
-  const backerIds = new Set(data.backers.filter(b => b.company_id === id).map(b => b.investor_id))
+  const backerIds = new Set(data.backers.filter(b => b.company_id === company.id).map(b => b.investor_id))
   const backers = data.investors.filter(i => backerIds.has(i.id))
-
-  // Flows touching this node (in or out)
-  const outFlows = data.flows.filter(f => f.from_id === id && f.from_kind === 'company')
-  const inFlows  = data.flows.filter(f => f.to_id === id && f.to_kind === 'company')
-
-  // Bottlenecks where this company is a beneficiary
-  const beneIds = new Set(data.bottleneckBeneficiaries.filter(b => b.company_id === id).map(b => b.bottleneck_id))
+  const beneIds = new Set(data.bottleneckBeneficiaries.filter(b => b.company_id === company.id).map(b => b.bottleneck_id))
   const beneBottlenecks = data.bottlenecks.filter(b => beneIds.has(b.id))
 
   return (
     <>
-      <Header
-        domain={company.domain}
-        name={company.name}
-        sub={company.ticker || (company.private ? 'private' : null)}
-      />
       <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
         <Stat label="Layer" value={layer?.name ?? '—'} />
         <Stat label="Weight" value={String(company.weight)} />
         <Stat label="Conviction" value={company.conviction ?? '—'} />
         <Stat label="Share" value={company.share != null ? `${(company.share * 100).toFixed(0)}%` : '—'} />
       </div>
-
-      {company.position_held && (
-        <div className="mb-3 rounded border border-amber-600/40 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">
-          ★ Personal position held
-        </div>
-      )}
-
-      <MarketData company={company} />
-      <Fundamentals companyId={id} data={data} />
-      <InsiderFlow companyId={id} data={data} />
-      <OpenSourceFootprint companyId={id} data={data} />
-
       {company.thesis && <Section title="Thesis">{company.thesis}</Section>}
-      {company.notes && <Section title="Notes">{company.notes}</Section>}
-
+      {company.notes && <Section title="Notes"><div className="whitespace-pre-line">{company.notes}</div></Section>}
       {backers.length > 0 && (
         <Section title="Backers">
           <div className="flex flex-wrap gap-1">
@@ -124,9 +269,8 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
           </div>
         </Section>
       )}
-
       {beneBottlenecks.length > 0 && (
-        <Section title="Benefits from">
+        <Section title="Benefits from bottleneck">
           <ul className="space-y-1">
             {beneBottlenecks.map(b => (
               <li key={b.id} className="text-xs">
@@ -137,58 +281,36 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
           </ul>
         </Section>
       )}
+    </>
+  )
+}
 
-      <SignalList companyId={id} data={data} />
+function CompanyFinancials({ companyId, data }: { companyId: string; data: GraphData }) {
+  return <Fundamentals companyId={companyId} data={data} />
+}
 
-      <InstitutionalHolders companyId={id} data={data} />
+function CompanyActivity({ companyId, data }: { companyId: string; data: GraphData }) {
+  return (
+    <>
+      <InsiderFlow companyId={companyId} data={data} />
+      <SignalList companyId={companyId} data={data} />
+    </>
+  )
+}
 
+function CompanyHolders({ companyId, data }: { companyId: string; data: GraphData }) {
+  const outFlows = data.flows.filter(f => f.from_id === companyId && f.from_kind === 'company')
+  const inFlows  = data.flows.filter(f => f.to_id === companyId && f.to_kind === 'company')
+  return (
+    <>
+      <InstitutionalHolders companyId={companyId} data={data} />
       <FlowList title={`Out (${outFlows.length})`} flows={outFlows} data={data} direction="out" />
       <FlowList title={`In (${inFlows.length})`}  flows={inFlows}  data={data} direction="in"  />
     </>
   )
 }
 
-function MarketData({ company }: { company: GraphData['companies'][number] }) {
-  if (company.last_price == null) return null
-  const change = company.prev_close != null ? company.last_price - company.prev_close : null
-  const changePct = change != null && company.prev_close != null && company.prev_close !== 0
-    ? (change / company.prev_close) * 100
-    : null
-  const positive = change != null && change >= 0
-  return (
-    <Section title="Market data">
-      <div className="space-y-1.5">
-        <div className="flex items-baseline gap-3">
-          <span className="font-mono text-xl text-white">
-            {company.price_currency === 'USD' ? '$' : ''}
-            {company.last_price.toFixed(2)}
-            {company.price_currency && company.price_currency !== 'USD' && (
-              <span className="ml-1 text-xs text-zinc-500">{company.price_currency}</span>
-            )}
-          </span>
-          {change != null && (
-            <span className={'font-mono text-xs ' + (positive ? 'text-emerald-400' : 'text-red-400')}>
-              {positive ? '+' : ''}{change.toFixed(2)}
-              {changePct != null && (
-                <span className="ml-1">({positive ? '+' : ''}{changePct.toFixed(2)}%)</span>
-              )}
-            </span>
-          )}
-        </div>
-        {(company.fifty_two_week_low != null && company.fifty_two_week_high != null) && (
-          <div className="text-[10px] text-zinc-500">
-            52w range: ${company.fifty_two_week_low.toFixed(2)} – ${company.fifty_two_week_high.toFixed(2)}
-          </div>
-        )}
-        {company.price_updated_at && (
-          <div className="text-[10px] text-zinc-600">
-            Yahoo · {new Date(company.price_updated_at).toLocaleString()}
-          </div>
-        )}
-      </div>
-    </Section>
-  )
-}
+// MarketData merged into StickyHeader (price + day change + 52w range live there now).
 
 const METRIC_LABELS: Record<string, string> = {
   revenue: 'Revenue',

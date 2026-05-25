@@ -660,6 +660,9 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         ))}
       </div>
 
+      {/* Chrome telemetry — GasCity-style "instrument is live" bar at bottom-center */}
+      <ChromeTelemetry lastUpdates={data.lastUpdates} />
+
       {/* Hover tooltip */}
       {hover && (
         <div
@@ -682,4 +685,42 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       )}
     </div>
   )
+}
+
+// ---------- Chrome telemetry (GasCity-style "instrument is live" bar) ----------
+
+function ChromeTelemetry({ lastUpdates }: { lastUpdates: GraphData['lastUpdates'] }) {
+  const entries: Array<{ label: string; iso: string | null; textColor: string; dotColor: string }> = [
+    { label: 'PRICE',   iso: lastUpdates.price,    textColor: 'text-emerald-400', dotColor: 'bg-emerald-400' },
+    { label: 'NEWS',    iso: lastUpdates.news,     textColor: 'text-cyan-400',    dotColor: 'bg-cyan-400'    },
+    { label: '8-K',     iso: lastUpdates.filings,  textColor: 'text-orange-400',  dotColor: 'bg-orange-400'  },
+    { label: 'INSIDER', iso: lastUpdates.insider,  textColor: 'text-red-400',     dotColor: 'bg-red-400'     },
+    { label: '13F',     iso: lastUpdates.holdings, textColor: 'text-emerald-400', dotColor: 'bg-emerald-400' },
+    { label: 'HF',      iso: lastUpdates.hf,       textColor: 'text-amber-400',   dotColor: 'bg-amber-400'   },
+  ]
+  return (
+    <div className="pointer-events-none absolute bottom-4 left-1/2 z-10 flex -translate-x-1/2 items-center gap-3 rounded border border-zinc-800 bg-zinc-950/70 px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider text-zinc-500 backdrop-blur">
+      <span className="text-zinc-600">LIVE</span>
+      {entries.map((e) => (
+        <span key={e.label} className="flex items-center gap-1">
+          <span className={'inline-block h-1.5 w-1.5 rounded-full ' + (e.iso ? e.dotColor : 'bg-zinc-700')} />
+          <span className="text-zinc-500">{e.label}</span>
+          <span className={e.iso ? e.textColor : 'text-zinc-700'}>{e.iso ? agoStr(e.iso) : 'never'}</span>
+        </span>
+      ))}
+    </div>
+  )
+}
+
+function agoStr(iso: string): string {
+  const t = new Date(iso).getTime()
+  const diffMs = Date.now() - t
+  const diffHr = Math.floor(diffMs / 3_600_000)
+  if (diffHr < 1) {
+    const diffMin = Math.floor(diffMs / 60_000)
+    return diffMin < 1 ? 'now' : `${diffMin}m`
+  }
+  if (diffHr < 24) return `${diffHr}h`
+  const diffDay = Math.floor(diffHr / 24)
+  return `${diffDay}d`
 }

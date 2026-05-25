@@ -33,6 +33,14 @@ export interface GraphData {
   fundamentals: Fundamental[]     // XBRL metrics, last 2 years per company
   insiders: InsiderTransaction[]  // Form 4 transactions, last 90 days
   hfActivity: HfActivity[]        // latest HF snapshot per company
+  lastUpdates: {                  // GasCity-style "instrument is live" telemetry
+    price: string | null          // ISO of most-recent companies.price_updated_at
+    news: string | null           // most-recent signals.date where source='google-news'
+    filings: string | null        // most-recent signals.date where source='sec-edgar'
+    insider: string | null        // most-recent insider_transactions.filing_date
+    hf: string | null             // most-recent hf_activity.snapshot_date
+    holdings: string | null       // most-recent holdings.period
+  }
 }
 
 /**
@@ -135,5 +143,34 @@ export async function fetchGraph(): Promise<GraphData> {
     fundamentals: (fnd.data ?? []) as Fundamental[],
     insiders: (ins.data ?? []) as InsiderTransaction[],
     hfActivity: (hf.data ?? []) as HfActivity[],
+    lastUpdates: {
+      price: ((c.data ?? []) as Company[])
+        .map(co => co.price_updated_at)
+        .filter((x): x is string => !!x)
+        .sort()
+        .at(-1) ?? null,
+      news: ((s.data ?? []) as Signal[])
+        .filter(x => x.source === 'google-news')
+        .map(x => x.date)
+        .sort()
+        .at(-1) ?? null,
+      filings: ((s.data ?? []) as Signal[])
+        .filter(x => x.source === 'sec-edgar')
+        .map(x => x.date)
+        .sort()
+        .at(-1) ?? null,
+      insider: ((ins.data ?? []) as InsiderTransaction[])
+        .map(x => x.filing_date)
+        .sort()
+        .at(-1) ?? null,
+      hf: ((hf.data ?? []) as HfActivity[])
+        .map(x => x.snapshot_date)
+        .sort()
+        .at(-1) ?? null,
+      holdings: ((h.data ?? []) as Holding[])
+        .map(x => x.period)
+        .sort()
+        .at(-1) ?? null,
+    },
   }
 }

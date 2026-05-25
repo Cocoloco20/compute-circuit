@@ -61,8 +61,22 @@ export interface Company {
   price_currency: string | null
   price_updated_at: string | null
   hf_org: string | null  // Hugging Face org slug (e.g. 'nvidia', 'meta-llama')
+  eia_region: string | null  // EIA balancing-authority code ('PJM', 'ERCO', 'FLA', 'US48')
+  assignee_name: string | null  // USPTO assignee name for patent search (e.g. 'NVIDIA Corporation')
   created_at: string
   updated_at: string
+}
+
+export interface GridDemandSnapshot {
+  id: string
+  company_id: string
+  snapshot_date: string
+  region: string
+  current_7d_avg_mwh: number | null
+  yoy_change_pct: number | null
+  last_hourly_mwh: number | null
+  last_hour: string | null
+  created_at: string
 }
 
 export interface InsiderTransaction {
@@ -96,6 +110,28 @@ export interface HfActivity {
   top_model_id: string | null
   top_model_downloads: number | null
   last_release_date: string | null
+  created_at: string
+}
+
+export interface PatentSnapshotRow {
+  id: string
+  company_id: string
+  snapshot_date: string
+  ttm_count: number
+  top_subclasses: Array<{ code: string; count: number }>      // jsonb top 3 CPC subclasses
+  recent_titles: Array<{ title: string; filingDate: string }> // jsonb top 3 most recent
+  source: string
+  created_at: string
+}
+
+export interface JobSnapshotRow {
+  id: string
+  company_id: string
+  snapshot_date: string
+  total_open: number
+  top_categories: Array<{ name: string; count: number }>  // jsonb full set, sorted desc by count
+  source_provider: string  // 'greenhouse' | 'lever' | 'ashby'
+  source_slug: string
   created_at: string
 }
 
@@ -182,6 +218,9 @@ export interface Database {
       fundamentals: { Row: Fundamental; Insert: Omit<Fundamental, 'id' | 'updated_at'> & { id?: string; updated_at?: string }; Update: Partial<Fundamental> }
       insider_transactions: { Row: InsiderTransaction; Insert: Omit<InsiderTransaction, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<InsiderTransaction> }
       hf_activity: { Row: HfActivity; Insert: Omit<HfActivity, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<HfActivity> }
+      patent_snapshots: { Row: PatentSnapshotRow; Insert: Omit<PatentSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<PatentSnapshotRow> }
+      job_snapshots: { Row: JobSnapshotRow; Insert: Omit<JobSnapshotRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<JobSnapshotRow> }
+      grid_demand_snapshots: { Row: GridDemandSnapshot; Insert: Omit<GridDemandSnapshot, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<GridDemandSnapshot> }
       company_backers: { Row: CompanyBacker; Insert: CompanyBacker; Update: Partial<CompanyBacker> }
       flows: { Row: Flow; Insert: Partial<Pick<Flow, 'id' | 'created_at' | 'note'>> & Omit<Flow, 'id' | 'created_at' | 'note'> & { note?: string | null }; Update: Partial<Flow> }
       bottlenecks: { Row: Bottleneck; Insert: Omit<Bottleneck, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Bottleneck> }
