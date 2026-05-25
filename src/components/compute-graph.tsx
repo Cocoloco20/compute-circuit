@@ -607,15 +607,38 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         </button>
       </div>
 
-      {/* Layer key — left rail (top) */}
-      <div className="pointer-events-auto absolute left-4 top-16 z-10 w-44 space-y-0.5 text-[11px] font-mono text-zinc-500">
-        <div className="mb-1 text-zinc-600 uppercase tracking-wider">Layers</div>
-        {[...data.layers].reverse().map((l) => (
-          <div key={l.id} className="flex items-center justify-between">
-            <span>{l.name}</span>
-            <span className="text-zinc-700">{data.companies.filter(c => c.layer_id === l.id).length}</span>
-          </div>
-        ))}
+      {/* Layer key — left rail (top). Shows per-layer co count + today's
+          signal count (8-K filings + news matched to a co in that layer). */}
+      <div className="pointer-events-auto absolute left-4 top-16 z-10 w-48 space-y-0.5 text-[11px] font-mono text-zinc-500">
+        <div className="mb-1 text-zinc-600 uppercase tracking-wider">Layers · 24h</div>
+        {[...data.layers].reverse().map((l) => {
+          const layerCoIds = new Set(
+            data.companies.filter(c => c.layer_id === l.id).map(c => c.id)
+          )
+          const todayStart = new Date()
+          todayStart.setUTCHours(0, 0, 0, 0)
+          // Count signals with at least one company link in this layer, dated today
+          const todaySignalIds = new Set(
+            data.signalCompanies
+              .filter(sc => layerCoIds.has(sc.company_id))
+              .map(sc => sc.signal_id)
+          )
+          const todayActive = data.signals
+            .filter(s => todaySignalIds.has(s.id))
+            .filter(s => new Date(s.date).getTime() >= todayStart.getTime())
+            .length
+          return (
+            <div key={l.id} className="flex items-center justify-between">
+              <span>{l.name}</span>
+              <span className="flex items-center gap-1.5">
+                {todayActive > 0 && (
+                  <span className="font-mono text-[10px] text-cyan-400">+{todayActive}</span>
+                )}
+                <span className="text-zinc-700">{layerCoIds.size}</span>
+              </span>
+            </div>
+          )
+        })}
       </div>
 
       {/* Backer filter chips — left rail (bottom) */}
