@@ -15,7 +15,7 @@
 
 import { useState } from 'react'
 import type { GraphData } from '@/lib/graph-data'
-import type { Flow, Holding, Fundamental, HfActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow } from '@/types/db'
+import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound } from '@/types/db'
 import { CPC_SUBCLASS_LABELS } from '@/lib/uspto'
 import { getLogoUrl } from '@/lib/logo'
 import type { SelectedRef } from './compute-graph'
@@ -35,12 +35,12 @@ function formatShares(n: number | null | undefined): string {
 }
 
 const FLOW_COLOR_CLASS: Record<string, string> = {
-  money: 'text-emerald-400',
-  compute: 'text-cyan-400',
-  energy: 'text-amber-400',
-  equipment: 'text-slate-300',
-  intel: 'text-purple-400',
-  venture: 'text-pink-400',
+  money: 'text-signal-healthy',
+  compute: 'text-signal-info',
+  energy: 'text-signal-warn',
+  equipment: 'text-fg-secondary',
+  intel: 'text-accent-primary',
+  venture: 'text-feed-jobs',
 }
 
 interface Props {
@@ -53,13 +53,13 @@ interface Props {
 export default function EntityDrawer({ selected, data, onClose }: Props) {
   const body = renderBody(selected, data)
   return (
-    <div className="absolute right-0 top-0 z-30 h-full w-[380px] overflow-y-auto border-l border-zinc-800 bg-zinc-950/95 p-5 text-sm text-zinc-200 backdrop-blur">
+    <div className="absolute right-0 top-0 z-30 h-full w-[380px] overflow-y-auto border-l border-border-default bg-bg-overlay p-5 text-sm text-fg-primary backdrop-blur">
       <div className="mb-4 flex items-start justify-between">
-        <div className="text-[10px] uppercase tracking-widest text-zinc-500">{selected.kind}</div>
+        <div className="text-label text-fg-muted">{selected.kind}</div>
         <button
           type="button"
           onClick={onClose}
-          className="rounded border border-zinc-800 px-2 py-0.5 text-xs text-zinc-400 hover:border-zinc-700 hover:text-white"
+          className="rounded border border-border-default px-2 py-0.5 text-xs text-fg-secondary hover:border-border-strong hover:text-fg-primary"
         >
           esc
         </button>
@@ -90,7 +90,8 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
   )
   const activityCount =
     data.signals.filter(s => signalIdsForCo.has(s.id)).length +
-    data.insiders.filter(i => i.company_id === id).length
+    data.insiders.filter(i => i.company_id === id).length +
+    data.fundingRounds.filter(r => r.company_id === id).length
   const holderCount =
     new Set(data.holdings.filter(h => h.company_id === id).map(h => h.investor_id)).size +
     new Set(data.backers.filter(b => b.company_id === id).map(b => b.investor_id)).size
@@ -140,27 +141,27 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
     : null
 
   return (
-    <div className="sticky -top-5 z-10 -mx-5 mb-3 border-b border-zinc-800 bg-zinc-950/95 px-5 pb-3 pt-1 backdrop-blur">
+    <div className="sticky -top-5 z-10 -mx-5 mb-3 border-b border-border-default bg-bg-overlay px-5 pb-3 pt-1 backdrop-blur">
       <div className="mb-2 flex items-center gap-3">
         {url ? (
-          <div className="h-10 w-10 overflow-hidden rounded-md bg-zinc-900 ring-1 ring-zinc-800">
+          <div className="h-10 w-10 overflow-hidden rounded-md bg-bg-surface ring-1 ring-border-default">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={url} alt={company.name} className="h-full w-full object-contain" />
           </div>
         ) : (
-          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-zinc-900 text-xs text-zinc-500 ring-1 ring-zinc-800">
+          <div className="flex h-10 w-10 items-center justify-center rounded-md bg-bg-surface text-xs text-fg-muted ring-1 ring-border-default">
             {company.name.slice(0, 2).toUpperCase()}
           </div>
         )}
         <div className="flex-1">
-          <div className="text-base font-semibold text-white">{company.name}</div>
-          <div className="text-xs text-zinc-500">
+          <div className="text-base font-semibold text-fg-primary">{company.name}</div>
+          <div className="text-xs text-fg-muted">
             {sub} · {company.layer_id ?? 'unplaced'}
-            {company.conviction && <> · <span className="text-zinc-400">{company.conviction}</span></>}
+            {company.conviction && <> · <span className="text-fg-secondary">{company.conviction}</span></>}
           </div>
         </div>
         {company.position_held && (
-          <span className="rounded border border-amber-600/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
+          <span className="rounded border border-signal-warn/40 bg-signal-warn/10 px-1.5 py-0.5 text-meta text-feed-hf">
             ★ HELD
           </span>
         )}
@@ -168,11 +169,11 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
       {company.last_price != null && (
         <div className="space-y-1">
           <div className="flex items-baseline gap-3">
-            <span className="font-mono text-2xl text-white">
+            <span className="font-mono text-stat-lg text-fg-primary">
               {company.price_currency === 'USD' ? '$' : ''}{company.last_price.toFixed(2)}
             </span>
             {change != null && (
-              <span className={'font-mono text-sm ' + (positive ? 'text-emerald-400' : 'text-red-400')}>
+              <span className={'font-mono text-stat ' + (positive ? 'text-signal-healthy' : 'text-signal-alert')}>
                 {positive ? '+' : ''}{change.toFixed(2)}
                 {changePct != null && <> ({positive ? '+' : ''}{changePct.toFixed(2)}%)</>}
               </span>
@@ -186,13 +187,13 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
           )}
           {rangePos != null && (
             <div>
-              <div className="relative h-1 rounded-full bg-zinc-800">
+              <div className="relative h-1 rounded-full bg-border-default">
                 <div
-                  className="absolute top-1/2 h-2 w-0.5 -translate-y-1/2 bg-zinc-300"
+                  className="absolute top-1/2 h-2 w-0.5 -translate-y-1/2 bg-fg-primary"
                   style={{ left: `${rangePos * 100}%` }}
                 />
               </div>
-              <div className="mt-0.5 flex justify-between font-mono text-[10px] text-zinc-500">
+              <div className="mt-0.5 flex justify-between font-mono text-meta text-fg-muted">
                 <span>${company.fifty_two_week_low?.toFixed(2)}</span>
                 <span>52w</span>
                 <span>${company.fifty_two_week_high?.toFixed(2)}</span>
@@ -239,7 +240,7 @@ function Sparkline({ points, positive }: { points: Array<[string, number]>; posi
         <path d={areaPath} fill={fill} />
         <path d={path} fill="none" stroke={stroke} strokeWidth="1.5" />
       </svg>
-      <div className="mt-0.5 flex justify-between font-mono text-[10px] text-zinc-600">
+      <div className="mt-0.5 flex justify-between font-mono text-meta text-fg-dim">
         <span>{valid[0][0].slice(5)}</span>
         <span>90d</span>
         <span>{valid[valid.length - 1][0].slice(5)}</span>
@@ -260,7 +261,7 @@ function Tabs<T extends string>({
   tabs: Array<TabDef<T>>
 }) {
   return (
-    <div className="-mx-5 flex gap-0 border-b border-zinc-800 px-5 text-[11px] font-mono uppercase tracking-wider">
+    <div className="-mx-5 flex gap-0 border-b border-border-default px-5 text-[11px] font-mono uppercase tracking-wider">
       {tabs.map((t) => {
         const isActive = t.id === active
         return (
@@ -271,14 +272,14 @@ function Tabs<T extends string>({
             className={
               'border-b-2 py-2 transition-colors first:pl-0 ' +
               (isActive
-                ? 'border-cyan-400 text-white'
-                : 'border-transparent text-zinc-500 hover:text-zinc-200')
+                ? 'border-signal-info text-fg-primary'
+                : 'border-transparent text-fg-muted hover:text-fg-primary')
             }
             style={{ paddingLeft: '0.5rem', paddingRight: '0.75rem' }}
           >
             {t.label}
             {t.count != null && (
-              <span className={'ml-1 ' + (isActive ? 'text-cyan-400' : 'text-zinc-600')}>
+              <span className={'ml-1 ' + (isActive ? 'text-signal-info' : 'text-fg-dim')}>
                 {t.count}
               </span>
             )}
@@ -313,7 +314,7 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
         <Section title="Backers">
           <div className="flex flex-wrap gap-1">
             {backers.map(b => (
-              <span key={b.id} className="rounded border border-zinc-800 px-1.5 py-0.5 text-[11px] text-purple-300">
+              <span key={b.id} className="rounded border border-border-default px-1.5 py-0.5 text-[11px] text-accent-primary">
                 {b.name}
               </span>
             ))}
@@ -325,8 +326,8 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
           <ul className="space-y-1">
             {beneBottlenecks.map(b => (
               <li key={b.id} className="text-xs">
-                <span className="text-orange-300">▲</span> {b.name}{' '}
-                <span className="text-zinc-500">— {b.severity}</span>
+                <span className="text-feed-filings">▲</span> {b.name}{' '}
+                <span className="text-fg-muted">— {b.severity}</span>
               </li>
             ))}
           </ul>
@@ -343,6 +344,7 @@ function CompanyFinancials({ companyId, data }: { companyId: string; data: Graph
 function CompanyActivity({ companyId, data }: { companyId: string; data: GraphData }) {
   return (
     <>
+      <FundingHistory companyId={companyId} data={data} />
       <InsiderFlow companyId={companyId} data={data} />
       <SignalList companyId={companyId} data={data} />
     </>
@@ -406,18 +408,18 @@ function Fundamentals({ companyId, data }: { companyId: string; data: GraphData 
             : null
           return (
             <li key={f.metric} className="flex items-baseline justify-between text-xs">
-              <span className="text-zinc-400">{METRIC_LABELS[f.metric] ?? f.metric}</span>
-              <span className="font-mono text-zinc-200">
+              <span className="text-fg-secondary">{METRIC_LABELS[f.metric] ?? f.metric}</span>
+              <span className="font-mono text-fg-primary">
                 {fmtBigDollar(f.value)}
                 {margin != null && (
-                  <span className="ml-2 text-[10px] text-zinc-500">{margin.toFixed(0)}%</span>
+                  <span className="ml-2 text-meta text-fg-muted">{margin.toFixed(0)}%</span>
                 )}
               </span>
             </li>
           )
         })}
       </ul>
-      <div className="mt-1 text-[10px] text-zinc-600">
+      <div className="mt-1 text-meta text-fg-dim">
         SEC XBRL · period {rows[0].period}
       </div>
     </Section>
@@ -445,35 +447,35 @@ function InsiderFlow({ companyId, data }: { companyId: string; data: GraphData }
   return (
     <Section title={`Insider flow · 90d (${txns.length})`}>
       <div className="mb-2 flex items-baseline gap-2">
-        <span className={'font-mono text-sm ' + (positive ? 'text-emerald-400' : 'text-red-400')}>
+        <span className={'font-mono text-sm ' + (positive ? 'text-signal-healthy' : 'text-signal-alert')}>
           {positive ? '+' : ''}{fmtBigDollar(Math.abs(netSignedUsd))} net
         </span>
-        <span className="text-[10px] text-zinc-500">· {openMarketCount} open-market</span>
+        <span className="text-meta text-fg-muted">· {openMarketCount} open-market</span>
       </div>
       <ul className="space-y-1">
         {recent.map((t) => {
           const sold = t.acquired_or_disposed === 'D'
           const code = t.transaction_code ?? '?'
-          const codeColor = code === 'P' ? 'text-emerald-400' : code === 'S' ? 'text-red-400' : 'text-zinc-500'
+          const codeColor = code === 'P' ? 'text-signal-healthy' : code === 'S' ? 'text-signal-alert' : 'text-fg-muted'
           return (
             <li key={t.id} className="text-xs leading-snug">
               <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[10px] text-zinc-500">{t.filing_date}</span>
-                <span className={`text-[10px] uppercase ${codeColor}`}>{code}</span>
-                <span className={'font-mono ' + (sold ? 'text-red-400' : 'text-emerald-400')}>
+                <span className="font-mono text-meta text-fg-muted">{t.filing_date}</span>
+                <span className={`text-meta uppercase ${codeColor}`}>{code}</span>
+                <span className={'font-mono ' + (sold ? 'text-signal-alert' : 'text-signal-healthy')}>
                   {sold ? '-' : '+'}{t.value_usd != null ? fmtBigDollar(t.value_usd) : '—'}
                 </span>
               </div>
-              <div className="text-zinc-300">
+              <div className="text-fg-secondary">
                 {t.reporting_owner ?? 'Unknown'}
-                {t.reporting_owner_role && <span className="text-zinc-500"> · {t.reporting_owner_role}</span>}
+                {t.reporting_owner_role && <span className="text-fg-muted"> · {t.reporting_owner_role}</span>}
               </div>
             </li>
           )
         })}
-        {txns.length > 6 && <li className="text-xs text-zinc-500">+{txns.length - 6} more</li>}
+        {txns.length > 6 && <li className="text-xs text-fg-muted">+{txns.length - 6} more</li>}
       </ul>
-      <div className="mt-1 text-[10px] text-zinc-600">SEC Form 4 · last 90d</div>
+      <div className="mt-1 text-meta text-fg-dim">SEC Form 4 · last 90d</div>
     </Section>
   )
 }
@@ -486,8 +488,8 @@ function OpenSourceFootprint({ companyId, data }: { companyId: string; data: Gra
   if (latest.model_count === 0) {
     return (
       <Section title="Open-source footprint">
-        <div className="text-xs text-zinc-500">
-          <code className="text-zinc-400">{latest.org_slug}</code> on Hugging Face · 0 public models
+        <div className="text-xs text-fg-muted">
+          <code className="text-fg-secondary">{latest.org_slug}</code> on Hugging Face · 0 public models
         </div>
       </Section>
     )
@@ -499,37 +501,37 @@ function OpenSourceFootprint({ companyId, data }: { companyId: string; data: Gra
     <Section title="Open-source footprint">
       <div className="space-y-1">
         <div className="flex items-baseline justify-between text-xs">
-          <span className="text-zinc-400">Models on Hugging Face</span>
-          <span className="font-mono text-zinc-200">{latest.model_count.toLocaleString()}</span>
+          <span className="text-fg-secondary">Models on Hugging Face</span>
+          <span className="font-mono text-fg-primary">{latest.model_count.toLocaleString()}</span>
         </div>
         <div className="flex items-baseline justify-between text-xs">
-          <span className="text-zinc-400">Total downloads (30d)</span>
-          <span className="font-mono text-cyan-400">{formatCount(latest.total_downloads_30d)}</span>
+          <span className="text-fg-secondary">Total downloads (30d)</span>
+          <span className="font-mono text-signal-info">{formatCount(latest.total_downloads_30d)}</span>
         </div>
         {latest.top_model_id && (
           <div className="text-xs">
-            <div className="text-zinc-500">Most downloaded</div>
+            <div className="text-fg-muted">Most downloaded</div>
             <a
               href={`https://huggingface.co/${latest.top_model_id}`}
               target="_blank"
               rel="noreferrer"
-              className="text-zinc-200 hover:text-white"
+              className="text-fg-primary hover:text-fg-primary"
             >
               {latest.top_model_id} ↗
             </a>
             {latest.top_model_downloads != null && (
-              <span className="ml-2 font-mono text-[10px] text-zinc-500">
+              <span className="ml-2 font-mono text-meta text-fg-muted">
                 {formatCount(latest.top_model_downloads)} dl
               </span>
             )}
           </div>
         )}
         {daysSinceRelease != null && (
-          <div className="text-[10px] text-zinc-500">
+          <div className="text-meta text-fg-muted">
             Last release {daysSinceRelease === 0 ? 'today' : `${daysSinceRelease}d ago`} ({latest.last_release_date})
           </div>
         )}
-        <div className="mt-1 text-[10px] text-zinc-600">huggingface.co/{latest.org_slug}</div>
+        <div className="mt-1 text-meta text-fg-dim">huggingface.co/{latest.org_slug}</div>
       </div>
     </Section>
   )
@@ -561,10 +563,10 @@ function InstitutionalHolders({ companyId, data }: { companyId: string; data: Gr
           return (
             <li key={h.id} className="text-xs">
               <div className="flex items-baseline justify-between gap-2">
-                <span className="text-zinc-200">{inv?.name ?? h.investor_id}</span>
-                <span className="font-mono text-emerald-400">{formatUsd(h.value_usd)}</span>
+                <span className="text-fg-primary">{inv?.name ?? h.investor_id}</span>
+                <span className="font-mono text-signal-healthy">{formatUsd(h.value_usd)}</span>
               </div>
-              <div className="flex items-baseline justify-between gap-2 text-[10px] text-zinc-500">
+              <div className="flex items-baseline justify-between gap-2 text-meta text-fg-muted">
                 <span>{formatShares(h.shares)}</span>
                 <span className="font-mono">Q-end {h.period}</span>
               </div>
@@ -589,27 +591,27 @@ function SignalList({ companyId, data }: { companyId: string; data: GraphData })
         {signals.slice(0, 12).map((s) => {
           const isNews = s.form_type === 'news'
           const badgeColor = isNews
-            ? 'text-cyan-400'
-            : s.form_type === '8-K' ? 'text-orange-400' : 'text-zinc-400'
+            ? 'text-signal-info'
+            : s.form_type === '8-K' ? 'text-feed-filings' : 'text-fg-secondary'
           const badgeLabel = isNews ? 'NEWS' : (s.form_type ?? 'FILING')
           return (
             <li key={s.id} className="text-xs leading-snug">
               <div className="flex items-baseline gap-2">
-                <span className="font-mono text-[10px] text-zinc-500">{s.date}</span>
-                <span className={`text-[10px] uppercase ${badgeColor}`}>{badgeLabel}</span>
+                <span className="font-mono text-meta text-fg-muted">{s.date}</span>
+                <span className={`text-meta uppercase ${badgeColor}`}>{badgeLabel}</span>
                 {isNews && s.impact && (
-                  <span className="text-[10px] text-zinc-500">· {s.impact}</span>
+                  <span className="text-meta text-fg-muted">· {s.impact}</span>
                 )}
                 {s.url && (
-                  <a href={s.url} target="_blank" rel="noreferrer" className="ml-auto text-[10px] text-zinc-500 hover:text-white">↗</a>
+                  <a href={s.url} target="_blank" rel="noreferrer" className="ml-auto text-meta text-fg-muted hover:text-fg-primary">↗</a>
                 )}
               </div>
-              <div className={isNews ? 'text-zinc-200' : 'text-zinc-300'}>{s.headline}</div>
+              <div className={isNews ? 'text-fg-primary' : 'text-fg-secondary'}>{s.headline}</div>
             </li>
           )
         })}
         {signals.length > 12 && (
-          <li className="text-xs text-zinc-500">+{signals.length - 12} older</li>
+          <li className="text-xs text-fg-muted">+{signals.length - 12} older</li>
         )}
       </ul>
     </Section>
@@ -639,7 +641,7 @@ function InvestorBody({ id, data }: { id: string; data: GraphData }) {
       {inv.files_13f && (
         <Section title={`AI-compute 13F positions${latestPeriod ? ` · ${latestPeriod}` : ''}`}>
           {sorted.length === 0 ? (
-            <div className="text-xs text-zinc-500">No matched positions yet — cron may not have run.</div>
+            <div className="text-xs text-fg-muted">No matched positions yet — cron may not have run.</div>
           ) : (
             <ul className="space-y-1.5">
               {sorted.map(h => {
@@ -647,13 +649,13 @@ function InvestorBody({ id, data }: { id: string; data: GraphData }) {
                 return (
                   <li key={h.id} className="text-xs">
                     <div className="flex items-baseline justify-between gap-2">
-                      <span className="text-zinc-200">
+                      <span className="text-fg-primary">
                         {co?.name ?? h.issuer_name}
-                        {co?.ticker && <span className="text-zinc-500"> · {co.ticker}</span>}
+                        {co?.ticker && <span className="text-fg-muted"> · {co.ticker}</span>}
                       </span>
-                      <span className="font-mono text-emerald-400">{formatUsd(h.value_usd)}</span>
+                      <span className="font-mono text-signal-healthy">{formatUsd(h.value_usd)}</span>
                     </div>
-                    <div className="text-[10px] text-zinc-500">{formatShares(h.shares)}</div>
+                    <div className="text-meta text-fg-muted">{formatShares(h.shares)}</div>
                   </li>
                 )
               })}
@@ -679,27 +681,27 @@ function PortfolioBreakdown({ portfolio }: { portfolio: GraphData['companies'] }
         <ul className="space-y-1">
           {curated.map(c => (
             <li key={c.id} className="flex items-center justify-between text-xs">
-              <span>{c.name}{c.ticker && <span className="text-zinc-500"> · {c.ticker}</span>}</span>
-              <span className="text-zinc-600">{c.layer_id}</span>
+              <span>{c.name}{c.ticker && <span className="text-fg-muted"> · {c.ticker}</span>}</span>
+              <span className="text-fg-dim">{c.layer_id}</span>
             </li>
           ))}
-          {curated.length === 0 && <li className="text-zinc-500">No mapped holdings.</li>}
+          {curated.length === 0 && <li className="text-fg-muted">No mapped holdings.</li>}
         </ul>
       </Section>
 
       {discovered.length > 0 && (
         <Section title={`Discovered via Form D (${discovered.length})`}>
-          <div className="mb-1.5 text-[10px] text-zinc-600">
+          <div className="mb-1.5 text-meta text-fg-dim">
             From SEC Form D filings. Promote to graph by editing the row&apos;s layer_id.
           </div>
           <ul className="max-h-64 space-y-1 overflow-y-auto pr-1">
             {discovered.slice(0, 50).map(c => (
-              <li key={c.id} className="text-xs text-zinc-400">
+              <li key={c.id} className="text-xs text-fg-secondary">
                 {c.name}
               </li>
             ))}
             {discovered.length > 50 && (
-              <li className="text-xs text-zinc-600">+{discovered.length - 50} more…</li>
+              <li className="text-xs text-fg-dim">+{discovered.length - 50} more…</li>
             )}
           </ul>
         </Section>
@@ -717,17 +719,17 @@ function BottleneckBody({ id, data }: { id: string; data: GraphData }) {
   const benefs = data.companies.filter(c => benIds.has(c.id))
 
   const sevColor =
-    b.severity === 'critical' ? 'text-red-400' :
-    b.severity === 'high' ? 'text-orange-400' :
-    b.severity === 'medium' ? 'text-amber-400' : 'text-zinc-400'
+    b.severity === 'critical' ? 'text-signal-alert' :
+    b.severity === 'high' ? 'text-feed-filings' :
+    b.severity === 'medium' ? 'text-signal-warn' : 'text-fg-secondary'
 
   return (
     <>
       <div className="mb-3">
-        <div className="text-xl font-semibold text-white">{b.name}</div>
+        <div className="text-xl font-semibold text-fg-primary">{b.name}</div>
         <div className="mt-1 flex items-center gap-2 text-xs">
           <span className={sevColor}>● {b.severity ?? 'unknown'}</span>
-          <span className="text-zinc-500">{b.status}</span>
+          <span className="text-fg-muted">{b.status}</span>
         </div>
       </div>
       <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
@@ -740,7 +742,7 @@ function BottleneckBody({ id, data }: { id: string; data: GraphData }) {
       <Section title={`Beneficiaries (${benefs.length})`}>
         <div className="flex flex-wrap gap-1">
           {benefs.map(c => (
-            <span key={c.id} className="rounded border border-zinc-800 px-1.5 py-0.5 text-[11px] text-amber-200">
+            <span key={c.id} className="rounded border border-border-default px-1.5 py-0.5 text-[11px] text-feed-hf">
               {c.ticker ?? c.name}
             </span>
           ))}
@@ -757,19 +759,19 @@ function Header({ domain, name, sub }: { domain: string | null; name: string; su
   return (
     <div className="mb-4 flex items-center gap-3">
       {url ? (
-        <div className="h-10 w-10 overflow-hidden rounded-md bg-zinc-900 ring-1 ring-zinc-800">
+        <div className="h-10 w-10 overflow-hidden rounded-md bg-bg-surface ring-1 ring-border-default">
           {/* Using <img> not next/image to avoid build-time validation; Clearbit can 404 silently */}
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img src={url} alt={name} className="h-full w-full object-contain" />
         </div>
       ) : (
-        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-zinc-900 text-xs text-zinc-500 ring-1 ring-zinc-800">
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-bg-surface text-xs text-fg-muted ring-1 ring-border-default">
           {name.slice(0, 2).toUpperCase()}
         </div>
       )}
       <div>
-        <div className="text-base font-semibold text-white">{name}</div>
-        {sub && <div className="text-xs text-zinc-500">{sub}</div>}
+        <div className="text-base font-semibold text-fg-primary">{name}</div>
+        {sub && <div className="text-xs text-fg-muted">{sub}</div>}
       </div>
     </div>
   )
@@ -777,9 +779,9 @@ function Header({ domain, name, sub }: { domain: string | null; name: string; su
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded border border-zinc-900 bg-zinc-900/40 px-2 py-1">
-      <div className="text-[10px] uppercase tracking-wider text-zinc-500">{label}</div>
-      <div className="text-zinc-200">{value}</div>
+    <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1">
+      <div className="text-label text-fg-muted">{label}</div>
+      <div className="text-fg-primary">{value}</div>
     </div>
   )
 }
@@ -823,34 +825,34 @@ function HiringPulseChip({ rows }: { rows: JobSnapshotRow[] }) {
     ? latest.top_categories[0]
     : null
   const deltaColor = (n: number | null) =>
-    n == null ? 'text-zinc-600' : n >= 5 ? 'text-emerald-400' : n <= -5 ? 'text-red-400' : 'text-zinc-400'
+    n == null ? 'text-fg-dim' : n >= 5 ? 'text-signal-healthy' : n <= -5 ? 'text-signal-alert' : 'text-fg-secondary'
   const ramping = delta7 != null && delta7 >= 20
   return (
-    <div className="rounded border border-zinc-900 bg-zinc-900/40 px-2 py-1.5">
+    <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1.5 shadow-card">
       <div className="flex items-baseline justify-between">
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500">Hiring pulse</div>
+        <div className="text-label text-fg-muted">Hiring pulse</div>
         <div className="flex items-baseline gap-1">
-          <span className="font-mono text-sm text-zinc-100">{latest.total_open}</span>
-          <span className="text-[10px] text-zinc-500">open</span>
-          {ramping && <span className="ml-1 rounded bg-pink-500/15 px-1 py-0.5 text-[9px] uppercase text-pink-300">ramp</span>}
+          <span className="font-mono text-sm text-fg-primary">{latest.total_open}</span>
+          <span className="text-meta text-fg-muted">open</span>
+          {ramping && <span className="ml-1 rounded bg-feed-jobs/15 px-1 py-0.5 text-[9px] uppercase text-feed-jobs">ramp</span>}
         </div>
       </div>
-      <div className="mt-0.5 flex items-center gap-2 text-[10px] font-mono">
+      <div className="mt-0.5 flex items-center gap-2 text-meta font-mono">
         <span className={deltaColor(delta7)}>
           {delta7 != null ? (delta7 >= 0 ? '+' : '') + delta7 + ' 7d' : '— 7d'}
         </span>
-        <span className="text-zinc-700">·</span>
+        <span className="text-fg-dim">·</span>
         <span className={deltaColor(delta30)}>
           {delta30 != null ? (delta30 >= 0 ? '+' : '') + delta30 + ' 30d' : '— 30d'}
         </span>
         {top && (
           <>
-            <span className="text-zinc-700">·</span>
-            <span className="text-zinc-400">top: <span className="text-zinc-200">{top.name}</span> ({top.count})</span>
+            <span className="text-fg-dim">·</span>
+            <span className="text-fg-secondary">top: <span className="text-fg-primary">{top.name}</span> ({top.count})</span>
           </>
         )}
       </div>
-      <div className="mt-0.5 text-[9px] text-zinc-600">
+      <div className="mt-0.5 text-[9px] text-fg-dim">
         via {latest.source_provider} · {latest.source_slug}
       </div>
     </div>
@@ -863,28 +865,28 @@ function PowerPressureChip({ rows }: { rows: GridDemandSnapshot[] }) {
   if (!latest || latest.current_7d_avg_mwh == null) return null
   const gwh = latest.current_7d_avg_mwh / 1000
   const yoy = latest.yoy_change_pct ?? 0
-  const yoyColor = yoy >= 5 ? 'text-yellow-300' : yoy <= -5 ? 'text-zinc-400' : 'text-zinc-300'
+  const yoyColor = yoy >= 5 ? 'text-feed-grid' : yoy <= -5 ? 'text-fg-secondary' : 'text-fg-secondary'
   const tight = yoy >= 5
   return (
-    <div className="rounded border border-zinc-900 bg-zinc-900/40 px-2 py-1.5">
+    <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1.5 shadow-card">
       <div className="flex items-baseline justify-between">
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500">Power pressure · {latest.region}</div>
+        <div className="text-label text-fg-muted">Power pressure · {latest.region}</div>
         <div className="flex items-baseline gap-1">
-          <span className="font-mono text-sm text-zinc-100">{gwh.toFixed(1)}</span>
-          <span className="text-[10px] text-zinc-500">GWh 7d</span>
-          {tight && <span className="ml-1 rounded bg-yellow-500/15 px-1 py-0.5 text-[9px] uppercase text-yellow-300">tight</span>}
+          <span className="font-mono text-sm text-fg-primary">{gwh.toFixed(1)}</span>
+          <span className="text-meta text-fg-muted">GWh 7d</span>
+          {tight && <span className="ml-1 rounded bg-feed-grid/15 px-1 py-0.5 text-[9px] uppercase text-feed-grid">tight</span>}
         </div>
       </div>
-      <div className="mt-0.5 text-[10px] font-mono">
+      <div className="mt-0.5 text-meta font-mono">
         <span className={yoyColor}>{yoy >= 0 ? '+' : ''}{yoy.toFixed(1)}% YoY</span>
         {latest.last_hour && (
           <>
-            <span className="ml-2 text-zinc-700">·</span>
-            <span className="ml-2 text-zinc-500">last hr {latest.last_hourly_mwh != null ? (latest.last_hourly_mwh / 1000).toFixed(1) : '—'} GWh</span>
+            <span className="ml-2 text-fg-dim">·</span>
+            <span className="ml-2 text-fg-muted">last hr {latest.last_hourly_mwh != null ? (latest.last_hourly_mwh / 1000).toFixed(1) : '—'} GWh</span>
           </>
         )}
       </div>
-      <div className="mt-0.5 text-[9px] text-zinc-600">EIA Form 930 · {latest.snapshot_date}</div>
+      <div className="mt-0.5 text-[9px] text-fg-dim">EIA Form 930 · {latest.snapshot_date}</div>
     </div>
   )
 }
@@ -896,33 +898,33 @@ function RDVelocityChip({ rows }: { rows: PatentSnapshotRow[] }) {
   const delta30 = d30 ? latest.ttm_count - d30.ttm_count : null
   const top3 = Array.isArray(latest.top_subclasses) ? latest.top_subclasses.slice(0, 3) : []
   return (
-    <div className="rounded border border-zinc-900 bg-zinc-900/40 px-2 py-1.5">
+    <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1.5 shadow-card">
       <div className="flex items-baseline justify-between">
-        <div className="text-[10px] uppercase tracking-wider text-zinc-500">R&D velocity · TTM</div>
+        <div className="text-label text-fg-muted">R&D velocity · TTM</div>
         <div className="flex items-baseline gap-1">
-          <span className="font-mono text-sm text-zinc-100">{latest.ttm_count}</span>
-          <span className="text-[10px] text-zinc-500">filings</span>
+          <span className="font-mono text-sm text-fg-primary">{latest.ttm_count}</span>
+          <span className="text-meta text-fg-muted">filings</span>
           {delta30 != null && (
-            <span className={'ml-1 text-[10px] font-mono ' + (delta30 >= 0 ? 'text-violet-300' : 'text-zinc-400')}>
+            <span className={'ml-1 text-meta font-mono ' + (delta30 >= 0 ? 'text-accent-primary' : 'text-fg-secondary')}>
               {delta30 >= 0 ? '+' : ''}{delta30}/30d
             </span>
           )}
         </div>
       </div>
       {top3.length > 0 && (
-        <div className="mt-0.5 flex flex-wrap gap-1 text-[10px] font-mono">
+        <div className="mt-0.5 flex flex-wrap gap-1 text-meta font-mono">
           {top3.map(s => (
-            <span key={s.code} className="rounded border border-zinc-800 px-1 text-zinc-300">
+            <span key={s.code} className="rounded border border-border-default px-1 text-fg-secondary">
               {s.code}
               {CPC_SUBCLASS_LABELS[s.code] && (
-                <span className="ml-1 text-zinc-500">{CPC_SUBCLASS_LABELS[s.code]}</span>
+                <span className="ml-1 text-fg-muted">{CPC_SUBCLASS_LABELS[s.code]}</span>
               )}
-              <span className="ml-1 text-zinc-500">·{s.count}</span>
+              <span className="ml-1 text-fg-muted">·{s.count}</span>
             </span>
           ))}
         </div>
       )}
-      <div className="mt-0.5 text-[9px] text-zinc-600">USPTO · {latest.snapshot_date}</div>
+      <div className="mt-0.5 text-[9px] text-fg-dim">USPTO · {latest.snapshot_date}</div>
     </div>
   )
 }
@@ -944,8 +946,8 @@ function SignalChips({ companyId, data }: { companyId: string; data: GraphData }
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-4">
-      <div className="mb-1 text-[10px] uppercase tracking-widest text-zinc-500">{title}</div>
-      <div className="text-zinc-300">{children}</div>
+      <div className="mb-1 text-label text-fg-muted">{title}</div>
+      <div className="text-fg-secondary">{children}</div>
     </div>
   )
 }
@@ -965,18 +967,18 @@ function FlowList({ title, flows, data, direction }: { title: string; flows: Flo
           return (
             <li key={f.id} className="text-xs">
               <span className={FLOW_COLOR_CLASS[f.type] ?? ''}>{f.type}</span>
-              <span className="ml-2 text-zinc-300">{other ?? otherId}</span>
-              <span className="ml-2 text-zinc-600">m{f.magnitude}</span>
-              {f.note && <div className="ml-8 text-[11px] text-zinc-500">{f.note}</div>}
+              <span className="ml-2 text-fg-secondary">{other ?? otherId}</span>
+              <span className="ml-2 text-fg-dim">m{f.magnitude}</span>
+              {f.note && <div className="ml-8 text-[11px] text-fg-muted">{f.note}</div>}
             </li>
           )
         })}
-        {flows.length > 12 && <li className="text-xs text-zinc-500">+{flows.length - 12} more</li>}
+        {flows.length > 12 && <li className="text-xs text-fg-muted">+{flows.length - 12} more</li>}
       </ul>
     </Section>
   )
 }
 
 function Empty({ msg }: { msg: string }) {
-  return <div className="text-zinc-500">{msg}</div>
+  return <div className="text-fg-muted">{msg}</div>
 }
