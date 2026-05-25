@@ -319,18 +319,30 @@ export async function fetchPatentsForAssignee(name: string): Promise<PatentSnaps
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 /**
- * Fetch snapshots for many assignees sequentially with the 200ms ODP-friendly
- * sleep between calls (well under the ~100 req/min cap, leaves headroom for
- * pagination inside each company).
+ * Fetch snapshots for many assignees in parallel batches.
+ *
+ * Sequential was OK for 21 cos (~40s wall) but blows past Vercel's 60s cap
+ * once we hit 40 cos with retries. Run 5 cos in parallel per batch — USPTO
+ * rate-limit is ~100 req/min so 5 concurrent × 1-2 pages each = comfortably
+ * under quota, and 8 batches × ~4s = ~32s total even with retries.
+ *
+ * Order: results match input order (we await the whole batch before moving on,
+ * not first-come-first-served).
  */
 export async function fetchAllPatentSnapshots(
-  assignees: Array<{ companyId: string; name: string }>
+  assignees: Array<{ companyId: string; name: string }>,
+  opts: { batchSize?: number; batchDelayMs?: number } = {},
 ): Promise<Array<{ companyId: string; snap: PatentSnapshot | null }>> {
+  const batchSize = opts.batchSize ?? 5
+  const batchDelay = opts.batchDelayMs ?? 250
   const out: Array<{ companyId: string; snap: PatentSnapshot | null }> = []
-  for (const a of assignees) {
-    const snap = await fetchPatentsForAssignee(a.name)
-    out.push({ companyId: a.companyId, snap })
-    await sleep(200)
+  for (let i = 0; i < assignees.length; i += batchSize) {
+    const chunk = assignees.slice(i, i + batchSize)
+    const settled = await Promise.all(
+      chunk.map(a => fetchPatentsForAssignee(a.name).then(snap => ({ companyId: a.companyId, snap })))
+    )
+    out.push(...settled)
+    if (i + batchSize < assignees.length) await sleep(batchDelay)
   }
   return out
 }
