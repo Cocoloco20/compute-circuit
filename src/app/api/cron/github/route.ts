@@ -32,6 +32,12 @@ interface ActivityRow {
   contributors_30d: number
   last_release_tag: string | null
   last_release_date: string | null
+  commits_7d: number
+  commits_30d: number
+  distinct_committers_30d: number
+  lines_added_30d: number
+  lines_removed_30d: number
+  commits_weekly_history: Array<{ week_starting: string; count: number }>
 }
 
 export async function GET(req: NextRequest) {
@@ -71,6 +77,12 @@ export async function GET(req: NextRequest) {
       contributors_30d: r.snap.contributors30d,
       last_release_tag: r.snap.lastReleaseTag,
       last_release_date: r.snap.lastReleaseDate,
+      commits_7d: r.snap.commits_7d,
+      commits_30d: r.snap.commits_30d,
+      distinct_committers_30d: r.snap.distinct_committers_30d,
+      lines_added_30d: r.snap.lines_added_30d,
+      lines_removed_30d: r.snap.lines_removed_30d,
+      commits_weekly_history: r.snap.commits_weekly_history,
     })
   }
 

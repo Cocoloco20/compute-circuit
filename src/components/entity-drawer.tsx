@@ -243,7 +243,7 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
 
 // ----- Sparkline -----
 
-function Sparkline({ points, positive }: { points: Array<[string, number]>; positive: boolean }) {
+function Sparkline({ points, positive, label = '90d' }: { points: Array<[string, number]>; positive: boolean; label?: string }) {
   // Resilient to malformed jsonb (e.g. legacy rows where it was null)
   const valid = points.filter(p => Array.isArray(p) && typeof p[1] === 'number' && Number.isFinite(p[1]))
   if (valid.length < 3) return null
@@ -270,14 +270,14 @@ function Sparkline({ points, positive }: { points: Array<[string, number]>; posi
         viewBox={`0 0 ${W} ${H}`}
         preserveAspectRatio="none"
         className="block h-9 w-full"
-        aria-label="90-day price sparkline"
+        aria-label={`${label} sparkline`}
       >
         <path d={areaPath} fill={fill} />
         <path d={path} fill="none" stroke={stroke} strokeWidth="1.5" />
       </svg>
       <div className="mt-0.5 flex justify-between font-mono text-meta text-fg-dim">
         <span>{valid[0][0].slice(5)}</span>
-        <span>90d</span>
+        <span>{label}</span>
         <span>{valid[valid.length - 1][0].slice(5)}</span>
       </div>
     </div>
@@ -1425,6 +1425,9 @@ function GitHubActivityChip({ rows, companyName }: { rows: GithubActivity[]; com
   const daysSinceRelease = latest.last_release_date
     ? Math.round((Date.now() - new Date(latest.last_release_date).getTime()) / 86_400_000)
     : null
+
+  const commitsWeeklyPoints = latest.commits_weekly_history?.map(w => [w.week_starting, w.count] as [string, number]) ?? []
+
   return (
     <div className="rounded-md border border-border-subtle bg-bg-surface/40 px-2 py-1.5 shadow-card">
       <div className="flex items-baseline justify-between">
@@ -1434,32 +1437,42 @@ function GitHubActivityChip({ rows, companyName }: { rows: GithubActivity[]; com
           {hot && <span className="ml-1 rounded bg-feed-github/15 px-1 py-0.5 text-[9px] uppercase text-feed-github">hot</span>}
         </div>
       </div>
-      {/* Headline format: "OpenAI · ★ 12,400 · +47 PRs/30d · v1.5.2" */}
+      {/* Headline format: "★12.4k · 47 PRs/30d · 234 commits/30d · 18 contributors" */}
       <div className="mt-0.5 text-meta font-mono text-fg-secondary">
         <span className="text-fg-primary">{companyName}</span>
         <span className="mx-1 text-fg-dim">·</span>
-        <span className="text-fg-secondary">★ {stars.toLocaleString()}</span>
+        <span className="text-fg-secondary">★{formatCount(stars)}</span>
         <span className="mx-1 text-fg-dim">·</span>
         <span className={merged >= 20 ? 'text-feed-github' : 'text-fg-secondary'}>
-          +{merged} PRs/30d
+          {merged} PRs/30d
         </span>
-        {tag && (
-          <>
-            <span className="mx-1 text-fg-dim">·</span>
-            <span className="text-fg-secondary">{tag}</span>
-          </>
-        )}
+        <span className="mx-1 text-fg-dim">·</span>
+        <span className="text-fg-secondary">{latest.commits_30d ?? 0} commits/30d</span>
+        <span className="mx-1 text-fg-dim">·</span>
+        <span className="text-fg-secondary">{latest.distinct_committers_30d ?? contributors} contributors</span>
       </div>
       <div className="mt-0.5 flex items-center gap-2 text-meta font-mono text-fg-muted">
-        <span>{opened} opened · {contributors} contrib</span>
-        {daysSinceRelease != null && (
+        {tag && (
           <>
+            <span>{tag}</span>
             <span className="text-fg-dim">·</span>
-            <span>rel {daysSinceRelease === 0 ? 'today' : `${daysSinceRelease}d ago`}</span>
           </>
         )}
+        {daysSinceRelease != null && (
+          <>
+            <span>rel {daysSinceRelease === 0 ? 'today' : `${daysSinceRelease}d ago`}</span>
+            <span className="text-fg-dim">·</span>
+          </>
+        )}
+        <span>{opened} opened</span>
       </div>
-      <div className="mt-0.5 text-[9px] text-fg-dim">
+      {commitsWeeklyPoints.length >= 3 && (
+        <div className="mt-2 pt-1.5 border-t border-border-subtle/50">
+          <div className="text-[10px] text-fg-dim mb-1 font-mono uppercase tracking-wider">Commits per week</div>
+          <Sparkline points={commitsWeeklyPoints} positive={true} label="12w" />
+        </div>
+      )}
+      <div className="mt-1 text-[9px] text-fg-dim">
         <a
           href={`https://github.com/${latest.repo_full_name}`}
           target="_blank"
