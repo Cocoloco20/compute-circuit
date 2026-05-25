@@ -52,7 +52,17 @@ export async function GET(req: NextRequest) {
   // Sequential updates — Supabase doesn't support per-row UPDATE in a single upsert
   // when the rows have different SET clauses. Fast enough for ~32 rows.
   for (const u of updates) {
-    const q = u.q as { price: number; prevClose: number; high52w: number | null; low52w: number | null; currency: string }
+    const q = u.q as {
+      price: number
+      prevClose: number
+      high52w: number | null
+      low52w: number | null
+      currency: string
+      history: Array<[string, number]>
+    }
+    // Cap history at last 90 entries (Yahoo's 3mo range tends to give ~63
+    // trading days; cap protects future-proofs against a Yahoo range change).
+    const history = (q.history ?? []).slice(-90)
     const patch = {
       last_price: q.price,
       prev_close: q.prevClose,
@@ -60,6 +70,7 @@ export async function GET(req: NextRequest) {
       fifty_two_week_low: q.low52w,
       price_currency: q.currency,
       price_updated_at: nowIso,
+      price_history: history,
     }
     const r = await (sb.from('companies') as unknown as {
       update: (p: typeof patch) => { eq: (col: string, val: string) => Promise<{ error: { message: string } | null }> }

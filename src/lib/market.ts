@@ -25,26 +25,53 @@ export interface YahooQuote {
   high52w: number | null
   low52w: number | null
   currency: string
+  /** Last ≤90 daily closes, ascending by date. [['2026-02-24', 142.31], ...]. */
+  history: Array<[string, number]>
 }
 
 export async function fetchYahooQuote(ticker: string): Promise<YahooQuote | null> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=5d`
+  // range=3mo gives ~63 trading days — enough for a 90-day sparkline and the
+  // meta fields we already use.
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=3mo`
   try {
     const r = await fetch(url, { headers: { 'User-Agent': YAHOO_UA, Accept: 'application/json' } })
     if (!r.ok) return null
     const data = (await r.json()) as {
-      chart?: { result?: Array<{ meta?: Record<string, unknown> }> }
+      chart?: {
+        result?: Array<{
+          meta?: Record<string, unknown>
+          timestamp?: number[]
+          indicators?: { quote?: Array<{ close?: Array<number | null> }> }
+        }>
+      }
     }
-    const m = data?.chart?.result?.[0]?.meta
+    const res = data?.chart?.result?.[0]
+    const m = res?.meta
     if (!m) return null
     const price = Number(m.regularMarketPrice)
     if (!Number.isFinite(price)) return null
+
+    // Parse history: zip timestamps[] with close[], drop nulls, ISO-date format.
+    const timestamps = res?.timestamp ?? []
+    const closes = res?.indicators?.quote?.[0]?.close ?? []
+    const history: Array<[string, number]> = []
+    for (let i = 0; i < timestamps.length; i++) {
+      const ts = timestamps[i]
+      const close = closes[i]
+      if (typeof ts !== 'number' || typeof close !== 'number' || !Number.isFinite(close)) continue
+      const iso = new Date(ts * 1000).toISOString().slice(0, 10)
+      history.push([iso, Math.round(close * 100) / 100])
+    }
+    // history is already ascending from Yahoo, but be defensive.
+    history.sort((a, b) => a[0].localeCompare(b[0]))
+
     return {
       price,
       prevClose: Number(m.chartPreviousClose ?? m.previousClose ?? 0),
       high52w: m.fiftyTwoWeekHigh != null ? Number(m.fiftyTwoWeekHigh) : null,
       low52w: m.fiftyTwoWeekLow != null ? Number(m.fiftyTwoWeekLow) : null,
       currency: (m.currency as string) ?? 'USD',
+      history,
     }
   } catch {
     return null

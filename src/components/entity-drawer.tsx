@@ -178,6 +178,12 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
               </span>
             )}
           </div>
+          {Array.isArray(company.price_history) && company.price_history.length >= 3 && (
+            <Sparkline
+              points={company.price_history}
+              positive={positive}
+            />
+          )}
           {rangePos != null && (
             <div>
               <div className="relative h-1 rounded-full bg-zinc-800">
@@ -195,6 +201,49 @@ function StickyHeader({ company }: { company: GraphData['companies'][number] }) 
           )}
         </div>
       )}
+    </div>
+  )
+}
+
+// ----- Sparkline -----
+
+function Sparkline({ points, positive }: { points: Array<[string, number]>; positive: boolean }) {
+  // Resilient to malformed jsonb (e.g. legacy rows where it was null)
+  const valid = points.filter(p => Array.isArray(p) && typeof p[1] === 'number' && Number.isFinite(p[1]))
+  if (valid.length < 3) return null
+  const vals = valid.map(p => p[1])
+  const min = Math.min(...vals)
+  const max = Math.max(...vals)
+  const range = max - min || 1
+  const W = 280
+  const H = 36
+  const stepX = W / (vals.length - 1)
+  const path = vals
+    .map((v, i) => {
+      const x = i * stepX
+      const y = H - ((v - min) / range) * H
+      return `${i === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+  const stroke = positive ? '#34d399' : '#f87171'   // emerald-400 / red-400
+  const fill = positive ? 'rgba(52,211,153,0.08)' : 'rgba(248,113,113,0.08)'
+  const areaPath = `${path} L${W.toFixed(1)},${H} L0,${H} Z`
+  return (
+    <div className="mt-1">
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="block h-9 w-full"
+        aria-label="90-day price sparkline"
+      >
+        <path d={areaPath} fill={fill} />
+        <path d={path} fill="none" stroke={stroke} strokeWidth="1.5" />
+      </svg>
+      <div className="mt-0.5 flex justify-between font-mono text-[10px] text-zinc-600">
+        <span>{valid[0][0].slice(5)}</span>
+        <span>90d</span>
+        <span>{valid[valid.length - 1][0].slice(5)}</span>
+      </div>
     </div>
   )
 }

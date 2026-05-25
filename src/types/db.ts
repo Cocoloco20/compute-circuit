@@ -60,6 +60,7 @@ export interface Company {
   fifty_two_week_low: number | null
   price_currency: string | null
   price_updated_at: string | null
+  price_history: Array<[string, number]>  // [[YYYY-MM-DD, close], ...] up to 90, oldest first
   hf_org: string | null  // Hugging Face org slug (e.g. 'nvidia', 'meta-llama')
   eia_region: string | null  // EIA balancing-authority code ('PJM', 'ERCO', 'FLA', 'US48')
   assignee_name: string | null  // USPTO assignee name for patent search (e.g. 'NVIDIA Corporation')
