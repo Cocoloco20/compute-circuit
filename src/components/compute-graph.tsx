@@ -29,6 +29,7 @@ import { getLogoUrl } from '@/lib/logo'
 import EntityDrawer from './entity-drawer'
 import CommandPalette from './command-palette'
 import PulseBoard from './pulse-board'
+import SupplyChainStrip from './supply-chain-strip'
 
 // ---------- visual constants ----------
 
@@ -689,6 +690,9 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
       {/* Pulse Board — graph-wide "what mattered today" panel */}
       <PulseBoard data={data} onSelect={(s) => setSelected(s)} />
+
+      {/* Supply Chain Strip — bottleneck dashboard across FUEL → POWER → GRID → FAB → DC → MODELS */}
+      <SupplyChainStrip data={data} />
 
       {/* Hover tooltip */}
       {hover && (

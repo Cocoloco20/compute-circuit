@@ -15,6 +15,9 @@ import type {
   GridDemandSnapshot,
   PatentSnapshotRow,
   JobSnapshotRow,
+  EiaCommoditySnapshot,
+  EiaFuelMixSnapshot,
+  EiaInternationalSnapshot,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -39,6 +42,9 @@ export interface GraphData {
   gridDemand: GridDemandSnapshot[] // EIA grid demand, last 35 days for delta
   patents: PatentSnapshotRow[]    // USPTO TTM snapshots, last 35 days for delta
   jobs: JobSnapshotRow[]          // Hiring pulse snapshots, last 35 days for delta
+  eiaCommodities: EiaCommoditySnapshot[]    // Henry Hub, coal stocks, nuke outage, ...
+  eiaFuelMix: EiaFuelMixSnapshot[]          // Per-region generation mix + carbon intensity
+  eiaInternational: EiaInternationalSnapshot[]  // Fab-country electricity stats
   lastUpdates: {                  // GasCity-style "instrument is live" telemetry
     price: string | null          // ISO of most-recent companies.price_updated_at
     news: string | null           // most-recent signals.date where source='google-news'
@@ -140,7 +146,7 @@ export async function fetchGraph(): Promise<GraphData> {
   //   patents:     21 cos × 35 = 735
   //   jobs:        10 cos × 35 = 350
   const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const [gd, pat, jb] = await Promise.all([
+  const [gd, pat, jb, eiaCom, eiaFmx, eiaIntl] = await Promise.all([
     sb.from('grid_demand_snapshots').select('*')
       .gte('snapshot_date', thirtyFiveDaysAgo)
       .order('snapshot_date', { ascending: false }).limit(500),
@@ -150,11 +156,22 @@ export async function fetchGraph(): Promise<GraphData> {
     sb.from('job_snapshots').select('*')
       .gte('snapshot_date', thirtyFiveDaysAgo)
       .order('snapshot_date', { ascending: false }).limit(500),
+    // Commodity series often update monthly/annual — pull a wider window
+    // (180d) so we can always compute a delta-vs-prior.
+    sb.from('eia_commodity_snapshots').select('*')
+      .gte('snapshot_date', new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10))
+      .order('snapshot_date', { ascending: false }).limit(1000),
+    sb.from('eia_fuelmix_snapshots').select('*')
+      .gte('snapshot_date', thirtyFiveDaysAgo)
+      .order('snapshot_date', { ascending: false }).limit(500),
+    // International annual — pull 5 years for trend context
+    sb.from('eia_international_snapshots').select('*')
+      .order('snapshot_date', { ascending: false }).limit(50),
   ])
 
-  // gd/pat/jb are non-fatal — tables may be empty pre-cron-run or before keys
-  // are configured (EIA / USPTO). Log silently and degrade gracefully.
-  for (const r of [gd, pat, jb] as Array<{ error: { message: string } | null }>) {
+  // All optional signal tables — non-fatal on read error (table empty,
+  // RLS denied, API key missing pre-cron).
+  for (const r of [gd, pat, jb, eiaCom, eiaFmx, eiaIntl] as Array<{ error: { message: string } | null }>) {
     if (r.error) {
       // eslint-disable-next-line no-console
       console.warn('[graph-data] optional signal table read failed:', r.error.message)
@@ -182,6 +199,9 @@ export async function fetchGraph(): Promise<GraphData> {
     gridDemand: (gd.data ?? []) as GridDemandSnapshot[],
     patents: (pat.data ?? []) as PatentSnapshotRow[],
     jobs: (jb.data ?? []) as JobSnapshotRow[],
+    eiaCommodities: (eiaCom.data ?? []) as EiaCommoditySnapshot[],
+    eiaFuelMix: (eiaFmx.data ?? []) as EiaFuelMixSnapshot[],
+    eiaInternational: (eiaIntl.data ?? []) as EiaInternationalSnapshot[],
     lastUpdates: {
       price: ((c.data ?? []) as Company[])
         .map(co => co.price_updated_at)
