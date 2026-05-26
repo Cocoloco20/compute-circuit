@@ -1002,7 +1002,6 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           selected={selected}
           data={data}
           onClose={() => setSelected(null)}
-          onSelect={(s) => setSelected(s)}
         />
       )}
       {paletteOpen && (
