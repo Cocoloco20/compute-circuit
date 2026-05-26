@@ -48,6 +48,25 @@ const AI_PATTERNS: RegExp[] = [
   /\bgenerative\b/gi,                             // "generative AI", "generative model"
   /\btraining\b/gi,                               // model training capex/compute
   /\binference\b/gi,                              // inference workloads
+  // Vendor-specific terms that count as "AI mentions" in the
+  // hyperscalers' earnings releases. MSFT barely says "AI" in plain text —
+  // they wrap everything in "Copilot" or "Azure AI". META calls their
+  // model "Llama". Google calls theirs "Gemini". AWS leads with "Bedrock"
+  // and "Trainium". Without these the Mag5 mention counts are 5-10x
+  // understated.
+  /\bcopilot\b/gi,                                // MSFT — Copilot Studio, GitHub Copilot, M365 Copilot
+  /\bllama\b/gi,                                  // META — Llama 3/4
+  /\bgemini\b/gi,                                 // GOOGL — Gemini 1.5/2.0/3.0
+  /\bbedrock\b/gi,                                // AMZN — Amazon Bedrock
+  /\btrainium\b/gi,                               // AMZN — AWS Trainium chip
+  /\binferentia\b/gi,                             // AMZN — AWS Inferentia chip
+  /\bClaude\b/g,                                  // case-sensitive — proper noun for the model
+  /\bChatGPT\b/gi,                                // OpenAI mentions in earnings
+  /\bopenai\b/gi,                                 // both AAPL+MSFT+ORCL mention OpenAI partnerships
+  /\bAzure\s+AI\b/gi,                             // MSFT — Azure AI services
+  /\bAWS\s+AI\b/gi,                               // AMZN
+  /\bfoundation\s+models?\b/gi,                   // common in MSFT/GOOGL/AWS releases
+  /\bagentic\b/gi,                                // 2026 buzzword across the board
 ]
 
 const GPU_PATTERNS: RegExp[] = [
@@ -55,9 +74,18 @@ const GPU_PATTERNS: RegExp[] = [
   /\bH100\b/gi,
   /\bH200\b/gi,
   /\bB200\b/gi,
+  /\bGB200\b/gi,                                  // Grace Blackwell superchip
+  /\bGB300\b/gi,
   /\bBlackwell\b/gi,                              // NVIDIA architecture (Q4 25/Q1 26 ramp)
   /\bHopper\b/gi,                                 // prior NVIDIA arch
   /\bTPUs?\b/g,                                   // Google TPU
+  /\bAccelerator(?:s)?\b/gi,                      // generic accelerator chip language
+  /\bMI300\b/gi,                                  // AMD Instinct MI300 / MI300X
+  /\bMI325\b/gi,
+  /\bMI355\b/gi,
+  /\bMI400\b/gi,
+  /\bMaia\b/gi,                                   // MSFT — Maia 100 (their custom AI chip)
+  /\bTrillium\b/gi,                               // GOOGL — TPU v6 codename
 ]
 
 const CAPEX_PATTERNS: RegExp[] = [
