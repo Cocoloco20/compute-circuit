@@ -53,12 +53,15 @@ export async function GET(req: NextRequest) {
   // Daily cycle covers every co in ~7 days.
   const CRON_BUDGET = 350
   if (tickers.length > CRON_BUDGET) {
+    // Prices are stored directly on companies.price_updated_at — there's no
+    // separate prices table. Sort by stalest (oldest update or never updated).
     const { data: oldest } = await sb
-      .from('prices')
-      .select('company_id')
-      .order('updated_at', { ascending: true })
+      .from('companies')
+      .select('id, price_updated_at')
+      .not('ticker', 'is', null)
+      .order('price_updated_at', { ascending: true, nullsFirst: true })
       .limit(CRON_BUDGET)
-    const staleIds = new Set((oldest ?? []).map((r) => (r as { company_id: string }).company_id))
+    const staleIds = new Set((oldest ?? []).map((r) => (r as { id: string }).id))
     tickers.sort((a, b) => (staleIds.has(b.id) ? 1 : 0) - (staleIds.has(a.id) ? 1 : 0))
     tickers.length = CRON_BUDGET
   }
