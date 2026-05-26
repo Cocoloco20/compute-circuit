@@ -1,36 +1,70 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Bloomberg-grade research dashboard for the AI compute ecosystem and beyond — 100% free data sources, 100% open source.
 
-## Getting Started
+---
 
-First, run the development server:
+## Architecture
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+```mermaid
+graph LR
+    Daily_crons --> Supabase_Postgres --> NextJS_SSR --> ThreeJS_Graph_and_Drawer
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+---
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+**Live demo:** https://compute-circuit.vercel.app
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+---
 
-## Learn More
+## Screenshots
 
-To learn more about Next.js, take a look at the following resources:
+{{TODO: insert screenshot of graph view}}
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+{{TODO: insert screenshot of globe view}}
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+{{TODO: insert screenshot of drawer}}
 
-## Deploy on Vercel
+{{TODO: insert screenshot of mobile bottom‑nav}}
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+{{TODO: insert screenshot of supply‑chain strip}}
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+---
+
+## What it tracks
+
+- 25+ daily data sources (each cron + drawer chip listed in the repo)
+- Company fundamentals, market prices, insider transactions, patents, AI‑generated theses, and more.
+
+---
+
+## Why open source?
+
+Data should be free for everyone researching the AI build‑out. By open‑sourcing the dashboard and its pipelines we empower the community to explore, remix, and extend the ecosystem without barriers.
+
+---
+
+## Tech stack
+
+- **Frontend:** Next.js 14 (SSR) + Three.js for the interactive graph
+- **Styling:** Tailwind CSS with Phase 6 design tokens
+- **Backend:** Supabase Postgres (hosted) + Vercel serverless functions for daily crons
+- **Deploy:** Vercel (static + serverless) + Supabase free tier
+
+---
+
+## Quick start (local development)
+
+```bash
+pnpm install && cp .env.example .env.local && pnpm dev
+```
+
+---
+
+## Further docs
+
+- [DEPLOYMENT.md](DEPLOYMENT.md)
+- [CONTRIBUTING.md](CONTRIBUTING.md)
+- [ARCHITECTURE.md](ARCHITECTURE.md)
+
+---
+
+*All code is licensed under AGPL‑3.0 (see LICENSE).*
