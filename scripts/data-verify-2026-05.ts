@@ -161,7 +161,7 @@ async function findings(): Promise<string> {
     .select('id', { count: 'exact', head: true })
   lines.push(`- **Transcripts cron is broken for Mag5.** transcript_signals has only ${count ?? '?'} total rows across the whole table (latest cron run scanned 32 8-Ks but only upserted 2). For every Mag5 ticker the cron found 4 filings each but processed 0 of them — the extractor is skipping the body. Needs investigation in src/lib/transcripts.ts: extractTranscriptSignal, or the earnings-release URL discovery in src/lib/edgar.ts.`)
   lines.push('- **GPU spot has no 7d history yet** — the cron started recently. The blended-median view is correct; a week from now this report will populate the Δ% column.')
-  lines.push('- **Capex YoY is real and reflects the AI buildout.** MSFT +50%, GOOGL +109%, META +103% over the prior FY. NVDA / AMZN return null because the SEC dropped the legacy XBRL `PaymentsToAcquirePropertyPlantAndEquipment` tag — both cos migrated to newer tags (known issue, see src/lib/capex.ts header comment).')
+  lines.push('- **Capex YoY is real and reflects the AI buildout.** All Mag5 now report TTM capex + YoY%. NVDA/AMZN were previously missing because SEC dropped the legacy XBRL `PaymentsToAcquirePropertyPlantAndEquipment` tag — fixed by adding `PaymentsToAcquireProductiveAssets` (and two other fallback tags) to the METRIC_MAP in src/lib/market.ts.')
   return lines.join('\n')
 }
 

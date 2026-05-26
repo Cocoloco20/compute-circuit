@@ -26,8 +26,14 @@ const { Client } = require('pg')
 const Anthropic = require('@anthropic-ai/sdk').default || require('@anthropic-ai/sdk').Anthropic
 require('dotenv').config({ path: '/Users/luiguisanchez/compute-circuit/.env.local' })
 
-const MODEL = 'claude-sonnet-4-5-20250929'
+const OPUS_MODEL = 'claude-3-opus-20240229'
+const HAIKU_MODEL = 'claude-3-5-haiku-20241022'
 const SLEEP_MS = 200
+
+const PRICING = {
+  'claude-3-opus-20240229': { input: 15 / 1000000, output: 75 / 1000000 },
+  'claude-3-5-haiku-20241022': { input: 0.80 / 1000000, output: 4.00 / 1000000 }
+}
 
 // ---------- CLI ----------
 
@@ -204,7 +210,6 @@ async function loadContextFor(c, companyId) {
     console.error('    ANTHROPIC_API_KEY=sk-ant-...')
     console.error('')
     console.error('  Get a key at https://console.anthropic.com/settings/keys')
-    console.error('  Estimated cost: ~$0.50 to seed all 105 companies (Sonnet 4.5).')
     console.error('')
     process.exit(1)
   }
@@ -216,11 +221,9 @@ async function loadContextFor(c, companyId) {
 
   const u = new URL(process.env.DATABASE_URL)
   const password = decodeURIComponent(u.password)
-    // Derive pooler connection from DATABASE_URL — never hardcode project ID
   const dbUrl = new URL(process.env.DATABASE_URL)
-  const projectRef = dbUrl.hostname.split('.')[0].replace(/^db\./, '')
-  // Supabase pooler host pattern: aws-1-{region}.pooler.supabase.com
-  // We don't store the region — assume us-west-1 unless POOLER_REGION env var is set
+  const hostParts = dbUrl.hostname.split('.')
+  const projectRef = hostParts[0] === 'db' ? hostParts[1] : hostParts[0]
   const poolerHost = process.env.POOLER_HOST || `aws-1-${process.env.POOLER_REGION || 'us-west-1'}.pooler.supabase.com`
   const poolerUser = `postgres.${projectRef}`
   const c = new Client({
@@ -233,74 +236,146 @@ async function loadContextFor(c, companyId) {
   })
   await c.connect()
 
-  // Build the worklist
-  let sql = `select id, ticker, name, domain, layer_id, position_held, share,
-                    conviction, thesis, thesis_ai
-               from companies`
-  const where = []
-  const params = []
-  if (ONLY) {
-    where.push(`id = $${params.length + 1}`)
-    params.push(ONLY)
-  } else if (!FORCE) {
-    where.push(`(thesis_ai is null or length(thesis_ai) < 30)`)
-  }
-  if (where.length) sql += ` where ` + where.join(' and ')
-  sql += ` order by position_held desc, conviction nulls last, name`
-  if (LIMIT) sql += ` limit ${LIMIT}`
+  const LOG_PATH = '/tmp/thesis-gen-progress.log'
+  const fs = require('fs')
 
-  const list = await c.query(sql, params)
-  console.log(`Worklist: ${list.rows.length} company/ies (force=${FORCE}, only=${ONLY || 'all'}, limit=${LIMIT || 'none'})`)
-  if (list.rows.length === 0) {
-    console.log('Nothing to do.')
-    await c.end()
-    return
+  function logProgress(msg) {
+    const formatted = `[${new Date().toISOString()}] ${msg}\n`
+    fs.appendFileSync(LOG_PATH, formatted)
+    console.log(msg)
   }
+
+  // Get the top 50 companies by market cap globally to use with Opus
+  logProgress('Fetching top 50 companies by market cap for Opus routing...')
+  const top50Res = await c.query(
+    `select id from companies order by market_cap_usd desc nulls last limit 50`
+  )
+  const opusIds = new Set(top50Res.rows.map(r => r.id))
+  logProgress(`Loaded ${opusIds.size} top companies for Opus model selection.`)
 
   const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
-  let ok = 0, fail = 0
-  for (const co of list.rows) {
-    try {
-      const ctx = await loadContextFor(c, co.id)
-      const userPrompt = buildUserPrompt(co, ctx)
-      const resp = await anthropic.messages.create({
-        model: MODEL,
-        max_tokens: 400,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: 'user', content: userPrompt }],
-      })
-      const text = (resp.content || [])
-        .filter(b => b.type === 'text')
-        .map(b => b.text)
-        .join('')
-        .trim()
-      const parsed = JSON.parse(extractJson(text))
-      const summary = String(parsed.thesis_summary || '').trim()
-      const risk = String(parsed.risk_opportunity || '').trim()
-      if (!summary || !risk) {
-        throw new Error(`Empty fields in model output: ${text.slice(0, 200)}`)
-      }
-      await c.query(
-        `update companies
-            set thesis_ai = $2,
-                thesis_risk_ai = $3,
-                thesis_generated_at = now()
-          where id = $1`,
-        [co.id, summary, risk],
-      )
-      const tag = (co.ticker || co.id).toUpperCase()
-      const preview = summary.length > 80 ? summary.slice(0, 77) + '...' : summary
-      console.log(`OK ${tag.padEnd(10)} "${preview}"`)
-      ok++
-    } catch (e) {
-      console.error(`!! ${(co.ticker || co.id).toUpperCase().padEnd(10)} ${e.message}`)
-      fail++
+  let ok = 0
+  let fail = 0
+  let totalCost = 0
+  const CHUNK_SIZE = 50
+
+  logProgress(`Starting thesis generation (force=${FORCE}, only=${ONLY || 'all'}, limit=${LIMIT || 'none'})`)
+
+  while (true) {
+    // Build the query to get the next chunk of companies
+    let sql = `select id, ticker, name, domain, layer_id, position_held, share,
+                      conviction, thesis, thesis_ai, market_cap_usd
+                 from companies`
+    const where = []
+    const params = []
+    if (ONLY) {
+      where.push(`id = $${params.length + 1}`)
+      params.push(ONLY)
+    } else if (!FORCE) {
+      where.push(`(thesis_ai is null or length(thesis_ai) < 30)`)
     }
-    await new Promise(r => setTimeout(r, SLEEP_MS))
+    if (where.length) sql += ` where ` + where.join(' and ')
+    sql += ` order by position_held desc, conviction nulls last, name`
+
+    // Apply chunk limit
+    let currentLimit = CHUNK_SIZE
+    if (LIMIT) {
+      const remaining = LIMIT - (ok + fail)
+      if (remaining <= 0) break
+      currentLimit = Math.min(CHUNK_SIZE, remaining)
+    }
+    sql += ` limit ${currentLimit}`
+
+    const chunkRes = await c.query(sql, params)
+    const rows = chunkRes.rows
+    if (rows.length === 0) {
+      logProgress('No more companies requiring thesis generation. Finished.')
+      break
+    }
+
+    logProgress(`\n--- Processing batch of ${rows.length} companies (ok_so_far=${ok}, fail_so_far=${fail}, total_cost_so_far=$${totalCost.toFixed(4)}) ---`)
+
+    for (const co of rows) {
+      const isOpus = opusIds.has(co.id)
+      const selectedModel = isOpus ? OPUS_MODEL : HAIKU_MODEL
+
+      let attempts = 0
+      let success = false
+
+      while (attempts < 3 && !success) {
+        attempts++
+        try {
+          const ctx = await loadContextFor(c, co.id)
+          const userPrompt = buildUserPrompt(co, ctx)
+          
+          const resp = await anthropic.messages.create({
+            model: selectedModel,
+            max_tokens: 400,
+            system: SYSTEM_PROMPT,
+            messages: [{ role: 'user', content: userPrompt }],
+          })
+
+          const text = (resp.content || [])
+            .filter(b => b.type === 'text')
+            .map(b => b.text)
+            .join('')
+            .trim()
+
+          const parsed = JSON.parse(extractJson(text))
+          const summary = String(parsed.thesis_summary || '').trim()
+          const risk = String(parsed.risk_opportunity || '').trim()
+
+          if (!summary || !risk) {
+            throw new Error(`Empty fields in model output: ${text.slice(0, 200)}`)
+          }
+
+          await c.query(
+            `update companies
+                set thesis_ai = $2,
+                    thesis_risk_ai = $3,
+                    thesis_generated_at = now()
+              where id = $1`,
+            [co.id, summary, risk],
+          )
+
+          const usage = resp.usage || { input_tokens: 0, output_tokens: 0 }
+          const price = PRICING[selectedModel] || { input: 0, output: 0 }
+          const cost = (usage.input_tokens * price.input) + (usage.output_tokens * price.output)
+          totalCost += cost
+
+          const tag = (co.ticker || co.id).toUpperCase()
+          const preview = summary.length > 80 ? summary.slice(0, 77) + '...' : summary
+          logProgress(`OK ${tag.padEnd(10)} [Model: ${selectedModel.split('-')[2]}] [Cost: $${cost.toFixed(4)}] "${preview}"`)
+          
+          success = true
+          ok++
+        } catch (e) {
+          const isRateLimit = e.status === 429 || (e.message && e.message.includes('429'))
+          if (isRateLimit && attempts < 3) {
+            const delay = attempts * 15000
+            logProgress(`Rate limit (429) on attempt ${attempts} for ${(co.ticker || co.id).toUpperCase()}. Sleeping ${delay / 1000}s...`)
+            await new Promise(r => setTimeout(r, delay))
+            continue
+          }
+
+          if (attempts === 3 || !isRateLimit) {
+            fail++
+            logProgress(`FAIL ${(co.ticker || co.id).toUpperCase().padEnd(10)} after ${attempts} attempt(s): ${e.message}`)
+            break
+          }
+        }
+      }
+
+      await new Promise(r => setTimeout(r, SLEEP_MS))
+    }
+
+    if (ONLY) {
+      break
+    }
   }
 
-  console.log(`\n=== ${ok} generated · ${fail} failed of ${list.rows.length} attempted ===`)
+  logProgress(`\n=== Final Report: ${ok} generated · ${fail} failed · Total cost: $${totalCost.toFixed(4)} ===`)
   await c.end()
 })().catch(e => {
   console.error('FATAL', e)

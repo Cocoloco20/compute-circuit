@@ -31,6 +31,11 @@ yarn-error.log*
 # vercel
 .vercel
 
+# scratch + ad-hoc debug scripts (Antigravity / Cursor / Codex leave these here)
+/scratch
+*.local.js
+*.local.ts
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
