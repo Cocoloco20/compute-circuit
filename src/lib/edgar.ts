@@ -598,13 +598,30 @@ export function eightKPrimaryDocUrl(cik: string, accession: string, primaryDocum
 /**
  * Fetch an 8-K filing's earnings exhibit and return { url, text }.
  *
- * Resolution strategy:
- *   1) Pull index.json for the accession, look for ex99-1*.htm / ex99_1*.htm
- *      / ex991*.htm / ex991*.txt — the canonical exhibit name for 8-K
- *      item 2.02 press releases.
- *   2) If none matches, fall back to the filing's primaryDocument.
- *   3) Fetch the resolved URL; skip very large bodies (> 2 MB) since those
- *      are probably slide decks.
+ * Resolution is layered because filer templates vary widely — the press
+ * release for an 8-K item 2.02 lives in a file whose name we can only
+ * pattern-match heuristically:
+ *
+ *   filer        → naming convention                  matches
+ *   ─────────────────────────────────────────────────────────
+ *   Vertiv       → vrt-20260211xex991.htm             ✓ contains "ex991"
+ *   Microsoft    → msft-ex99_1.htm                    ✓ contains "ex99_1"
+ *   Meta         → meta-03312026xexhibit991.htm       ✓ contains "exhibit991"
+ *   Amazon       → amzn-20260331xex991.htm            ✓ contains "ex991"
+ *   Alphabet     → googexhibit991q12026.htm           ✓ contains "exhibit991"
+ *   NVIDIA       → q1fy27pr.htm                       ⨯ no ex99 — uses "pr"
+ *
+ * The previous "^ex…" anchored regex only caught Vertiv-style names and
+ * silently fell back to primaryDocument for the rest. primaryDocument for
+ * an 8-K is the COVER PAGE — XBRL boilerplate with no press-release prose —
+ * so the lexicon scorer returned all-zero counts and the cron skipped them.
+ *
+ * Strategy in priority order:
+ *   1. Filename matches ex(hibit)?[\s_.-]*99[\s_.-]*1 anywhere
+ *   2. Filename matches press-release / earnings-release / *pr.htm (NVDA)
+ *   3. Largest non-cover, non-Rxx.htm file > 30 KB (cover docs sit at 25-65 KB
+ *      filled with XBRL; press releases for major cos run 200 KB-1 MB).
+ *   4. Fall back to primaryDocument as a last resort.
  *
  * Returns null on any error (404, parse failure, oversize) so the caller
  * just continues with the next filing.
@@ -623,11 +640,7 @@ export async function fetchEarningsExhibitText(
     if (r.ok) {
       const data = (await r.json()) as { directory?: { item?: Array<{ name: string; size?: string }> } }
       const items = data.directory?.item ?? []
-      const ex991 = items.find((i) => /^ex(?:hibit)?[\s_-]*99[\s_.-]*1[^/]*\.(?:htm|html|txt)$/i.test(i.name))
-        ?? items.find((i) => /^ex991[^/]*\.(?:htm|html|txt)$/i.test(i.name))
-      if (ex991) {
-        exhibitUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/${ex991.name}`
-      }
+      exhibitUrl = pickEarningsExhibit(items, primaryDocument, cikInt, accNoDashes)
     }
   } catch {
     // index fetch failed — fall through to primaryDocument
@@ -646,4 +659,58 @@ export async function fetchEarningsExhibitText(
   } catch {
     return null
   }
+}
+
+/**
+ * Heuristic exhibit-99.1 picker. Walks the index.json items list and returns
+ * an absolute URL to the best candidate, or null if nothing matches.
+ *
+ * Exposed for testing (scripts/debug-transcripts.ts) — the cron just calls
+ * fetchEarningsExhibitText.
+ */
+export function pickEarningsExhibit(
+  items: Array<{ name: string; size?: string }>,
+  primaryDocument: string,
+  cikInt: number,
+  accNoDashes: string,
+): string | null {
+  const coverName = (primaryDocument.split('/').pop() ?? '').toLowerCase()
+  // Eligible files: .htm/.html/.txt, not index-headers, not the auto-generated Rxx.htm
+  // XBRL viewer files (they're <table> dumps with no prose).
+  const candidates = items.filter((i) => {
+    const n = i.name.toLowerCase()
+    if (!/\.(htm|html|txt)$/i.test(n)) return false
+    if (n.startsWith('0001')) return false                  // accession-named txt index
+    if (/^r\d+\.htm$/i.test(n)) return false               // viewer-generated tables
+    if (n.includes('index-headers') || n.endsWith('index.html')) return false
+    return true
+  })
+  const build = (name: string) => `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/${name}`
+
+  // Strategy 1: explicit exhibit-99.1 naming anywhere in the name.
+  const ex991 = candidates.find((i) =>
+    /ex(?:hibit)?[\s_.-]*99[\s_.-]*1/i.test(i.name),
+  )
+  if (ex991) return build(ex991.name)
+
+  // Strategy 2: press-release naming — common for cos that don't use the
+  // ex99 convention. NVIDIA uses q{N}fy{NN}pr.htm; some smaller cos
+  // use earnings-release.htm or simply pressrelease.htm.
+  const pr = candidates.find((i) =>
+    /(?:^|[^a-z])(?:pr|press[\s_.-]?release|earnings[\s_.-]?release|release)\.(?:htm|html|txt)$/i.test(i.name),
+  )
+  if (pr) return build(pr.name)
+
+  // Strategy 3: largest non-cover .htm > 30 KB. Cover docs are typically
+  // 25-65 KB of XBRL boilerplate; press releases are 200 KB-1 MB. If the
+  // biggest non-cover file is ≤ 30 KB the filing probably ships nothing
+  // we can score, and we'd rather fall back to primaryDocument than guess.
+  const sized = candidates
+    .filter((i) => i.name.toLowerCase() !== coverName)
+    .map((i) => ({ name: i.name, size: Number(i.size) || 0 }))
+    .filter((i) => i.size > 30_000)
+    .sort((a, b) => b.size - a.size)
+  if (sized[0]) return build(sized[0].name)
+
+  return null
 }
