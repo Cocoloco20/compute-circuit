@@ -22,13 +22,36 @@ export async function GET(req: NextRequest) {
 
   const sb = supabaseServiceRole()
 
-  // Fetch all companies from db
-  const { data: companies, error: cosError } = await sb.from('companies').select('id, ticker, name')
-  if (cosError) {
-    return NextResponse.json({ error: cosError.message }, { status: 500 })
+  // Paginate — Supabase default cap is 1000 rows; the post-Phase-7B table
+  // has 2,461. Without the loop the social cron silently skipped 1,461.
+  const PAGE = 1000
+  const allCompanies: CoRow[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb.from('companies').select('id, ticker, name').range(from, from + PAGE - 1).order('id')
+    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+    const batch = (data ?? []) as CoRow[]
+    allCompanies.push(...batch)
+    if (batch.length < PAGE) break
   }
 
-  const list = (companies ?? []) as CoRow[]
+  // BUDGET GUARD — HN + Reddit each take ~600ms per co; 5-parallel chunk
+  // batchSize means 2,461/5 = ~493 waves × 600ms = 295s, way over the 60s
+  // cap. Restrict to a sliding window of 200 cos prioritized by stalest-
+  // social-snapshot. Daily cycle covers everyone in ~12 days, which is fine
+  // for buzz tracking (the underlying data has multi-day granularity anyway).
+  const CRON_BUDGET = 200
+  let list = allCompanies
+  if (list.length > CRON_BUDGET) {
+    const { data: oldest } = await sb
+      .from('social_mentions')
+      .select('company_id')
+      .order('snapshot_date', { ascending: true })
+      .limit(CRON_BUDGET)
+    const staleIds = new Set((oldest ?? []).map((r) => (r as { company_id: string }).company_id))
+    list = list
+      .sort((a, b) => (staleIds.has(b.id) ? 1 : 0) - (staleIds.has(a.id) ? 1 : 0))
+      .slice(0, CRON_BUDGET)
+  }
   const results: Array<{
     coId: string
     hn: {

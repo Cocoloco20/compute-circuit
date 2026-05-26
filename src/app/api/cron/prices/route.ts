@@ -32,9 +32,36 @@ export async function GET(req: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
   const sb = supabaseServiceRole()
 
-  const resp = await sb.from('companies').select('id, ticker').not('ticker', 'is', null)
-  if (resp.error) return NextResponse.json({ error: resp.error.message }, { status: 500 })
-  const tickers = ((resp.data ?? []) as TickerRow[]).filter(r => r.ticker)
+  // Paginate — Supabase select() default cap is 1000 rows. Without this loop
+  // the prices cron silently stopped at 1000 ticker-having cos (post Phase-7B
+  // that's only ~40% of the table). Each page is one round-trip; 2-3 pages
+  // total adds <300ms.
+  const PAGE = 1000
+  const tickers: TickerRow[] = []
+  for (let from = 0; ; from += PAGE) {
+    const r = await sb.from('companies').select('id, ticker').not('ticker', 'is', null).range(from, from + PAGE - 1).order('id')
+    if (r.error) return NextResponse.json({ error: r.error.message }, { status: 500 })
+    const batch = ((r.data ?? []) as TickerRow[]).filter(x => x.ticker)
+    tickers.push(...batch)
+    if (batch.length < PAGE) break
+  }
+
+  // BUDGET GUARD — fetchAllYahooQuotes is sequential at ~8 req/sec
+  // (yahoo throttles aggressively). 2,400 tickers × 120ms = 288s, way over
+  // the 60s Vercel cap. Until we switch to a queue worker, rotate through
+  // a sliding window of 350 cos per invocation prioritized by stalest-price.
+  // Daily cycle covers every co in ~7 days.
+  const CRON_BUDGET = 350
+  if (tickers.length > CRON_BUDGET) {
+    const { data: oldest } = await sb
+      .from('prices')
+      .select('company_id')
+      .order('updated_at', { ascending: true })
+      .limit(CRON_BUDGET)
+    const staleIds = new Set((oldest ?? []).map((r) => (r as { company_id: string }).company_id))
+    tickers.sort((a, b) => (staleIds.has(b.id) ? 1 : 0) - (staleIds.has(a.id) ? 1 : 0))
+    tickers.length = CRON_BUDGET
+  }
 
   const startedAt = Date.now()
   const quotes = await fetchAllYahooQuotes(tickers.map(t => t.ticker))
