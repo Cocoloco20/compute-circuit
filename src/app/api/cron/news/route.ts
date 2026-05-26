@@ -56,11 +56,42 @@ export async function GET(req: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
   const sb = supabaseServiceRole()
 
-  const cosResp = await sb.from('companies').select('id, ticker, name')
-  if (cosResp.error) return NextResponse.json({ error: cosResp.error.message }, { status: 500 })
-  const companies = (cosResp.data ?? []) as CoRow[]
+  // Paginate — Supabase select() default cap is 1000 rows, which silently
+  // truncated the news cron for our 2,461-row companies table (Phase 7B
+  // added the Forbes Global 2000 + FT 500 EU). Without this loop the cron
+  // only processed the first 1000 rows by id-sort order and the rest never
+  // got any news. Each page is one DB round-trip; with 2-3 pages total this
+  // adds <300ms even before the news fetches.
+  const PAGE = 1000
+  const companies: CoRow[] = []
+  for (let from = 0; ; from += PAGE) {
+    const r = await sb.from('companies').select('id, ticker, name').range(from, from + PAGE - 1).order('id')
+    if (r.error) return NextResponse.json({ error: r.error.message }, { status: 500 })
+    const batch = (r.data ?? []) as CoRow[]
+    companies.push(...batch)
+    if (batch.length < PAGE) break
+  }
 
-  const queries = companies.map(c => ({
+  // BUDGET GUARD — the cron has 60s. Fetching news for all 2,461 cos at
+  // chunkSize=12 takes ~200-400s and times out. Until we batch into multiple
+  // cron invocations or move to a queue worker, only run a sliding window:
+  // the oldest-news 600 cos per invocation. Daily cycle covers everyone in
+  // ~4 days; pulse-board / drawer never see total-zero state for any co.
+  const CRON_BUDGET = 600
+  const { data: oldestLink } = await sb
+    .from('signal_companies')
+    .select('company_id, signals!inner(date)')
+    .order('signals(date)', { ascending: true })
+    .limit(CRON_BUDGET)
+  const oldestIds = new Set((oldestLink ?? []).map((r) => (r as { company_id: string }).company_id))
+  const prioritized = companies.sort((a, b) => {
+    // Cos with old-or-no news first.
+    const ao = oldestIds.has(a.id) ? 0 : 1
+    const bo = oldestIds.has(b.id) ? 0 : 1
+    return ao - bo
+  }).slice(0, CRON_BUDGET)
+
+  const queries = prioritized.map(c => ({
     id: c.id,
     query: c.ticker ? `${c.ticker} stock` : c.name,
   }))

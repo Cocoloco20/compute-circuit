@@ -43,12 +43,27 @@ interface SignalInsert {
   impact: string | null
 }
 
+async function fetchAllCompanies(): Promise<CoRow[]> {
+  // Paginate — Supabase default cap is 1000 rows per request, which silently
+  // truncates queries against the 2,461-row companies table.
+  const PAGE = 1000
+  let from = 0
+  const out: CoRow[] = []
+  for (;;) {
+    let q = sb.from('companies').select('id, ticker, name').range(from, from + PAGE - 1).order('id')
+    if (ONLY) q = q.in('id', ONLY)
+    const { data, error } = await q
+    if (error) throw error
+    const batch = (data ?? []) as CoRow[]
+    out.push(...batch)
+    if (batch.length < PAGE) break
+    from += PAGE
+  }
+  return out
+}
+
 async function main() {
-  let q = sb.from('companies').select('id, ticker, name')
-  if (ONLY) q = q.in('id', ONLY)
-  const { data, error } = await q
-  if (error) { console.error(error); process.exit(1) }
-  const cos = (data ?? []) as CoRow[]
+  const cos = await fetchAllCompanies()
   console.log(`Walking ${cos.length} cos in chunks of ${CHUNK_SIZE}...`)
 
   const signalRows: SignalInsert[] = []
