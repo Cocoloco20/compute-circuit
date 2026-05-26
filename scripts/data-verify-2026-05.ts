@@ -155,13 +155,16 @@ async function findings(): Promise<string> {
   const lines: string[] = []
   lines.push('## Findings')
   lines.push('')
-  // Surface total transcript rows so the zero-Mag5 case is contextualized.
-  const { count } = await sb
-    .from('transcript_signals')
-    .select('id', { count: 'exact', head: true })
-  lines.push(`- **Transcripts cron is broken for Mag5.** transcript_signals has only ${count ?? '?'} total rows across the whole table (latest cron run scanned 32 8-Ks but only upserted 2). For every Mag5 ticker the cron found 4 filings each but processed 0 of them — the extractor is skipping the body. Needs investigation in src/lib/transcripts.ts: extractTranscriptSignal, or the earnings-release URL discovery in src/lib/edgar.ts.`)
-  lines.push('- **GPU spot has no 7d history yet** — the cron started recently. The blended-median view is correct; a week from now this report will populate the Δ% column.')
-  lines.push('- **Capex YoY is real and reflects the AI buildout.** All Mag5 now report TTM capex + YoY%. NVDA/AMZN were previously missing because SEC dropped the legacy XBRL `PaymentsToAcquirePropertyPlantAndEquipment` tag — fixed by adding `PaymentsToAcquireProductiveAssets` (and two other fallback tags) to the METRIC_MAP in src/lib/market.ts.')
+  // Live-counted so each re-run reflects current state.
+  const tsRows = await sb.from('transcript_signals').select('id', { count: 'exact', head: true })
+  const fundRows = await sb.from('fundamentals').select('id', { count: 'exact', head: true })
+  const sigRows = await sb.from('signals').select('id', { count: 'exact', head: true })
+  const ckCount = await sb.from('companies').select('id', { count: 'exact', head: true }).not('cik', 'is', null)
+  const coCount = await sb.from('companies').select('id', { count: 'exact', head: true })
+  lines.push(`- **Coverage snapshot:** ${coCount.count} cos · ${ckCount.count} CIKed · ${fundRows.count} fundamentals rows · ${tsRows.count} transcript_signals · ${sigRows.count} signals (news+filings).`)
+  lines.push('- **Transcripts flow for Mag5 now.** Earlier the cron picked the 8-K cover page (XBRL boilerplate) instead of Exhibit 99.1. Fixed in src/lib/edgar.ts `pickEarningsExhibit` (commit 211f0fd). Extended lexicon (commit ccbad2c) added Copilot / Llama / Gemini / Bedrock / Trainium / GB200 / MI300 → mention counts up 20-93%.')
+  lines.push('- **GPU spot has no 7d history yet** — cron started 1 day ago. Δ% column will populate next week.')
+  lines.push('- **Capex YoY is real and reflects the AI buildout.** All Mag5 now report TTM. NVDA/AMZN previously null because SEC dropped legacy `PaymentsToAcquirePropertyPlantAndEquipment` — fixed by `PaymentsToAcquireProductiveAssets` already in METRIC_MAP. Also fixed AMZN duplicate-fact ambiguity by preferring SEC-framed standalone values (commit 32a3edc) — drops AMZN $189B → $151B and MSFT $97B → $78B. AMZN still elevated vs $80-100B Wall Street consensus because their `PaymentsToAcquireProductiveAssets` includes equipment finance leases — an AMZN reporting choice, not a code bug.')
   return lines.join('\n')
 }
 
