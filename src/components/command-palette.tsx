@@ -60,6 +60,11 @@ interface BaseHit {
   layerId?: string | null
   /** for command hits — emitted on the cc:command event */
   commandId?: string | null
+  // Precomputed index fields for O(1) lowercasing and indexing during typing
+  _labelLower?: string
+  _subLower?: string
+  _tickerLower?: string
+  _labelWords?: string[]
 }
 type Hit = BaseHit
 
@@ -133,14 +138,14 @@ const TIER_NONE         = 99
  * Returns a tuple (tier, position) — caller sorts by tier, then position.
  */
 function score(hit: Hit, needle: string): { tier: number; pos: number } {
-  const label = hit.label.toLowerCase()
-  const sub = (hit.sub ?? '').toLowerCase()
-  const ticker = (hit.ticker ?? '').toLowerCase()
+  const label = hit._labelLower ?? hit.label.toLowerCase()
+  const sub = hit._subLower ?? (hit.sub ?? '').toLowerCase()
+  const ticker = hit._tickerLower ?? (hit.ticker ?? '').toLowerCase()
 
   if (ticker && ticker === needle) return { tier: TIER_EXACT_TICKER, pos: 0 }
 
   // word-boundary prefix: first letter of any whitespace-separated word matches
-  const labelWords = label.split(/[\s_/-]+/).filter(Boolean)
+  const labelWords = hit._labelWords ?? label.split(/[\s_/-]+/).filter(Boolean)
   for (const w of labelWords) {
     if (w.startsWith(needle)) return { tier: TIER_WORD_PREFIX, pos: w.length }
   }
@@ -255,6 +260,14 @@ function buildCorpus(data: GraphData): Hit[] {
       sub: cmd.sub,
       commandId: cmd.commandId,
     })
+  }
+
+  // Precompute lowercase fields and word tokens for fast fuzzy-matching search
+  for (const h of out) {
+    h._labelLower = h.label.toLowerCase()
+    h._subLower = (h.sub ?? '').toLowerCase()
+    h._tickerLower = (h.ticker ?? '').toLowerCase()
+    h._labelWords = h._labelLower.split(/[\s_/-]+/).filter(Boolean)
   }
 
   return out

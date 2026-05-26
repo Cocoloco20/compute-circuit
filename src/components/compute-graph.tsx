@@ -31,6 +31,7 @@ import CommandPalette from './command-palette'
 import PulseBoard from './pulse-board'
 import SupplyChainStrip from './supply-chain-strip'
 import WorldMap from './world-map'
+import WorldGlobe from './world-globe'
 import GlossaryView from './glossary-view'
 
 // ---------- visual constants ----------
@@ -72,6 +73,7 @@ interface NodePosition {
   z: number
 }
 interface FlowAnim {
+  tube?: THREE.Mesh
   particles: THREE.Mesh[]
   curve: THREE.CubicBezierCurve3
   speed: number
@@ -191,7 +193,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   // the 2D world map, and the Glossary reference view. The Pulse Board,
   // Supply Chain Strip, and ⌘K render in graph + world; Glossary takes over
   // the full canvas + suppresses the floating panels (it's a tour, not a HUD).
-  const [viewMode, setViewMode] = useState<'graph' | 'world' | 'glossary'>('graph')
+  const [viewMode, setViewMode] = useState<'graph' | 'globe' | 'world' | 'glossary'>('graph')
 
   const positions = useMemo(() => computePositions(data), [data])
 
@@ -421,6 +423,16 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
     // ----- companies -----
     // Discovered-via-scraper companies start with layer_id=null. Skip them in
     // the 3D scene so the visual stays curated — they still show in drawers.
+    // Sort companies by weight desc
+    const sortedCompanies = [...data.companies]
+      .filter(c => c.layer_id)
+      .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0));
+
+    const companyRanks = new Map();
+    sortedCompanies.forEach((c, idx) => {
+      companyRanks.set(c.id, idx);
+    });
+
     data.companies.forEach((c) => {
       if (!c.layer_id) return
       const pos = positions.companyPos.get(c.id)
@@ -432,7 +444,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
       const badge = makeBadge({ domain: c.domain, logoUrl: c.logo_url, logoStatus: c.logo_status, ringColor: ringHex, initials, scale })
       badge.position.set(pos.x, pos.y, pos.z)
-      badge.userData = { kind: 'company', id: c.id, label: `${c.name}${c.ticker ? ` · ${c.ticker}` : ''}` }
+      badge.userData = { kind: 'company', id: c.id, rank: companyRanks.get(c.id), label: `${c.name}${c.ticker ? ` · ${c.ticker}` : ''}` }
       applyFilterToMaterial(badge.material, !filterSet || filterSet.companies.has(c.id))
       scene.add(badge)
       nodeMeshes.push(badge)
@@ -442,7 +454,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const labelAccent = c.position_held ? '#fde68a' : c.private ? '#bfdbfe' : '#e2e8f0'
       const label = makeLabel(labelText, 0.34, labelAccent)
       label.position.set(pos.x, pos.y - scale * 0.62, pos.z)
-      label.userData = { kind: 'company', id: c.id, label: c.name }
+      label.userData = { kind: 'company', id: c.id, rank: companyRanks.get(c.id), label: c.name }
       applyFilterToMaterial(label.material, !filterSet || filterSet.companies.has(c.id))
       scene.add(label)
       nodeMeshes.push(label)
@@ -610,6 +622,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         particles.push(p)
       }
       flowAnims.push({
+        tube,
         particles,
         curve,
         speed: 0.05 + flow.magnitude * 0.015,
@@ -655,15 +668,51 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
     function tick() {
       const t = (performance.now() - t0) * 0.001
       controls.update()
+
+      // Calculate camera distance to controls target for level-of-detail (LOD) zoom logic
+      const distance = camera.position.distanceTo(controls.target)
+      let limit = 100
+      if (distance <= 15) {
+        limit = Infinity
+      } else if (distance < 35) {
+        const pct = (35 - distance) / 20 // 0 at 35, 1 at 15
+        limit = Math.floor(100 + pct * (data.companies.length - 100))
+      }
+
+      const visibleCompanies = new Set()
+      nodeMeshes.forEach((mesh) => {
+        if (mesh.userData.kind === 'company') {
+          const rank = mesh.userData.rank !== undefined ? mesh.userData.rank : 999999
+          const id = mesh.userData.id
+          const isFiltered = filterSet ? filterSet.companies.has(id) : false
+          const isSelected = !!(selected && selected.kind === 'company' && selected.id === id)
+          
+          const isVisible = (rank < limit) || isFiltered || isSelected
+          mesh.visible = isVisible
+          if (isVisible) {
+            visibleCompanies.add(id)
+          }
+        }
+      })
+
       // Slowly rotate bottlenecks for a "live" feel
       bottleneckMeshes.forEach((m) => { m.rotation.y = t * 0.6; m.rotation.x = t * 0.4 })
-      // Move particles along their flows
-      flowAnims.forEach(({ particles, curve, speed }) => {
+
+      // Move particles along their flows and update flow visibility based on endpoints visibility
+      flowAnims.forEach(({ tube, particles, curve, speed, flow }) => {
+        const fromVisible = flow.from_kind !== 'company' || visibleCompanies.has(flow.from_id)
+        const toVisible = flow.to_kind !== 'company' || visibleCompanies.has(flow.to_id)
+        const isVisible = fromVisible && toVisible
+
+        if (tube) tube.visible = isVisible
         particles.forEach((p, i) => {
-          let offset = (t * speed + i / particles.length) % 1
-          if (offset < 0) offset += 1
-          const point = curve.getPoint(offset)
-          p.position.copy(point)
+          p.visible = isVisible
+          if (isVisible) {
+            let offset = (t * speed + i / particles.length) % 1
+            if (offset < 0) offset += 1
+            const point = curve.getPoint(offset)
+            p.position.copy(point)
+          }
         })
       })
       renderer.render(scene, camera)
@@ -781,6 +830,16 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       {viewMode === 'graph' && (
         <div ref={mountRef} className="absolute inset-0" />
       )}
+      {viewMode === 'globe' && (
+        <div className="absolute inset-0">
+          <WorldGlobe
+            data={data}
+            onSelect={(s) => setSelected(s)}
+            selected={selected}
+            filterSet={filterSet}
+          />
+        </div>
+      )}
       {viewMode === 'world' && (
         <div className="absolute inset-0">
           <WorldMap data={data} onSelect={(s) => setSelected(s)} />
@@ -806,7 +865,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           </span>
         </div>
         <div className="pointer-events-auto flex items-center gap-2">
-          {/* View toggle — 3 segments. Visible on every breakpoint; the
+          {/* View toggle — 4 segments. Visible on every breakpoint; the
               active segment gets the accent color so the current view is
               obvious without reading labels. */}
           <div
@@ -815,8 +874,9 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
             aria-label="View mode"
           >
             <ViewSeg active={viewMode === 'graph'}    onClick={() => setViewMode('graph')}    icon="📊" label="Graph"    aria="Switch to 3D graph view" />
-            <ViewSeg active={viewMode === 'glossary'} onClick={() => setViewMode('glossary')} icon="📖" label="Glossary" aria="Switch to Glossary reference view" />
+            <ViewSeg active={viewMode === 'globe'}    onClick={() => setViewMode('globe')}    icon="🌍" label="Globe"    aria="Switch to 3D Earth globe view" />
             <ViewSeg active={viewMode === 'world'}    onClick={() => setViewMode('world')}    icon="🌐" label="World"    aria="Switch to 2D world map view" />
+            <ViewSeg active={viewMode === 'glossary'} onClick={() => setViewMode('glossary')} icon="📖" label="Glossary" aria="Switch to Glossary reference view" />
           </div>
           <button
             type="button"
