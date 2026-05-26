@@ -91,6 +91,9 @@ const METRIC_MAP: Record<string, string> = {
   OperatingIncomeLoss: 'operating_income',
   NetIncomeLoss: 'net_income',
   PaymentsToAcquirePropertyPlantAndEquipment: 'capex',
+  PaymentsToAcquireProductiveAssets: 'capex',
+  PaymentsForCapitalImprovements: 'capex',
+  PaymentsToAcquirePropertyPlantAndEquipmentAndIntangibleAssets: 'capex',
   NetCashProvidedByUsedInOperatingActivities: 'operating_cash_flow',
   Assets: 'total_assets',
   StockholdersEquity: 'total_equity',
@@ -109,9 +112,21 @@ export interface ParsedFundamental {
 interface XbrlUnit {
   end: string
   val: number
-  fp?: string  // 'FY' | 'Q1' | 'Q2' | 'Q3' | 'Q4'
+  fp?: string    // 'FY' | 'Q1' | 'Q2' | 'Q3' | 'Q4'
   fy?: number
   form?: string
+  /**
+   * SEC-normalized period identifier. Critical for disambiguation:
+   *   'CY2026Q1'   = standalone calendar-Q1 (e.g. 3 months of capex)
+   *   'CY2025'     = standalone calendar year
+   *   undefined/'' = some other aggregation — most often a lifetime cumulative
+   *                  total (Amazon's PaymentsToAcquireProductiveAssets does this)
+   *                  or a fiscal-YTD value that overlaps with periods we've
+   *                  already counted elsewhere.
+   * SEC documents `frame` as the value to use for cross-co comparability.
+   * Picking framed values means TTM math stops compounding cumulative totals.
+   */
+  frame?: string
 }
 
 export async function fetchEdgarFundamentals(cik: string, maxPerMetric = 12): Promise<ParsedFundamental[]> {
@@ -132,9 +147,28 @@ export async function fetchEdgarFundamentals(cik: string, maxPerMetric = 12): Pr
       const fact = usGaap[xbrlTag]
       if (!fact) continue
       const units = fact.units?.USD ?? []
-      // Sort newest first, take maxPerMetric most recent
-      const sorted = units
+      // First pass: keep only valid values, then sort newest first.
+      const valid = units
         .filter(u => u.end && Number.isFinite(u.val))
+        .sort((a, b) => b.end.localeCompare(a.end))
+      // For each (end, period_type) key, prefer the unit with a non-empty
+      // `frame` field. SEC sets `frame` only on the canonical standalone
+      // value for that period; values without a frame are typically lifetime
+      // cumulative totals or fiscal-YTD aggregates that double-count when
+      // summed across quarters. Picking the framed value matches what the
+      // co's earnings release headlines.
+      const dedupByKey = new Map<string, XbrlUnit>()
+      for (const u of valid) {
+        const period_type: 'Q' | 'FY' = u.fp === 'FY' ? 'FY' : 'Q'
+        const key = `${u.end}|${period_type}`
+        const existing = dedupByKey.get(key)
+        if (!existing) { dedupByKey.set(key, u); continue }
+        const existingHasFrame = !!existing.frame
+        const candidateHasFrame = !!u.frame
+        // Replace only if candidate is framed and existing isn't.
+        if (candidateHasFrame && !existingHasFrame) dedupByKey.set(key, u)
+      }
+      const sorted = Array.from(dedupByKey.values())
         .sort((a, b) => b.end.localeCompare(a.end))
         .slice(0, maxPerMetric)
       const bucket = byMetric.get(metric) ?? new Map<string, ParsedFundamental>()
@@ -175,10 +209,13 @@ export async function fetchAllYahooQuotes(tickers: string[]): Promise<Map<string
 }
 
 /** Sequential SEC fetches at ~6 req/sec to stay under the 10/sec limit. */
-export async function fetchAllEdgarFundamentals(ciks: Array<{ companyId: string; cik: string }>): Promise<Array<{ companyId: string; rows: ParsedFundamental[] }>> {
+export async function fetchAllEdgarFundamentals(
+  ciks: Array<{ companyId: string; cik: string }>,
+  maxPerMetric = 12
+): Promise<Array<{ companyId: string; rows: ParsedFundamental[] }>> {
   const results: Array<{ companyId: string; rows: ParsedFundamental[] }> = []
   for (const c of ciks) {
-    const rows = await fetchEdgarFundamentals(c.cik)
+    const rows = await fetchEdgarFundamentals(c.cik, maxPerMetric)
     results.push({ companyId: c.companyId, rows })
     await sleep(150)
   }
