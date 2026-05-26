@@ -66,6 +66,7 @@ export type SelectedRef =
   | { kind: 'investor'; id: string }
   | { kind: 'bottleneck'; id: string }
   | { kind: 'agency'; id: string }
+  | { kind: 'layer'; id: string }
 
 interface NodePosition {
   x: number
@@ -194,6 +195,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   // Supply Chain Strip, and ⌘K render in graph + world; Glossary takes over
   // the full canvas + suppresses the floating panels (it's a tour, not a HUD).
   const [viewMode, setViewMode] = useState<'graph' | 'globe' | 'world' | 'glossary'>('graph')
+  const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
 
   const positions = useMemo(() => computePositions(data), [data])
 
@@ -339,6 +341,14 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       ctx.drawImage(img, (128 - s) / 2, (128 - s) / 2, s, s)
       ctx.restore()
     }
+    function paintBadgePoint(canvas: HTMLCanvasElement, ringColor: string) {
+      const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = ringColor
+      ctx.beginPath()
+      ctx.arc(64, 64, 16, 0, Math.PI * 2)
+      ctx.fill()
+    }
 
     function makeBadge(opts: { domain: string | null; logoUrl?: string | null; logoStatus?: string | null; ringColor: string; initials: string; scale: number }): THREE.Sprite {
       const canvas = document.createElement('canvas')
@@ -352,6 +362,16 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const sprite = new THREE.Sprite(mat)
       sprite.scale.set(opts.scale, opts.scale, 1)
 
+      sprite.userData = {
+        isBadge: true,
+        canvas,
+        tex,
+        ringColor: opts.ringColor,
+        initials: opts.initials,
+        img: null as HTMLImageElement | null,
+        currentLOD: 'full'
+      }
+
       // Skip the upstream fetch when the maintenance cron has already flagged
       // this row as missing — saves a 404 round-trip per node on first render.
       const url = opts.logoStatus === 'missing'
@@ -360,7 +380,13 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       if (url) {
         const img = new Image()
         img.crossOrigin = 'anonymous'
-        img.onload = () => { paintBadgeLogo(canvas, opts.ringColor, img); tex.needsUpdate = true }
+        img.onload = () => {
+          sprite.userData.img = img
+          if (sprite.userData.currentLOD === 'full') {
+            paintBadgeLogo(canvas, opts.ringColor, img)
+            tex.needsUpdate = true
+          }
+        }
         img.onerror = () => { /* keep fallback initials */ }
         img.src = url
       }
@@ -444,7 +470,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
       const badge = makeBadge({ domain: c.domain, logoUrl: c.logo_url, logoStatus: c.logo_status, ringColor: ringHex, initials, scale })
       badge.position.set(pos.x, pos.y, pos.z)
-      badge.userData = { kind: 'company', id: c.id, rank: companyRanks.get(c.id), label: `${c.name}${c.ticker ? ` · ${c.ticker}` : ''}` }
+      Object.assign(badge.userData, { kind: 'company', id: c.id, layerId: c.layer_id, rank: companyRanks.get(c.id), label: `${c.name}${c.ticker ? ` · ${c.ticker}` : ''}` })
       applyFilterToMaterial(badge.material, !filterSet || filterSet.companies.has(c.id))
       scene.add(badge)
       nodeMeshes.push(badge)
@@ -454,7 +480,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const labelAccent = c.position_held ? '#fde68a' : c.private ? '#bfdbfe' : '#e2e8f0'
       const label = makeLabel(labelText, 0.34, labelAccent)
       label.position.set(pos.x, pos.y - scale * 0.62, pos.z)
-      label.userData = { kind: 'company', id: c.id, rank: companyRanks.get(c.id), label: c.name }
+      label.userData = { kind: 'company', id: c.id, layerId: c.layer_id, rank: companyRanks.get(c.id), label: c.name, isLabel: true }
       applyFilterToMaterial(label.material, !filterSet || filterSet.companies.has(c.id))
       scene.add(label)
       nodeMeshes.push(label)
@@ -466,26 +492,23 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       if (!pos) return
       const badge = makeBadge({ domain: inv.domain, ringColor: '#c084fc', initials: inv.name, scale: 1.35 })
       badge.position.set(pos.x, pos.y, pos.z)
-      badge.userData = { kind: 'investor', id: inv.id, label: inv.name }
+      Object.assign(badge.userData, { kind: 'investor', id: inv.id, label: inv.name })
       applyFilterToMaterial(badge.material, !filterSet || filterSet.investors.has(inv.id))
       scene.add(badge)
       nodeMeshes.push(badge)
 
       const label = makeLabel(inv.name, 0.36, '#e9d5ff')
       label.position.set(pos.x, pos.y - 0.95, pos.z)
-      label.userData = { kind: 'investor', id: inv.id, label: inv.name }
+      label.userData = { kind: 'investor', id: inv.id, label: inv.name, isLabel: true }
       applyFilterToMaterial(label.material, !filterSet || filterSet.investors.has(inv.id))
       scene.add(label)
       nodeMeshes.push(label)
     })
 
     // ----- agencies (Phase 7A — regulators / export-control bodies) -----
-    // Square sprites (distinct from circular badges used for cos/investors)
-    // with a flag emoji baked into the canvas for jurisdiction.
-    function makeAgencyBadge(name: string, jurisdictionFlag: string | null, scale: number): THREE.Sprite {
-      const canvas = document.createElement('canvas')
-      canvas.width = canvas.height = 128
+    function paintAgencyBadgeFull(canvas: HTMLCanvasElement, name: string, jurisdictionFlag: string | null) {
       const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
       ctx.fillStyle = '#cbd5e1'
       ctx.fillRect(2, 2, 124, 124)
       ctx.fillStyle = '#0f172a'
@@ -501,7 +524,39 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       ctx.font = 'bold 22px ui-monospace, SFMono-Regular, Menlo, monospace'
       ctx.textAlign = 'center'
       ctx.textBaseline = 'middle'
-      ctx.fillText(short, 64, 98)
+      ctx.fillText(short, 64, jurisdictionFlag ? 98 : 64)
+    }
+
+    function paintAgencyBadgeMonogram(canvas: HTMLCanvasElement, name: string) {
+      const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = '#cbd5e1'
+      ctx.fillRect(2, 2, 124, 124)
+      ctx.fillStyle = '#0f172a'
+      ctx.fillRect(8, 8, 112, 112)
+      const short = name.split(/[\s/(]+/).filter(Boolean).slice(0, 3).map(w => w[0]).join('').toUpperCase().slice(0, 4)
+      ctx.fillStyle = '#e2e8f0'
+      ctx.font = 'bold 28px ui-monospace, SFMono-Regular, Menlo, monospace'
+      ctx.textAlign = 'center'
+      ctx.textBaseline = 'middle'
+      ctx.fillText(short, 64, 64)
+    }
+
+    function paintAgencyBadgePoint(canvas: HTMLCanvasElement) {
+      const ctx = canvas.getContext('2d')!
+      ctx.clearRect(0, 0, canvas.width, canvas.height)
+      ctx.fillStyle = '#cbd5e1'
+      ctx.beginPath()
+      ctx.arc(64, 64, 16, 0, Math.PI * 2)
+      ctx.fill()
+    }
+
+    // Square sprites (distinct from circular badges used for cos/investors)
+    // with a flag emoji baked into the canvas for jurisdiction.
+    function makeAgencyBadge(name: string, jurisdictionFlag: string | null, scale: number): THREE.Sprite {
+      const canvas = document.createElement('canvas')
+      canvas.width = canvas.height = 128
+      paintAgencyBadgeFull(canvas, name, jurisdictionFlag)
       const tex = new THREE.CanvasTexture(canvas)
       tex.colorSpace = THREE.SRGBColorSpace
       tex.minFilter = THREE.LinearFilter
@@ -509,6 +564,17 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false })
       const sprite = new THREE.Sprite(mat)
       sprite.scale.set(scale, scale, 1)
+
+      sprite.userData = {
+        isBadge: true,
+        isAgency: true,
+        canvas,
+        tex,
+        name,
+        jurisdictionFlag,
+        currentLOD: 'full'
+      }
+
       return sprite
     }
     function jurisdictionToFlag(j: string | null | undefined): string | null {
@@ -523,13 +589,13 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       const flag = jurisdictionToFlag(a.jurisdiction)
       const sprite = makeAgencyBadge(a.name, flag, 1.0)
       sprite.position.set(pos.x, pos.y, pos.z)
-      sprite.userData = { kind: 'agency', id: a.id, label: a.name + (a.jurisdiction ? ` · ${a.jurisdiction}` : '') }
+      Object.assign(sprite.userData, { kind: 'agency', id: a.id, layerId: a.layer_id, label: a.name + (a.jurisdiction ? ` · ${a.jurisdiction}` : '') })
       scene.add(sprite)
       nodeMeshes.push(sprite)
       const labelText = a.name.length > 22 ? a.name.slice(0, 20) + '…' : a.name
       const label = makeLabel(labelText, 0.30, '#cbd5e1')
       label.position.set(pos.x, pos.y - 0.85, pos.z)
-      label.userData = { kind: 'agency', id: a.id, label: a.name }
+      label.userData = { kind: 'agency', id: a.id, layerId: a.layer_id, label: a.name, isLabel: true }
       scene.add(label)
       nodeMeshes.push(label)
     })
@@ -561,7 +627,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         b.severity === 'high' ? '#fed7aa' : '#fde68a'
       const bnLabel = makeLabel(b.name, 0.32, accent)
       bnLabel.position.set(pos.x, pos.y - 0.85, pos.z)
-      bnLabel.userData = { kind: 'bottleneck', id: b.id, label: b.name }
+      bnLabel.userData = { kind: 'bottleneck', id: b.id, label: b.name, isLabel: true }
       scene.add(bnLabel)
       nodeMeshes.push(bnLabel)
     })
@@ -662,6 +728,87 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
     renderer.domElement.addEventListener('click', onClick)
     renderer.domElement.addEventListener('pointermove', onPointerMove)
 
+    // ----- Level of Detail (LOD) & Frustum Calculations -----
+    const frustum = new THREE.Frustum()
+    const projScreenMatrix = new THREE.Matrix4()
+
+    function updateLOD() {
+      const camPos = camera.position
+      camera.updateMatrixWorld()
+      projScreenMatrix.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse)
+      frustum.setFromProjectionMatrix(projScreenMatrix)
+
+      const counts: Record<string, number> = {}
+      data.layers.forEach((l) => {
+        counts[l.id] = 0
+      })
+
+      nodeMeshes.forEach((mesh) => {
+        const dist = camPos.distanceTo(mesh.position)
+
+        // Frustum count check for layers
+        if (!mesh.userData.isLabel) {
+          const isCo = mesh.userData.kind === 'company'
+          const isAgency = mesh.userData.kind === 'agency'
+          if (isCo || isAgency) {
+            const threePos = new THREE.Vector3(mesh.position.x, mesh.position.y, mesh.position.z)
+            if (frustum.containsPoint(threePos)) {
+              const layerId = mesh.userData.layerId
+              if (layerId) {
+                counts[layerId] = (counts[layerId] || 0) + 1
+              }
+            }
+          }
+        }
+
+        // Badge LOD state machine
+        if (mesh.userData.isBadge) {
+          let targetLOD: 'full' | 'monogram' | 'point' = 'full'
+          if (dist > 150) {
+            targetLOD = 'point'
+          } else if (dist >= 50) {
+            targetLOD = 'monogram'
+          }
+
+          if (mesh.userData.currentLOD !== targetLOD) {
+            mesh.userData.currentLOD = targetLOD
+            const canvas = mesh.userData.canvas
+            const tex = mesh.userData.tex
+
+            if (mesh.userData.isAgency) {
+              if (targetLOD === 'full') {
+                paintAgencyBadgeFull(canvas, mesh.userData.name, mesh.userData.jurisdictionFlag)
+              } else if (targetLOD === 'monogram') {
+                paintAgencyBadgeMonogram(canvas, mesh.userData.name)
+              } else {
+                paintAgencyBadgePoint(canvas)
+              }
+            } else {
+              if (targetLOD === 'full') {
+                if (mesh.userData.img) {
+                  paintBadgeLogo(canvas, mesh.userData.ringColor, mesh.userData.img)
+                } else {
+                  paintBadgeFallback(canvas, mesh.userData.ringColor, mesh.userData.initials)
+                }
+              } else if (targetLOD === 'monogram') {
+                paintBadgeFallback(canvas, mesh.userData.ringColor, mesh.userData.initials)
+              } else {
+                paintBadgePoint(canvas, mesh.userData.ringColor)
+              }
+            }
+            tex.needsUpdate = true
+          }
+        }
+      })
+
+      setVisibleCounts(counts)
+    }
+
+    // Run initial LOD updates on mount
+    updateLOD()
+    const lastCameraPos = new THREE.Vector3().copy(camera.position)
+    let lastLodTime = performance.now()
+
     // ----- animation loop -----
     let raf = 0
     const t0 = performance.now()
@@ -679,6 +826,17 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         limit = Math.floor(100 + pct * (data.companies.length - 100))
       }
 
+      // Recompute on camera-move with a throttle (~200ms)
+      const currentCameraPos = camera.position
+      const now = performance.now()
+      if (now - lastLodTime > 200) {
+        if (currentCameraPos.distanceToSquared(lastCameraPos) > 0.01) {
+          updateLOD()
+          lastCameraPos.copy(currentCameraPos)
+        }
+        lastLodTime = now
+      }
+
       const visibleCompanies = new Set()
       nodeMeshes.forEach((mesh) => {
         if (mesh.userData.kind === 'company') {
@@ -687,11 +845,24 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           const isFiltered = filterSet ? filterSet.companies.has(id) : false
           const isSelected = !!(selected && selected.kind === 'company' && selected.id === id)
           
-          const isVisible = (rank < limit) || isFiltered || isSelected
+          let isVisible = (rank < limit) || isFiltered || isSelected
+
+          // Hide ticker labels when > 80 units away
+          if (mesh.userData.isLabel) {
+            const dist = camera.position.distanceTo(mesh.position)
+            if (dist > 80) {
+              isVisible = false
+            }
+          }
+          
           mesh.visible = isVisible
-          if (isVisible) {
+          if (isVisible && !mesh.userData.isLabel) {
             visibleCompanies.add(id)
           }
+        } else if (mesh.userData.isLabel) {
+          // Investor, agency, or bottleneck label
+          const dist = camera.position.distanceTo(mesh.position)
+          mesh.visible = dist <= 80
         }
       })
 
@@ -916,50 +1087,53 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       {/* ----- Layer key — left rail (top), desktop only -----
           Per-layer co count + today's signal count (8-K + news for cos in
           that layer). Hidden on phone; back at md:. */}
-      <div className="pointer-events-auto absolute left-4 top-16 z-10 hidden w-48 space-y-0.5 text-[11px] font-mono text-fg-muted md:block">
+      <div className="pointer-events-auto absolute left-4 top-16 z-10 hidden w-48 text-[11px] font-mono text-fg-muted md:block">
         <div className="mb-1 text-label text-fg-dim">Layers · 24h</div>
-        {[...data.layers].reverse().map((l) => {
-          const layerCoIds = new Set(
-            data.companies.filter(c => c.layer_id === l.id).map(c => c.id)
-          )
-          // Phase 7A: include agencies that sit on this layer in the count.
-          const layerAgencyCount = (data.agencies ?? []).filter(a => a.layer_id === l.id).length
-          const totalCount = layerCoIds.size + layerAgencyCount
-          const todayStart = new Date()
-          todayStart.setUTCHours(0, 0, 0, 0)
-          // Count signals with at least one company link in this layer, dated today
-          const todaySignalIds = new Set(
-            data.signalCompanies
-              .filter(sc => layerCoIds.has(sc.company_id))
-              .map(sc => sc.signal_id)
-          )
-          const todayActive = data.signals
-            .filter(s => todaySignalIds.has(s.id))
-            .filter(s => new Date(s.date).getTime() >= todayStart.getTime())
-            .length
-          // Desktop hover tooltip on the layer name. The native `title`
-          // attribute is the cheapest way to expose layer.description here —
-          // mobile users get the same content via the Glossary tab. If the
-          // description is missing (newly-added layer not yet curated), fall
-          // back to the layer name to keep the hover affordance intact.
-          const titleText = l.description ?? l.name
-          return (
-            <div key={l.id} className="flex items-center justify-between">
-              <span
-                title={titleText}
-                className="cursor-help underline decoration-border-default decoration-dotted underline-offset-2 hover:text-fg-primary hover:decoration-border-strong"
-              >
-                {l.name}
-              </span>
-              <span className="flex items-center gap-1.5">
-                {todayActive > 0 && (
-                  <span className="font-mono text-meta text-signal-info">+{todayActive}</span>
-                )}
-                <span className="text-fg-dim">{totalCount}</span>
-              </span>
-            </div>
-          )
-        })}
+        <div className={`space-y-0.5 pr-1.5 scrollbar-thin ${data.layers.length > 8 ? 'max-h-[160px] overflow-y-auto' : ''}`}>
+          {[...data.layers].reverse().map((l) => {
+            const layerCoIds = new Set(
+              data.companies.filter(c => c.layer_id === l.id).map(c => c.id)
+            )
+            // Phase 7A: include agencies that sit on this layer in the count.
+            const layerAgencyCount = (data.agencies ?? []).filter(a => a.layer_id === l.id).length
+            const totalCount = layerCoIds.size + layerAgencyCount
+            const visible = viewMode === 'graph' ? (visibleCounts[l.id] ?? 0) : totalCount
+            const todayStart = new Date()
+            todayStart.setUTCHours(0, 0, 0, 0)
+            // Count signals with at least one company link in this layer, dated today
+            const todaySignalIds = new Set(
+              data.signalCompanies
+                .filter(sc => layerCoIds.has(sc.company_id))
+                .map(sc => sc.signal_id)
+            )
+            const todayActive = data.signals
+              .filter(s => todaySignalIds.has(s.id))
+              .filter(s => new Date(s.date).getTime() >= todayStart.getTime())
+              .length
+            // Desktop hover tooltip on the layer name. The native `title`
+            // attribute is the cheapest way to expose layer.description here —
+            // mobile users get the same content via the Glossary tab. If the
+            // description is missing (newly-added layer not yet curated), fall
+            // back to the layer name to keep the hover affordance intact.
+            const titleText = l.description ?? l.name
+            return (
+              <div key={l.id} className="flex items-center justify-between mr-1">
+                <span
+                  title={titleText}
+                  className="cursor-help underline decoration-border-default decoration-dotted underline-offset-2 hover:text-fg-primary hover:decoration-border-strong"
+                >
+                  {l.name}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  {todayActive > 0 && (
+                    <span className="font-mono text-meta text-signal-info">+{todayActive}</span>
+                  )}
+                  <span className="text-fg-dim">{visible}/{totalCount}</span>
+                </span>
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* ----- Backer filter chips — left rail (bottom), desktop only ----- */}
@@ -1062,6 +1236,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           selected={selected}
           data={data}
           onClose={() => setSelected(null)}
+          onSelect={(s) => setSelected(s)}
         />
       )}
       {paletteOpen && (

@@ -20,6 +20,12 @@ import { computeCapexTTM } from '@/lib/capex'
 import { CPC_SUBCLASS_LABELS } from '@/lib/uspto'
 import { getLogoUrl } from '@/lib/logo'
 import type { SelectedRef } from './compute-graph'
+import {
+  deriveContextForCompany,
+  deriveContextForAgency,
+  deriveContextForBottleneck,
+  type ContextRelation,
+} from '@/lib/context-graph'
 
 function formatUsd(n: number | null | undefined): string {
   if (n == null) return '—'
@@ -48,11 +54,12 @@ interface Props {
   selected: SelectedRef
   data: GraphData
   onClose: () => void
+  onSelect?: (s: SelectedRef) => void
 }
 
 
-export default function EntityDrawer({ selected, data, onClose }: Props) {
-  const body = renderBody(selected, data)
+export default function EntityDrawer({ selected, data, onClose, onSelect }: Props) {
+  const body = renderBody(selected, data, onSelect)
   return (
     <>
       {/* Mobile scrim — tap to dismiss. Sits below the drawer but above the
@@ -104,11 +111,12 @@ export default function EntityDrawer({ selected, data, onClose }: Props) {
   )
 }
 
-function renderBody(selected: SelectedRef, data: GraphData): React.ReactNode {
-  if (selected.kind === 'company') return <CompanyBody id={selected.id} data={data} />
+function renderBody(selected: SelectedRef, data: GraphData, onSelect?: (s: SelectedRef) => void): React.ReactNode {
+  if (selected.kind === 'company') return <CompanyBody id={selected.id} data={data} onSelect={onSelect} />
   if (selected.kind === 'investor') return <InvestorBody id={selected.id} data={data} />
-  if (selected.kind === 'agency') return <AgencyBody id={selected.id} data={data} />
-  return <BottleneckBody id={selected.id} data={data} />
+  if (selected.kind === 'agency') return <AgencyBody id={selected.id} data={data} onSelect={onSelect} />
+  if (selected.kind === 'layer') return <LayerBody id={selected.id} data={data} onSelect={onSelect} />
+  return <BottleneckBody id={selected.id} data={data} onSelect={onSelect} />
 }
 
 // Phase 7A: ISO 3166-1 alpha-2 country code → Unicode flag emoji ('US' → '🇺🇸').
@@ -122,9 +130,9 @@ export function countryToFlag(country: string | null | undefined): string | null
 
 // ---------- Company (tabbed) ----------
 
-type CompanyTab = 'overview' | 'financials' | 'activity' | 'holders' | 'oss'
+type CompanyTab = 'overview' | 'financials' | 'activity' | 'holders' | 'oss' | 'context'
 
-function CompanyBody({ id, data }: { id: string; data: GraphData }) {
+function CompanyBody({ id, data, onSelect }: { id: string; data: GraphData; onSelect?: (s: SelectedRef) => void }) {
   const company = data.companies.find(c => c.id === id)
   const [tab, setTab] = useState<CompanyTab>('overview')
   if (!company) return <Empty msg="Company not found" />
@@ -141,6 +149,7 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
     new Set(data.holdings.filter(h => h.company_id === id).map(h => h.investor_id)).size +
     new Set(data.backers.filter(b => b.company_id === id).map(b => b.investor_id)).size
   const ossActive = data.hfActivity.some(h => h.company_id === id && h.model_count > 0)
+  const contextCount = deriveContextForCompany(id, data).length
 
   return (
     <>
@@ -154,6 +163,7 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
           { id: 'activity',   label: 'Activity', count: activityCount },
           { id: 'holders',    label: 'Holders',  count: holderCount },
           ...(ossActive ? [{ id: 'oss' as const, label: 'OSS' }] : []),
+          { id: 'context',    label: 'Context',  count: contextCount },
         ]}
       />
       <div className="mt-3">
@@ -162,6 +172,7 @@ function CompanyBody({ id, data }: { id: string; data: GraphData }) {
         {tab === 'activity'   && <CompanyActivity   companyId={id} data={data} />}
         {tab === 'holders'    && <CompanyHolders    companyId={id} data={data} />}
         {tab === 'oss'        && <OpenSourceFootprint companyId={id} data={data} />}
+        {tab === 'context'    && <ContextList relations={deriveContextForCompany(id, data)} onSelect={onSelect} />}
       </div>
     </>
   )
@@ -1072,8 +1083,11 @@ function PortfolioBreakdown({ portfolio }: { portfolio: GraphData['companies'] }
 // Mirrors InvestorBody: Header + sub-sections. Recent regulatory events will
 // populate once a regulatory_events cron writes to its own table.
 
-function AgencyBody({ id, data }: { id: string; data: GraphData }) {
+type AgencyTab = 'overview' | 'context'
+
+function AgencyBody({ id, data, onSelect }: { id: string; data: GraphData; onSelect?: (s: SelectedRef) => void }) {
   const ag = (data.agencies ?? []).find(a => a.id === id)
+  const [tab, setTab] = useState<AgencyTab>('overview')
   if (!ag) return <Empty msg="Agency not found" />
   const domain = ag.website ? (() => {
     try { return new URL(ag.website).hostname.replace(/^www\./, '') }
@@ -1081,48 +1095,69 @@ function AgencyBody({ id, data }: { id: string; data: GraphData }) {
   })() : null
   const flag = countryToFlag(ag.jurisdiction)
   const sub = [flag, ag.jurisdiction, ag.agency_type].filter(Boolean).join(' · ')
+  const contextCount = deriveContextForAgency(id, data).length
+
   return (
     <>
       <Header domain={domain} name={ag.name} sub={sub || 'agency'} />
-      <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
-        <Stat label="Jurisdiction" value={ag.jurisdiction ?? '—'} />
-        <Stat label="Type" value={ag.agency_type ?? '—'} />
+      <Tabs
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { id: 'overview', label: 'Overview' },
+          { id: 'context',  label: 'Context', count: contextCount },
+        ]}
+      />
+      <div className="mt-3">
+        {tab === 'overview' && (
+          <>
+            <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+              <Stat label="Jurisdiction" value={ag.jurisdiction ?? '—'} />
+              <Stat label="Type" value={ag.agency_type ?? '—'} />
+            </div>
+            {ag.website && (
+              <Section title="Website">
+                <a href={ag.website} target="_blank" rel="noopener noreferrer"
+                   className="break-all text-accent-primary hover:underline">{ag.website}</a>
+              </Section>
+            )}
+            {ag.twitter_handle && (
+              <Section title="Twitter">
+                <a href={`https://x.com/${ag.twitter_handle.replace(/^@/, '')}`} target="_blank" rel="noopener noreferrer"
+                   className="text-accent-primary hover:underline">@{ag.twitter_handle.replace(/^@/, '')}</a>
+              </Section>
+            )}
+            {ag.rss_feed_url && (
+              <Section title="RSS feed">
+                <a href={ag.rss_feed_url} target="_blank" rel="noopener noreferrer"
+                   className="break-all text-fg-secondary hover:text-fg-primary">{ag.rss_feed_url}</a>
+              </Section>
+            )}
+            <Section title="Recent regulatory events">
+              <div className="text-xs text-fg-muted">
+                Regulatory event tracker not yet wired — this section will populate
+                once the <code className="font-mono text-fg-secondary">regulatory_events</code> cron lands.
+              </div>
+            </Section>
+          </>
+        )}
+        {tab === 'context' && <ContextList relations={deriveContextForAgency(id, data)} onSelect={onSelect} />}
       </div>
-      {ag.website && (
-        <Section title="Website">
-          <a href={ag.website} target="_blank" rel="noopener noreferrer"
-             className="break-all text-accent-primary hover:underline">{ag.website}</a>
-        </Section>
-      )}
-      {ag.twitter_handle && (
-        <Section title="Twitter">
-          <a href={`https://x.com/${ag.twitter_handle.replace(/^@/, '')}`} target="_blank" rel="noopener noreferrer"
-             className="text-accent-primary hover:underline">@{ag.twitter_handle.replace(/^@/, '')}</a>
-        </Section>
-      )}
-      {ag.rss_feed_url && (
-        <Section title="RSS feed">
-          <a href={ag.rss_feed_url} target="_blank" rel="noopener noreferrer"
-             className="break-all text-fg-secondary hover:text-fg-primary">{ag.rss_feed_url}</a>
-        </Section>
-      )}
-      <Section title="Recent regulatory events">
-        <div className="text-xs text-fg-muted">
-          Regulatory event tracker not yet wired — this section will populate
-          once the <code className="font-mono text-fg-secondary">regulatory_events</code> cron lands.
-        </div>
-      </Section>
     </>
   )
 }
 
 // ---------- Bottleneck ----------
 
-function BottleneckBody({ id, data }: { id: string; data: GraphData }) {
+type BottleneckTab = 'overview' | 'context'
+
+function BottleneckBody({ id, data, onSelect }: { id: string; data: GraphData; onSelect?: (s: SelectedRef) => void }) {
   const b = data.bottlenecks.find(x => x.id === id)
+  const [tab, setTab] = useState<BottleneckTab>('overview')
   if (!b) return <Empty msg="Bottleneck not found" />
   const benIds = new Set(data.bottleneckBeneficiaries.filter(x => x.bottleneck_id === id).map(x => x.company_id))
   const benefs = data.companies.filter(c => benIds.has(c.id))
+  const contextCount = deriveContextForBottleneck(id, data).length
 
   const sevColor =
     b.severity === 'critical' ? 'text-signal-alert' :
@@ -1138,23 +1173,135 @@ function BottleneckBody({ id, data }: { id: string; data: GraphData }) {
           <span className="text-fg-muted">{b.status}</span>
         </div>
       </div>
-      <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
-        <Stat label="Above" value={b.between_above ?? '—'} />
-        <Stat label="Below" value={b.between_below ?? '—'} />
-      </div>
-      {b.timeline && <Section title="Timeline">{b.timeline}</Section>}
-      {b.evidence && <Section title="Evidence">{b.evidence}</Section>}
+      <Tabs
+        active={tab}
+        onChange={setTab}
+        tabs={[
+          { id: 'overview', label: 'Overview' },
+          { id: 'context',  label: 'Context', count: contextCount },
+        ]}
+      />
+      <div className="mt-3">
+        {tab === 'overview' && (
+          <>
+            <div className="mb-4 grid grid-cols-2 gap-2 text-xs">
+              <Stat label="Above" value={b.between_above ?? '—'} />
+              <Stat label="Below" value={b.between_below ?? '—'} />
+            </div>
+            {b.timeline && <Section title="Timeline">{b.timeline}</Section>}
+            {b.evidence && <Section title="Evidence">{b.evidence}</Section>}
 
-      <Section title={`Beneficiaries (${benefs.length})`}>
-        <div className="flex flex-wrap gap-1">
-          {benefs.map(c => (
-            <span key={c.id} className="rounded border border-border-default px-1.5 py-0.5 text-[11px] text-feed-hf">
-              {c.ticker ?? c.name}
-            </span>
-          ))}
-        </div>
-      </Section>
+            <Section title={`Beneficiaries (${benefs.length})`}>
+              <div className="flex flex-wrap gap-1">
+                {benefs.map(c => (
+                  <span key={c.id} className="rounded border border-border-default px-1.5 py-0.5 text-[11px] text-feed-hf">
+                    {c.ticker ?? c.name}
+                  </span>
+                ))}
+              </div>
+            </Section>
+          </>
+        )}
+        {tab === 'context' && <ContextList relations={deriveContextForBottleneck(id, data)} onSelect={onSelect} />}
+      </div>
     </>
+  )
+}
+
+// ---------- Layer ----------
+
+function LayerBody({ id, data, onSelect }: { id: string; data: GraphData; onSelect?: (s: SelectedRef) => void }) {
+  const layer = data.layers.find(l => l.id === id)
+  if (!layer) return <Empty msg="Layer not found" />
+  const cos = data.companies.filter(c => c.layer_id === id)
+  return (
+    <>
+      <div className="mb-4">
+        <div className="text-xl font-semibold text-fg-primary">{layer.name}</div>
+        {layer.description && <p className="mt-2 text-xs text-fg-secondary">{layer.description}</p>}
+      </div>
+      {cos.length > 0 && (
+        <Section title="Companies in Layer">
+          <div className="flex flex-wrap gap-1.5">
+            {cos.map(c => (
+              <button
+                key={c.id}
+                type="button"
+                onClick={() => onSelect?.({ kind: 'company', id: c.id })}
+                className="rounded border border-border-default bg-bg-surface/30 px-2.5 py-1 text-xs text-accent-primary hover:border-accent-primary/50 hover:bg-bg-surface/60 transition-all font-mono"
+              >
+                {c.ticker ?? c.name}
+              </button>
+            ))}
+          </div>
+        </Section>
+      )}
+    </>
+  )
+}
+
+// ---------- ContextList ----------
+
+function ContextList({
+  relations,
+  onSelect,
+}: {
+  relations: ContextRelation[]
+  onSelect?: (s: SelectedRef) => void
+}) {
+  if (relations.length === 0) {
+    return <div className="text-xs text-fg-muted">No related entities found.</div>
+  }
+
+  return (
+    <div className="space-y-2">
+      {relations.map((rel, idx) => {
+        let relBadgeColor = 'text-fg-secondary border-border-default bg-bg-surface/10'
+        if (rel.relation === 'in layer') {
+          relBadgeColor = 'text-signal-info border-signal-info/20 bg-signal-info/5'
+        } else if (rel.relation === 'invested by' || rel.relation === 'invests in') {
+          relBadgeColor = 'text-accent-primary border-accent-primary/20 bg-accent-primary/5'
+        } else if (rel.relation === 'benefits from' || rel.relation === 'beneficiary company') {
+          relBadgeColor = 'text-feed-filings border-feed-filings/20 bg-feed-filings/5'
+        } else if (rel.relation === 'regulated company' || rel.relation === 'jurisdiction agency') {
+          relBadgeColor = 'text-signal-warn border-signal-warn/20 bg-signal-warn/5'
+        }
+
+        const kindLabels: Record<string, string> = {
+          company: 'CO',
+          investor: 'VC',
+          agency: 'GOV',
+          bottleneck: 'GTE',
+          layer: 'LYR',
+        }
+
+        return (
+          <button
+            key={`${rel.ref.kind}-${rel.ref.id}-${idx}`}
+            type="button"
+            onClick={() => onSelect?.(rel.ref)}
+            className="w-full text-left rounded-card border border-border-default bg-bg-surface/30 px-3 py-2 flex items-center justify-between hover:border-border-strong hover:bg-bg-surface/60 transition-all group"
+          >
+            <div className="min-w-0 flex-1 pr-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`text-[10px] font-mono uppercase px-1.5 py-0.5 rounded border ${relBadgeColor}`}>
+                  {rel.relation}
+                </span>
+                <span className="text-[9px] font-mono text-fg-muted uppercase">
+                  {kindLabels[rel.ref.kind] ?? rel.ref.kind}
+                </span>
+              </div>
+              <div className="mt-1.5 text-xs font-semibold text-fg-primary group-hover:text-accent-primary transition-colors truncate">
+                {rel.label}
+              </div>
+            </div>
+            <span className="text-fg-dim group-hover:text-fg-primary group-hover:translate-x-0.5 transition-all text-base" aria-hidden="true">
+              →
+            </span>
+          </button>
+        )
+      })}
+    </div>
   )
 }
 
