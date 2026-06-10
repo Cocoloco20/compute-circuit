@@ -54,7 +54,8 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
   if (variant === 'mobile') {
     return (
       <div className="space-y-4 px-4 py-3 text-body text-fg-secondary">
-        <PulseSections
+        <MyRadar data={data} onSelect={onSelect} />
+          <PulseSections
           movers={movers}
           filings={filings}
           news={news}
@@ -87,6 +88,7 @@ export default function PulseBoard({ data, onSelect, variant = 'desktop' }: Prop
       </button>
       {open && (
         <div className="max-h-[calc(100vh-200px)] space-y-4 overflow-y-auto px-4 py-3">
+          <MyRadar data={data} onSelect={onSelect} />
           <PulseSections
             movers={movers}
             filings={filings}
@@ -1028,3 +1030,67 @@ function useGithubMomentum(data: GraphData): GithubMomentumRow[] {
 }
 
 
+
+// ---------- Phase 9: My Radar — the investor layer ----------
+//
+// First thing on the Pulse Board: YOUR names. For each tracked company we
+// show price vs your average cost, whether price has entered your buy/sell
+// zone, and how many signals (news + filings) hit it in the last 7 days.
+// Tracking is managed from each company's drawer (Track button).
+function MyRadar({ data, onSelect }: { data: GraphData; onSelect: (sel: SelectedRef) => void }) {
+  if (data.watchlist.length === 0) return null
+  const sevenAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10)
+  const recentSignalIds = new Set(data.signals.filter(sg => sg.date >= sevenAgo).map(sg => sg.id))
+  const signalCount = (coId: string) =>
+    data.signalCompanies.filter(l => l.company_id === coId && recentSignalIds.has(l.signal_id)).length
+
+  return (
+    <PulseSection title={`My Radar · ${data.watchlist.length} tracked`}>
+      {data.watchlist.map(w => {
+        const co = data.companies.find(c => c.id === w.company_id)
+        if (!co) return null
+        const px = co.last_price
+        const pl = px != null && w.avg_cost_usd ? ((px - w.avg_cost_usd) / w.avg_cost_usd) * 100 : null
+        const inBuyZone = px != null && w.target_buy_usd != null && px <= w.target_buy_usd
+        const inSellZone = px != null && w.target_sell_usd != null && px >= w.target_sell_usd
+        const sigs = signalCount(co.id)
+        return (
+          <button
+            key={w.company_id}
+            type="button"
+            onClick={() => onSelect({ kind: 'company', id: co.id })}
+            className="block w-full rounded border border-border-default px-2 py-1.5 text-left text-[11px] hover:bg-zinc-900/60"
+          >
+            <div className="flex items-baseline justify-between gap-2">
+              <span className="font-medium text-fg-primary">{co.ticker ?? co.name}</span>
+              <span className="font-mono text-fg-muted">
+                {px != null ? `$${px >= 100 ? px.toFixed(0) : px.toFixed(2)}` : '—'}
+                {pl != null && (
+                  <span className={pl >= 0 ? ' text-signal-healthy' : ' text-signal-alert'}>
+                    {' '}{pl >= 0 ? '+' : ''}{pl.toFixed(1)}%
+                  </span>
+                )}
+              </span>
+            </div>
+            <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
+              {inBuyZone && (
+                <span className="rounded bg-emerald-500/15 px-1 font-mono text-[9px] uppercase text-emerald-400">
+                  in your buy zone
+                </span>
+              )}
+              {inSellZone && (
+                <span className="rounded bg-amber-500/15 px-1 font-mono text-[9px] uppercase text-amber-400">
+                  above your sell level
+                </span>
+              )}
+              {sigs > 0 && (
+                <span className="font-mono text-[9px] text-fg-dim">{sigs} signal{sigs === 1 ? '' : 's'} · 7d</span>
+              )}
+              {w.thesis_note && <span className="truncate text-fg-dim">{w.thesis_note}</span>}
+            </div>
+          </button>
+        )
+      })}
+    </PulseSection>
+  )
+}

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { supabaseServiceRole } from '@/lib/supabase/service-role'
 import { fetchGraph } from '@/lib/graph-data'
 import { buildDigest, renderEmailHtml } from '@/lib/digest'
 import { sendEmail } from '@/lib/email'
@@ -46,14 +47,24 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'DIGEST_EMAIL not configured' }, { status: 500 })
   }
 
-  const watchlistRaw = process.env.WATCHLIST_CO_IDS ?? ''
-  const watchedCoIds = watchlistRaw
+  // Watchlist source priority (Phase 9): the watchlist TABLE — editable from
+  // each company's drawer in the UI — wins over the legacy WATCHLIST_CO_IDS
+  // env var, which required a redeploy to change. Env var stays as fallback
+  // so existing setups keep working.
+  const sbWl = supabaseServiceRole()
+  const wlResp = await sbWl
+    .from('watchlist')
+    .select('company_id, alerts_enabled')
+    .eq('alerts_enabled', true)
+  const tableIds = ((wlResp.data ?? []) as Array<{ company_id: string }>).map(r => r.company_id)
+  const envIds = (process.env.WATCHLIST_CO_IDS ?? '')
     .split(',')
     .map(s => s.trim())
     .filter(Boolean)
+  const watchedCoIds = tableIds.length > 0 ? tableIds : envIds
 
   if (watchedCoIds.length === 0) {
-    return NextResponse.json({ error: 'WATCHLIST_CO_IDS is empty or not configured' }, { status: 500 })
+    return NextResponse.json({ error: 'watchlist empty — track companies in the UI or set WATCHLIST_CO_IDS' }, { status: 500 })
   }
 
   // ── Fetch + Build ─────────────────────────────────────────────────────────

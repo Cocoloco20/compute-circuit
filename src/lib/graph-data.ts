@@ -31,6 +31,7 @@ import type {
   ArxivSnapshot,
   Agency,
   ComputeContract,
+  WatchlistEntry,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -70,7 +71,8 @@ export interface GraphData {
   eiaInternational: EiaInternationalSnapshot[]  // Fab-country electricity stats
   aeoProjections: AeoProjection[]           // AEO 2026 long-term forecast (data center demand)
   agencies: Agency[]
-  computeContracts: ComputeContract[]      // Phase 8 — buyer→seller mega-deal ledger                        // Phase 7A — regulators / export-control / standards
+  computeContracts: ComputeContract[]
+  watchlist: WatchlistEntry[]              // Phase 9 — the investor layer      // Phase 8 — buyer→seller mega-deal ledger                        // Phase 7A — regulators / export-control / standards
   lastUpdates: {                  // GasCity-style "instrument is live" telemetry
     price: string | null          // ISO of most-recent companies.price_updated_at
     news: string | null           // most-recent signals.date where source='google-news'
@@ -175,7 +177,7 @@ export async function fetchGraph(): Promise<GraphData> {
   const [
     sc, fnd, h, ins, fr, tr, gpu, gpuHs, hf, gh,
     gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers,
-    ag, cc,
+    ag, cc, wl,
   ] = await Promise.all([
     fetchSignalCompanies(),
     fetchFundamentals(),
@@ -257,11 +259,13 @@ export async function fetchGraph(): Promise<GraphData> {
     sb.from('agencies').select('*').order('name').limit(50),
     // Phase 8 — compute contracts ledger (hand-curated, <100 rows).
     sb.from('compute_contracts').select('*').order('announced', { ascending: false }).limit(200),
+    // Phase 9 — user watchlist (single-user tool, tiny table).
+    sb.from('watchlist').select('*').order('added_at').limit(200),
   ])
 
   // Non-fatal reads — table may be empty / missing migration / RLS-denied.
   // Warn instead of failing the whole page.
-  for (const r of [gpuHs, ag, cc, gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] as Array<{ error: { message: string } | null }>) {
+  for (const r of [gpuHs, ag, cc, wl, gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] as Array<{ error: { message: string } | null }>) {
     if (r.error) {
       // eslint-disable-next-line no-console
       console.warn('[graph-data] optional table read failed:', r.error.message)
@@ -305,6 +309,7 @@ export async function fetchGraph(): Promise<GraphData> {
     aeoProjections: (aeo.data ?? []) as AeoProjection[],
     agencies: (ag.data ?? []) as Agency[],
     computeContracts: (cc.data ?? []) as ComputeContract[],
+    watchlist: (wl.data ?? []) as WatchlistEntry[],
     lastUpdates: {
       price: ((c.data ?? []) as Company[])
         .map(co => co.price_updated_at)

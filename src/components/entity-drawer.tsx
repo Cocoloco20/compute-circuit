@@ -393,6 +393,7 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
 
   return (
     <>
+      <TrackControls company={company} data={data} />
       <AiThesisCard
         thesisAi={company.thesis_ai}
         riskAi={company.thesis_risk_ai}
@@ -1975,5 +1976,137 @@ function ComputeDealsSection({ companyId, data }: { companyId: string; data: Gra
           })}
       </ul>
     </Section>
+  )
+}
+
+// ---------- Phase 9: investor layer — track / position controls ----------
+//
+// Single-user auth: writes hit /api/watchlist with Bearer CRON_SECRET. The
+// key is asked for ONCE (prompt) and cached in localStorage('cc_key'), so
+// after the first unlock tracking is one click. Reads come in with the page
+// payload (anon RLS), so a freshly-saved row shows optimistically here and
+// fully on next load.
+function getClientKey(): string | null {
+  if (typeof window === 'undefined') return null
+  let k = window.localStorage.getItem('cc_key')
+  if (!k) {
+    k = window.prompt('Enter your CRON_SECRET to unlock tracking (stored locally):')
+    if (k) window.localStorage.setItem('cc_key', k.trim())
+  }
+  return k?.trim() || null
+}
+
+function TrackControls({ company, data }: { company: GraphData['companies'][number]; data: GraphData }) {
+  const existing = data.watchlist.find(w => w.company_id === company.id)
+  const [tracked, setTracked] = useState(!!existing)
+  const [editing, setEditing] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [form, setForm] = useState({
+    shares: existing?.shares?.toString() ?? '',
+    avg_cost_usd: existing?.avg_cost_usd?.toString() ?? '',
+    target_buy_usd: existing?.target_buy_usd?.toString() ?? '',
+    target_sell_usd: existing?.target_sell_usd?.toString() ?? '',
+    thesis_note: existing?.thesis_note ?? '',
+  })
+
+  const save = async (remove = false) => {
+    const key = getClientKey()
+    if (!key) return
+    setBusy(true)
+    try {
+      const res = remove
+        ? await fetch(`/api/watchlist?company_id=${encodeURIComponent(company.id)}`, {
+            method: 'DELETE', headers: { Authorization: `Bearer ${key}` } })
+        : await fetch('/api/watchlist', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${key}` },
+            body: JSON.stringify({
+              company_id: company.id,
+              shares: form.shares ? Number(form.shares) : null,
+              avg_cost_usd: form.avg_cost_usd ? Number(form.avg_cost_usd) : null,
+              target_buy_usd: form.target_buy_usd ? Number(form.target_buy_usd) : null,
+              target_sell_usd: form.target_sell_usd ? Number(form.target_sell_usd) : null,
+              thesis_note: form.thesis_note || null,
+            }),
+          })
+      if (res.status === 401) {
+        window.localStorage.removeItem('cc_key')
+        window.alert('Key rejected — try again.')
+        return
+      }
+      if (!res.ok) { window.alert('Save failed'); return }
+      setTracked(!remove)
+      setEditing(false)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const num = (s: string) => (s ? Number(s) : null)
+  const px = company.last_price
+  const cost = num(form.avg_cost_usd)
+  const pl = px != null && cost ? ((px - cost) / cost) * 100 : null
+
+  return (
+    <div className="mb-3 rounded-lg border border-border-default bg-zinc-900/40 p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => (tracked ? save(true) : save(false))}
+          className={`rounded px-2 py-1 font-mono text-[11px] uppercase tracking-wide transition-colors ${
+            tracked
+              ? 'bg-amber-500/15 text-amber-400 hover:bg-amber-500/25'
+              : 'bg-zinc-800 text-zinc-300 hover:bg-zinc-700'
+          }`}
+        >
+          {tracked ? '★ Tracked — untrack' : '☆ Track this company'}
+        </button>
+        {tracked && (
+          <button type="button" onClick={() => setEditing(e => !e)}
+                  className="font-mono text-[11px] text-fg-muted hover:text-zinc-200">
+            {editing ? 'close' : 'position / targets'}
+          </button>
+        )}
+        {tracked && !editing && pl != null && (
+          <span className={`font-mono text-[11px] ${pl >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+            {pl >= 0 ? '+' : ''}{pl.toFixed(1)}% vs cost
+          </span>
+        )}
+      </div>
+      {tracked && editing && (
+        <div className="mt-2 grid grid-cols-2 gap-1.5 text-[11px]">
+          {([
+            ['shares', 'Shares'],
+            ['avg_cost_usd', 'Avg cost $'],
+            ['target_buy_usd', 'Buy below $'],
+            ['target_sell_usd', 'Sell above $'],
+          ] as const).map(([k, label]) => (
+            <label key={k} className="flex flex-col gap-0.5 text-fg-muted">
+              {label}
+              <input
+                value={form[k]}
+                onChange={e => setForm(f => ({ ...f, [k]: e.target.value }))}
+                inputMode="decimal"
+                className="rounded border border-zinc-700 bg-zinc-950 px-1.5 py-1 font-mono text-zinc-100 outline-none focus:border-zinc-500"
+              />
+            </label>
+          ))}
+          <label className="col-span-2 flex flex-col gap-0.5 text-fg-muted">
+            Why you care (shown on Radar)
+            <textarea
+              value={form.thesis_note}
+              onChange={e => setForm(f => ({ ...f, thesis_note: e.target.value }))}
+              rows={2}
+              className="rounded border border-zinc-700 bg-zinc-950 px-1.5 py-1 text-zinc-100 outline-none focus:border-zinc-500"
+            />
+          </label>
+          <button type="button" disabled={busy} onClick={() => save(false)}
+                  className="col-span-2 rounded bg-zinc-100 py-1 font-mono text-[11px] font-semibold uppercase text-zinc-900 hover:bg-white disabled:opacity-50">
+            {busy ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      )}
+    </div>
   )
 }

@@ -153,6 +153,18 @@ export interface ArxivSnapshot {
   created_at: string
 }
 
+export interface WatchlistEntry {
+  company_id: string
+  added_at: string
+  shares: number | null
+  avg_cost_usd: number | null
+  target_buy_usd: number | null
+  target_sell_usd: number | null
+  thesis_note: string | null
+  alerts_enabled: boolean
+  updated_at: string
+}
+
 export interface ComputeContract {
   id: string
   buyer_id: string
