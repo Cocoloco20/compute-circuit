@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
+import { rotatingWindow } from '@/lib/cron-window'
 
 import {
   fetchAllCompanyFilings,
@@ -61,10 +62,15 @@ export async function GET(req: NextRequest) {
   if (companiesResp.error) {
     return NextResponse.json({ error: companiesResp.error.message }, { status: 500 })
   }
-  const companies = (companiesResp.data ?? []) as Array<{ id: string; name: string; cik: string }>
+  let companies = (companiesResp.data ?? []) as Array<{ id: string; name: string; cik: string }>
   if (companies.length === 0) {
     return NextResponse.json({ ok: true, scanned: 0, inserted: 0, note: 'no CIKed companies' })
   }
+  // 363 CIKs × SEC pacing ≈ 2min — over the 60s cap. Walk a rotating daily
+  // window instead; full coverage every ⌈N/120⌉ days (4 at current N). 8-Ks
+  // stay visible on EDGAR far longer, so filings are delayed ≤ 3 days, never
+  // missed.
+  companies = rotatingWindow(companies, 120)
 
   // Lookup company by padded CIK for linking back after EDGAR fetch
   const cikToCompany = new Map<string, { id: string; name: string }>()

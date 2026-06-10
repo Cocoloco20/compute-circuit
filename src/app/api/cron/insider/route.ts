@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
+import { rotatingWindow } from '@/lib/cron-window'
 
 import {
   fetchCompanyFilings,
@@ -66,7 +67,15 @@ export async function GET(req: NextRequest) {
 
   const cosResp = await sb.from('companies').select('id, cik').not('cik', 'is', null)
   if (cosResp.error) return NextResponse.json({ error: cosResp.error.message }, { status: 500 })
-  const companies = ((cosResp.data ?? []) as CompanyRow[]).filter(c => c.cik)
+  // Rotating daily window — 363 CIKs sequential with 120ms pacing blows the
+  // 60s cap. Full coverage every ⌈N/120⌉ days (4 at current N); the 60-day
+  // filing lookback means a 4-day visit cadence misses nothing.
+  // MAX_XML_FETCHES_PER_RUN still caps the inner loop as a second line of
+  // defense.
+  const companies = rotatingWindow(
+    ((cosResp.data ?? []) as CompanyRow[]).filter(c => c.cik),
+    120,
+  )
 
   const cutoff = new Date(Date.now() - LOOKBACK_DAYS * 86400_000).toISOString().slice(0, 10)
   const startedAt = Date.now()

@@ -12,6 +12,12 @@ import type { Database } from '@/types/db'
 //
 // When auth is added later, swap this for @supabase/ssr's createServerClient
 // so it can read the user's session from cookies.
+// Bound every DB round-trip so an unreachable Supabase fails the page fast
+// (error boundary) instead of hanging the server render until the lambda's
+// maxDuration. Seen live 2026-05-26 during a supabase.co DNS incident: the
+// homepage spun 20s+ per visitor with zero bytes served.
+const FETCH_TIMEOUT_MS = 15_000
+
 export const supabaseServer = () =>
   createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -19,7 +25,11 @@ export const supabaseServer = () =>
     {
       auth: { persistSession: false },
       global: {
-        fetch: (url, init) => fetch(url, { ...init, cache: 'no-store' }),
+        fetch: (url, init) => fetch(url, {
+          ...init,
+          cache: 'no-store',
+          signal: init?.signal ?? AbortSignal.timeout(FETCH_TIMEOUT_MS),
+        }),
       },
     },
   )

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
+import { rotatingWindow } from '@/lib/cron-window'
 
 import {
   fetchCompanyFilings,
@@ -89,7 +90,14 @@ export async function GET(req: NextRequest) {
     .eq('private', false)
     .not('cik', 'is', null)
   if (cosResp.error) return NextResponse.json({ error: cosResp.error.message }, { status: 500 })
-  const companies = ((cosResp.data ?? []) as CompanyRow[]).filter((c) => c.cik)
+  // Rotating daily window — 363 CIKs at batch-of-5 with 150ms inner sleeps
+  // (plus the YouTube enrichment path) blows the 60s cap. Full coverage every
+  // ⌈N/120⌉ days (4 at current N); earnings 8-Ks only land ~quarterly per co,
+  // so nothing is missed.
+  const companies = rotatingWindow(
+    ((cosResp.data ?? []) as CompanyRow[]).filter((c) => c.cik),
+    120,
+  )
 
   if (companies.length === 0) {
     return NextResponse.json({ ok: true, scanned: 0, inserted: 0, note: 'no public CIKed companies' })

@@ -1,16 +1,22 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
+import { rotatingWindow } from '@/lib/cron-window'
 
 import { fetchAllEdgarFundamentals } from '@/lib/market'
 
 /**
- * Weekly fundamentals refresh (Tuesdays).
+ * Daily fundamentals refresh over a rotating window.
  *
- * Pulls SEC EDGAR companyfacts for every CIKed company, parses the key XBRL
- * tags (Revenue, GrossProfit, OperatingIncomeLoss, NetIncomeLoss, etc.),
+ * Pulls SEC EDGAR companyfacts for a 120-co slice of the CIKed set, parses
+ * the key XBRL tags (Revenue, GrossProfit, OperatingIncomeLoss, etc.), and
  * upserts into `fundamentals` keyed by (company_id, period, period_type, metric).
  *
- * Quarterly data is updated as companies file 10-Q/10-K, so weekly is plenty.
+ * History: this used to run weekly (Tuesdays) over ALL CIKed cos. At ~32 cos
+ * that fit in the 60s cap; at 363 post-Phase-7B it takes ~2 minutes and times
+ * out. Daily × 120-co rotation refreshes every co every ⌈N/120⌉ days (4 at
+ * current N) — strictly fresher than the old weekly full pass, and each
+ * invocation fits the budget. Quarterly 10-Q/10-K cadence means even weekly
+ * was overkill per-co.
  */
 
 export const runtime = 'nodejs'
@@ -35,9 +41,10 @@ export async function GET(req: NextRequest) {
 
   const resp = await sb.from('companies').select('id, cik').not('cik', 'is', null)
   if (resp.error) return NextResponse.json({ error: resp.error.message }, { status: 500 })
-  const companies = ((resp.data ?? []) as CompanyRow[])
-    .filter(c => c.cik)
-    .map(c => ({ companyId: c.id, cik: c.cik }))
+  const companies = rotatingWindow(
+    ((resp.data ?? []) as CompanyRow[]).filter(c => c.cik),
+    120,
+  ).map(c => ({ companyId: c.id, cik: c.cik }))
 
   const startedAt = Date.now()
   const results = await fetchAllEdgarFundamentals(companies)

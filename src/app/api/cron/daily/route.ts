@@ -3,17 +3,34 @@ import { NextRequest, NextResponse } from 'next/server'
 /**
  * Single daily cron dispatcher.
  *
- * Vercel Hobby plan caps cron jobs at 2 — to fit the 8-K (daily), 13F
- * (weekly), and portfolio-scraper (monthly) trackers under one entry,
- * this route fires on a daily schedule and decides what to invoke based
- * on the current UTC date:
+ * Vercel Hobby plan caps cron jobs at 2 — to fit all trackers under one
+ * entry, this route fires daily and decides what to invoke based on the
+ * current UTC date (13F on Sundays, portfolio scraper on the 1st).
  *
- *   * 8-K tracker      — every day
- *   * 13F tracker      — Sundays (getUTCDay() === 0)
- *   * Portfolio scraper — 1st of month (getUTCDate() === 1)
+ * LAUNCH MODEL — parallel, not serial. Each sub-route is its own Vercel
+ * invocation with its own 60s budget; once its request is accepted it runs
+ * to completion regardless of what happens to this dispatcher. The old
+ * serial `await` chain broke after Phase 7B: with 18 sub-crons where prices
+ * alone takes ~40s and news ~30s, the dispatcher hit its own 60s cap
+ * mid-sequence and every cron after the cutoff (social, gpu-spot,
+ * logo-maintenance, digest, …) silently never fired.
  *
- * Each sub-route remains independently callable via curl with the
- * CRON_SECRET — this dispatcher just calls them in series.
+ * Now all sub-crons launch at t=0 and we wait up to DISPATCH_BUDGET_MS for
+ * results purely for REPORTING — tasks still running at the deadline are
+ * reported as 'started' and finish on their own.
+ *
+ * Trade-offs accepted with the parallel model:
+ *   - logo-maintenance no longer runs strictly after form-d/portfolio-scraper,
+ *     so a co inserted tonight gets its logo tomorrow night. It's idempotent
+ *     and bounded, so this only costs one day of monogram fallback.
+ *   - digest fires alongside the data crons instead of after them, so it
+ *     reflects yesterday's data. The dedicated 12:00 UTC digest cron (14h
+ *     after this 22:00 UTC run) is the fresh-data send.
+ *   - SEC-walking crons (8k, insider, transcripts, form-d) overlap. Each
+ *     paces itself to ~3-7 req/s and they egress from separate lambdas, so
+ *     aggregate load on sec.gov stays within tolerance.
+ *
+ * Each sub-route remains independently callable via curl with CRON_SECRET.
  */
 
 export const runtime = 'nodejs'
@@ -27,7 +44,15 @@ interface SubResult {
   body?: unknown
   error?: string
   ms?: number
+  /** True when the sub-cron was launched but hadn't responded by the
+   *  dispatcher's reporting deadline — it keeps running independently. */
+  pending?: boolean
 }
+
+// How long the dispatcher waits to COLLECT results before returning.
+// Keeps us safely under our own maxDuration=60 while letting most
+// sub-crons report a real status. Anything slower is reported 'started'.
+const DISPATCH_BUDGET_MS = 50_000
 
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
@@ -61,51 +86,60 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  const results: SubResult[] = []
-  // Daily: prices (~5s) + 8-K filings (~3s incremental) + news (~5s) +
-  // insider (~20s incremental) + HF activity (~5s for ~20 orgs)
-  results.push(await call('prices', '/api/cron/prices'))
-  results.push(await call('8k-tracker', '/api/cron/8k-tracker'))
-  results.push(await call('transcripts', '/api/cron/transcripts'))
-  results.push(await call('news', '/api/cron/news'))
-  results.push(await call('insider', '/api/cron/insider'))
-  results.push(await call('form-d', '/api/cron/form-d'))
-  results.push(await call('hf-activity', '/api/cron/hf-activity'))
-  results.push(await call('github', '/api/cron/github'))
-  results.push(await call('eia', '/api/cron/eia'))
-  results.push(await call('patents', '/api/cron/patents'))
-  results.push(await call('jobs', '/api/cron/jobs'))
-  results.push(await call('btc', '/api/cron/btc'))
-  results.push(await call('gpu-spot', '/api/cron/gpu-spot'))
-  results.push(await call('leaderboard', '/api/cron/leaderboard'))
-  results.push(await call('social', '/api/cron/social'))
-  results.push(await call('interest', '/api/cron/interest'))
-  results.push(await call('arxiv', '/api/cron/arxiv'))
-  // Weekly: fundamentals (Tuesdays = day 2) + 13F holdings (Sundays = day 0)
-  if (day === 2) results.push(await call('fundamentals', '/api/cron/fundamentals'))
-  if (day === 0) results.push(await call('13f-tracker', '/api/cron/13f-tracker'))
-  // Monthly: VC portfolio scraper (1st of month)
-  if (date === 1) results.push(await call('portfolio-scraper', '/api/cron/portfolio-scraper'))
+  const tasks: Array<{ task: string; path: string }> = [
+    { task: 'prices', path: '/api/cron/prices' },
+    { task: '8k-tracker', path: '/api/cron/8k-tracker' },
+    { task: 'transcripts', path: '/api/cron/transcripts' },
+    { task: 'news', path: '/api/cron/news' },
+    { task: 'insider', path: '/api/cron/insider' },
+    { task: 'form-d', path: '/api/cron/form-d' },
+    { task: 'hf-activity', path: '/api/cron/hf-activity' },
+    { task: 'github', path: '/api/cron/github' },
+    { task: 'eia', path: '/api/cron/eia' },
+    { task: 'patents', path: '/api/cron/patents' },
+    { task: 'jobs', path: '/api/cron/jobs' },
+    { task: 'btc', path: '/api/cron/btc' },
+    { task: 'gpu-spot', path: '/api/cron/gpu-spot' },
+    { task: 'leaderboard', path: '/api/cron/leaderboard' },
+    { task: 'social', path: '/api/cron/social' },
+    { task: 'interest', path: '/api/cron/interest' },
+    { task: 'arxiv', path: '/api/cron/arxiv' },
+    // Daily over a rotating 120-co window since Phase 7B (was Tuesdays-only
+    // over the full set, which now blows the sub-cron's own 60s budget).
+    { task: 'fundamentals', path: '/api/cron/fundamentals' },
+    // Bounded + idempotent; see header for why it no longer waits on form-d.
+    { task: 'logo-maintenance', path: '/api/cron/logo-maintenance' },
+  ]
+  // Weekly: 13F holdings (Sundays). Monthly: VC portfolio scraper (1st).
+  if (day === 0) tasks.push({ task: '13f-tracker', path: '/api/cron/13f-tracker' })
+  if (date === 1) tasks.push({ task: 'portfolio-scraper', path: '/api/cron/portfolio-scraper' })
+  // Digest only when Resend is configured — the dedicated 12:00 UTC cron is
+  // the primary send; this nightly copy is best-effort.
+  if (process.env.RESEND_API_KEY) tasks.push({ task: 'digest', path: '/api/cron/digest' })
 
-  // Logo maintenance — runs AFTER all new-co-inserting crons (form-d,
-  // portfolio-scraper) so any rows they added are picked up the same night.
-  // Bounded to 30 cos/run; no-op when there's no work.
-  results.push(await call('logo-maintenance', '/api/cron/logo-maintenance'))
+  // Launch everything NOW. Each fetch hits an independent lambda that runs
+  // to completion on its own; we only race the deadline for reporting.
+  const settled = new Map<string, SubResult>()
+  const inFlight = tasks.map(t =>
+    call(t.task, t.path).then(r => { settled.set(t.task, r) }),
+  )
+  await Promise.race([
+    Promise.allSettled(inFlight),
+    new Promise<void>(resolve => setTimeout(resolve, DISPATCH_BUDGET_MS)),
+  ])
 
-  // Digest: only if Resend is configured. Runs after all data crons so it
-  // gets fresh numbers. The digest has its own separate Vercel cron at 8am ET,
-  // but calling it here too means the nightly data run always sends one too.
-  // Skip silently if RESEND_API_KEY is absent so the daily cron stays green
-  // even before the user configures email.
-  if (process.env.RESEND_API_KEY) {
-    results.push(await call('digest', '/api/cron/digest'))
-  }
+  const results: SubResult[] = tasks.map(t =>
+    settled.get(t.task) ?? { task: t.task, ok: true, pending: true },
+  )
 
   return NextResponse.json({
     ok: results.every(r => r.ok),
     timestamp: now.toISOString(),
     day,
     date,
+    launched: tasks.length,
+    reported: settled.size,
+    stillRunning: tasks.length - settled.size,
     results,
   })
 }
