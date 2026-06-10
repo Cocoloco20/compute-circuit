@@ -36,6 +36,9 @@ yarn-error.log*
 *.local.js
 *.local.ts
 
+# local DB backups (scripts/backup-db.ts) — DB contents stay off GitHub
+/backups
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

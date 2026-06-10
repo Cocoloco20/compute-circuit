@@ -117,145 +117,98 @@ export async function fetchGraph(): Promise<GraphData> {
     sb.from('signals').select('id, date, source, headline, impact, url, accession_number, form_type, created_at').gte('date', yearAgo).order('date', { ascending: false }).limit(2000),
   ])
 
-  // signal_companies has thousands of rows (one per filing). The default 1000-row
-  // Supabase cap silently drops links for later-alphabetical companies — so we
-  // fetch only the links for our already-windowed signal IDs in a second query.
-  //
-  // CHUNK the .in() lookup: with ~900+ signals (8-Ks + news), the resulting
-  // URL exceeds Supabase REST's URL-length cap and returns 400 Bad Request.
-  // 200 IDs per chunk keeps URLs comfortably small.
+  // ---------------------------------------------------------------------
+  // Everything below depends only on `signals` (or nothing at all), so it
+  // all runs in ONE parallel wave. The previous shape — one await per table
+  // plus ~20 sequential fundamentals pages — serialized ~30 round-trips to
+  // a us-west-1 database and dominated the page's 11s render time.
+  // ---------------------------------------------------------------------
   const signals = (s.data ?? []) as Signal[]
-  const sigIds = signals.map(x => x.id)
-  let scData: SignalCompanyLink[] = []
-  let scError: { message: string } | null = null
-  for (let i = 0; i < sigIds.length; i += 200) {
-    const chunk = sigIds.slice(i, i + 200)
-    const r = await sb.from('signal_companies').select('signal_id, company_id').in('signal_id', chunk)
-    if (r.error) { scError = r.error; break }
-    scData = scData.concat((r.data ?? []) as SignalCompanyLink[])
-  }
-  const sc = { data: scData, error: scError }
-
-  // Holdings: only those matched to one of OUR companies (small subset of the
-  // total holdings table — typically a few dozen rows). Full per-filer 13Fs
-  // stay queryable server-side for ad-hoc analysis.
-  const h = await sb
-    .from('holdings')
-    .select('*')
-    .not('company_id', 'is', null)
-    .order('period', { ascending: false })
-    .order('value_usd', { ascending: false })
-    .limit(500)
-
-  // Fundamentals: last 2 years per company. We have ~32 public cos × ~12 metrics × ~8 periods
-  // = ~3000 rows max, but most cos won't have all metrics — typically ~1000+ rows.
-  //
-  // Supabase REST silently caps result sets at 1000 rows even when .limit(2000) is
-  // requested. With our row volume that drops Q rows on later-alphabetical companies
-  // (e.g. Vertiv "V*"), breaking the TTM capex + YoY computation in capex.ts.
-  // Same fix pattern as the signal_companies chunking above — paginate by .range()
-  // until a short page (< pageSize) signals we've drained the table.
   const twoYearsAgo = new Date(Date.now() - 730 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const PAGE = 1000
-  let fndData: Fundamental[] = []
-  let fndError: { message: string } | null = null
-  // Explicit columns — this is the single biggest item in the page payload
-  // (~21K rows post-Phase-7B). The UI only ever reads company_id / period /
-  // period_type / metric / value (entity-drawer Fundamentals table +
-  // capex.ts TTM math); id / unit / source / updated_at were ~40% of each
-  // row's JSON for zero reads. The rows are cast to Fundamental with those
-  // fields absent — keep it that way unless a consumer actually needs them.
-  for (let offset = 0; ; offset += PAGE) {
-    const page = await sb
-      .from('fundamentals')
-      .select('company_id, period, period_type, metric, value')
-      .gte('period', twoYearsAgo)
-      .order('period', { ascending: false })
-      .range(offset, offset + PAGE - 1)
-    if (page.error) { fndError = page.error; break }
-    const rows = (page.data ?? []) as Fundamental[]
-    fndData = fndData.concat(rows)
-    if (rows.length < PAGE) break  // last (possibly empty) page
-    if (offset > 40_000) break  // hard safety cap so a runaway table can't OOM
-  }
-  const fnd = { data: fndData, error: fndError }
-
-  // Insider transactions: last 90 days. Daily cron caps backfill at 120 XML
-  // fetches/run so this table stays manageable.
   const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const ins = await sb
-    .from('insider_transactions')
-    .select('*')
-    .gte('filing_date', ninetyDaysAgo)
-    .order('filing_date', { ascending: false })
-    .limit(500)
-
-  // Funding rounds: last 180 days. Daily cron only scans private CIKed cos,
-  // each with 0-2 Form D filings/quarter — total volume is small (<200 rows).
   const oneEightyDaysAgo = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10)
-  const fr = await sb
-    .from('funding_rounds')
-    .select('*')
-    .gte('filed_date', oneEightyDaysAgo)
-    .order('filed_date', { ascending: false })
-    .limit(200)
-
-  // Transcript signals: last 180 days. ~30 public CIKed cos × ≤ 4 quarterly
-  // earnings 8-Ks/yr → ≤ 60 rows in window, well under the cap.
-  const tr = await sb
-    .from('transcript_signals')
-    .select('*')
-    .gte('filed_date', oneEightyDaysAgo)
-    .order('filed_date', { ascending: false })
-    .limit(500)
-
-  // GPU spot prices: last 35 days. 8 canonical models × 3 sources × 35 days
-  // = up to 840 rows — keep the limit ample so deltas always render.
-  const gpu = await sb
-    .from('gpu_spot_prices')
-    .select('*')
-    .gte('snapshot_date', new Date(Date.now() - 35 * 86_400_000).toISOString().slice(0, 10))
-    .order('snapshot_date', { ascending: false })
-    .limit(500)
-
-  // GPU hyperscaler spot pricing: last 14 days. Non-fatal — table may be empty
-  // until the cron has run at least once (don't throw on missing rows).
-  const gpuHs = await sb
-    .from('gpu_hyperscaler_pricing')
-    .select('*')
-    .gte('snapshot_date', new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10))
-    .order('snapshot_date', { ascending: false })
-    .limit(500)
-  if (gpuHs.error) {
-    // eslint-disable-next-line no-console
-    console.warn('[graph-data] gpu_hyperscaler_pricing read failed (table may not exist yet):', gpuHs.error.message)
-  }
-
   const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const PAGE = 1000
 
-  // HF activity: most recent snapshot per company. With ~20 hf-tagged cos
-  // × 1 snapshot/day this is trivial.
-  const hf = await sb
-    .from('hf_activity')
-    .select('*')
-    .order('snapshot_date', { ascending: false })
-    .limit(200)
+  // signal_companies: links only for our already-windowed signal IDs.
+  // CHUNK the .in() lookup (200 IDs/chunk) — a single .in() with 2000 IDs
+  // exceeds Supabase REST's URL-length cap and 400s. Chunks run in parallel.
+  const fetchSignalCompanies = async (): Promise<{ data: SignalCompanyLink[]; error: { message: string } | null }> => {
+    const sigIds = signals.map(x => x.id)
+    const chunks: string[][] = []
+    for (let i = 0; i < sigIds.length; i += 200) chunks.push(sigIds.slice(i, i + 200))
+    const results = await Promise.all(chunks.map(chunk =>
+      sb.from('signal_companies').select('signal_id, company_id').in('signal_id', chunk)))
+    const err = results.find(r => r.error)?.error ?? null
+    return { data: results.flatMap(r => (r.data ?? []) as SignalCompanyLink[]), error: err }
+  }
 
-  // GitHub activity: last 35 days for delta.
-  const gh = await sb
-    .from('github_activity')
-    .select('*')
-    .gte('snapshot_date', thirtyFiveDaysAgo)
-    .order('snapshot_date', { ascending: false })
-    .limit(1000)
+  // Fundamentals: last 2 years, explicit columns — the single biggest item
+  // in the page payload (~21K rows post-Phase-7B). The UI only reads
+  // company_id / period / period_type / metric / value; id / unit / source /
+  // updated_at were ~40% of each row's JSON for zero reads. Count first,
+  // then fetch all pages in parallel (Supabase REST caps each response at
+  // 1000 rows regardless of .limit). Rows inserted between the count and
+  // the page fetches can shift a boundary row — harmless for a dashboard.
+  const fetchFundamentals = async (): Promise<{ data: Fundamental[]; error: { message: string } | null }> => {
+    const cnt = await sb.from('fundamentals')
+      .select('company_id', { count: 'exact', head: true })
+      .gte('period', twoYearsAgo)
+    if (cnt.error) return { data: [], error: cnt.error }
+    const total = Math.min(cnt.count ?? 0, 40_000) // safety cap vs runaway table
+    const pages = []
+    for (let offset = 0; offset < total; offset += PAGE) {
+      pages.push(sb.from('fundamentals')
+        .select('company_id, period, period_type, metric, value')
+        .gte('period', twoYearsAgo)
+        .order('period', { ascending: false })
+        .range(offset, offset + PAGE - 1))
+    }
+    const results = await Promise.all(pages)
+    const err = results.find(r => r.error)?.error ?? null
+    return { data: results.flatMap(r => (r.data ?? []) as Fundamental[]), error: err }
+  }
 
-  // 35-day window for the three "delta" signals so drawer chips can compare
-  // today vs 7d and 30d ago. Volumes are tiny:
-  //   grid_demand: 7 cos × 35 = 245
-  //   patents:     21 cos × 35 = 735
-  //   jobs:        10 cos × 35 = 350
-  const [gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] = await Promise.all([
+  const [
+    sc, fnd, h, ins, fr, tr, gpu, gpuHs, hf, gh,
+    gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers,
+    ag,
+  ] = await Promise.all([
+    fetchSignalCompanies(),
+    fetchFundamentals(),
+    // Holdings matched to one of OUR companies (small subset of the table).
+    sb.from('holdings').select('*')
+      .not('company_id', 'is', null)
+      .order('period', { ascending: false })
+      .order('value_usd', { ascending: false }).limit(500),
+    // Insider transactions: last 90 days.
+    sb.from('insider_transactions').select('*')
+      .gte('filing_date', ninetyDaysAgo)
+      .order('filing_date', { ascending: false }).limit(500),
+    // Funding rounds: last 180 days (<200 rows).
+    sb.from('funding_rounds').select('*')
+      .gte('filed_date', oneEightyDaysAgo)
+      .order('filed_date', { ascending: false }).limit(200),
+    // Transcript signals: last 180 days.
+    sb.from('transcript_signals').select('*')
+      .gte('filed_date', oneEightyDaysAgo)
+      .order('filed_date', { ascending: false }).limit(500),
+    // GPU spot prices: last 35 days.
+    sb.from('gpu_spot_prices').select('*')
+      .gte('snapshot_date', thirtyFiveDaysAgo)
+      .order('snapshot_date', { ascending: false }).limit(500),
+    // GPU hyperscaler pricing: last 14 days. Non-fatal (warned below).
+    sb.from('gpu_hyperscaler_pricing').select('*')
+      .gte('snapshot_date', fourteenDaysAgo)
+      .order('snapshot_date', { ascending: false }).limit(500),
+    // HF activity: most recent snapshots (~20 hf-tagged cos).
+    sb.from('hf_activity').select('*')
+      .order('snapshot_date', { ascending: false }).limit(200),
+    // GitHub activity: last 35 days for delta.
+    sb.from('github_activity').select('*')
+      .gte('snapshot_date', thirtyFiveDaysAgo)
+      .order('snapshot_date', { ascending: false }).limit(1000),
     sb.from('grid_demand_snapshots').select('*')
       .gte('snapshot_date', thirtyFiveDaysAgo)
       .order('snapshot_date', { ascending: false }).limit(500),
@@ -298,22 +251,16 @@ export async function fetchGraph(): Promise<GraphData> {
     sb.from('arxiv_papers').select('*')
       .gte('published_date', ninetyDaysAgo)
       .order('published_date', { ascending: false }).limit(500),
+    // Phase 7A — agencies (regulators / export-control bodies). Tiny table.
+    sb.from('agencies').select('*').order('name').limit(50),
   ])
 
-  // Phase 7A — agencies (regulators / export-control bodies). Tiny table.
-  // Non-fatal on read error so a missing migration 0039 doesn't break pages.
-  const ag = await sb.from('agencies').select('*').order('name').limit(50)
-  if (ag.error) {
-    // eslint-disable-next-line no-console
-    console.warn('[graph-data] agencies read failed (table may not exist yet):', ag.error.message)
-  }
-
-  // All optional signal tables — non-fatal on read error (table empty,
-  // RLS denied, API key missing pre-cron).
-  for (const r of [gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] as Array<{ error: { message: string } | null }>) {
+  // Non-fatal reads — table may be empty / missing migration / RLS-denied.
+  // Warn instead of failing the whole page.
+  for (const r of [gpuHs, ag, gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] as Array<{ error: { message: string } | null }>) {
     if (r.error) {
       // eslint-disable-next-line no-console
-      console.warn('[graph-data] optional signal table read failed:', r.error.message)
+      console.warn('[graph-data] optional table read failed:', r.error.message)
     }
   }
 

@@ -8,7 +8,9 @@
     "start": "next start",
     "lint": "next lint",
     "seed": "tsx supabase/seed/seed.ts",
-    "backfill:ciks": "tsx supabase/seed/backfill-ciks.ts"
+    "backfill:ciks": "tsx supabase/seed/backfill-ciks.ts",
+    "backup": "tsx scripts/backup-db.ts",
+    "test": "tsx scripts/run-tests.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.98.0",
