@@ -92,18 +92,28 @@ export async function GET(req: NextRequest) {
     }
   }
 
-  // 1. Bulk upsert papers (dedup on arxiv_id)
+  // 1. Bulk upsert papers. The same arxiv_id can appear under multiple
+  // companies in one run (co-authored papers — e.g. a DeepMind × Meta AI
+  // collaboration matches both affiliation queries). Postgres rejects a
+  // single ON CONFLICT DO UPDATE statement that touches the same row twice
+  // ("cannot affect row a second time"), so dedupe by arxiv_id first —
+  // last writer wins, which is fine since the paper fields are identical
+  // across duplicates.
   let papersUpserted = 0
   if (papersToUpsert.length > 0) {
+    const byArxivId = new Map<string, ArxivPaperInsertRow>()
+    for (const p of papersToUpsert) byArxivId.set(p.arxiv_id, p)
+    const deduped = Array.from(byArxivId.values())
+
     const paperResp = await (sb.from('arxiv_papers') as unknown as {
       upsert: (rows: ArxivPaperInsertRow[], opts: { onConflict: string }) =>
         Promise<{ error: { message: string } | null }>
-    }).upsert(papersToUpsert, { onConflict: 'arxiv_id' })
+    }).upsert(deduped, { onConflict: 'arxiv_id' })
 
     if (paperResp.error) {
       return NextResponse.json({ error: `Papers upsert failed: ${paperResp.error.message}` }, { status: 500 })
     }
-    papersUpserted = papersToUpsert.length
+    papersUpserted = deduped.length
   }
 
   // 2. Bulk upsert snapshots
