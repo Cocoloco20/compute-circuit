@@ -111,7 +111,10 @@ export async function fetchGraph(): Promise<GraphData> {
     sb.from('flows').select('*'),
     sb.from('bottlenecks').select('*'),
     sb.from('bottleneck_beneficiaries').select('*'),
-    sb.from('signals').select('*').gte('date', yearAgo).order('date', { ascending: false }).limit(2000),
+    // Explicit columns: select('*') also ships source_key — a ~120-byte
+    // dedup string per row ('news:{co}:{url}') that no client code reads.
+    // At 2,000 signals that's ~240KB of dead payload.
+    sb.from('signals').select('id, date, source, headline, impact, url, accession_number, form_type, created_at').gte('date', yearAgo).order('date', { ascending: false }).limit(2000),
   ])
 
   // signal_companies has thousands of rows (one per filing). The default 1000-row
@@ -127,7 +130,7 @@ export async function fetchGraph(): Promise<GraphData> {
   let scError: { message: string } | null = null
   for (let i = 0; i < sigIds.length; i += 200) {
     const chunk = sigIds.slice(i, i + 200)
-    const r = await sb.from('signal_companies').select('*').in('signal_id', chunk)
+    const r = await sb.from('signal_companies').select('signal_id, company_id').in('signal_id', chunk)
     if (r.error) { scError = r.error; break }
     scData = scData.concat((r.data ?? []) as SignalCompanyLink[])
   }
@@ -156,10 +159,16 @@ export async function fetchGraph(): Promise<GraphData> {
   const PAGE = 1000
   let fndData: Fundamental[] = []
   let fndError: { message: string } | null = null
+  // Explicit columns — this is the single biggest item in the page payload
+  // (~21K rows post-Phase-7B). The UI only ever reads company_id / period /
+  // period_type / metric / value (entity-drawer Fundamentals table +
+  // capex.ts TTM math); id / unit / source / updated_at were ~40% of each
+  // row's JSON for zero reads. The rows are cast to Fundamental with those
+  // fields absent — keep it that way unless a consumer actually needs them.
   for (let offset = 0; ; offset += PAGE) {
     const page = await sb
       .from('fundamentals')
-      .select('*')
+      .select('company_id, period, period_type, metric, value')
       .gte('period', twoYearsAgo)
       .order('period', { ascending: false })
       .range(offset, offset + PAGE - 1)
@@ -167,7 +176,7 @@ export async function fetchGraph(): Promise<GraphData> {
     const rows = (page.data ?? []) as Fundamental[]
     fndData = fndData.concat(rows)
     if (rows.length < PAGE) break  // last (possibly empty) page
-    if (offset > 20_000) break  // hard safety cap so a runaway table can't OOM
+    if (offset > 40_000) break  // hard safety cap so a runaway table can't OOM
   }
   const fnd = { data: fndData, error: fndError }
 
