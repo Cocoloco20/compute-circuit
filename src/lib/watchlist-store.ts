@@ -114,8 +114,24 @@ export function refreshWatchlist() {
   void doLoad()
 }
 
+/**
+ * Server snapshot — a STABLE reference, never a fresh object.
+ *
+ * useSyncExternalStore requires a third argument whenever the component can be
+ * server-rendered; without it React throws "Missing getServerSnapshot". The
+ * watchlist is deliberately unavailable during SSR (that is the whole point of
+ * HOLE 1's fix — it must not travel in the public payload), so the server
+ * snapshot is the empty, still-loading state and the real data arrives on the
+ * client after hydration. It must be a module-level constant: returning a new
+ * object each call makes React loop with "getServerSnapshot should be cached".
+ */
+const SERVER_SNAPSHOT: WatchlistState = { data: null, loading: true, error: null }
+function getServerSnapshot(): WatchlistState {
+  return SERVER_SNAPSHOT
+}
+
 /** Reactive hook — subscribe to the shared store, loading on first mount. */
 export function useWatchlist(): WatchlistState {
   loadIfNeeded()
-  return useSyncExternalStore(subscribe, () => state)
+  return useSyncExternalStore(subscribe, () => state, getServerSnapshot)
 }
