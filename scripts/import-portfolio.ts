@@ -85,10 +85,21 @@ async function main() {
     // "that is as far as the file got".
     const declared = (pf as { count?: number }).count
     const actual = pf.companies?.length ?? 0
-    if (typeof declared === 'number' && declared !== actual) {
-      console.log(`  ${fund}: SKIPPED — file declares ${declared} companies but holds ${actual}. ` +
-        `Likely still being written; re-run when the agent finishes.`)
+    if (typeof declared === 'number' && actual < declared) {
+      // TRUNCATION — the dangerous direction. The agents write these while
+      // still running, so the file can hold far fewer than the source has.
+      // Importing it would record e.g. 115 of Lightspeed's 662 companies as
+      // the whole portfolio, and nothing downstream could distinguish "that
+      // is the portfolio" from "that is as far as the file got".
+      console.log(`  ${fund}: SKIPPED — declares ${declared} companies but holds ${actual}. ` +
+        `Still being written; re-run when the agent finishes.`)
       continue
+    }
+    if (typeof declared === 'number' && actual > declared) {
+      // The count field is stale, not the data. Nothing is missing, so import
+      // it — but say so, because a file that disagrees with itself is worth a
+      // second look rather than a silent pass.
+      console.log(`  ${fund}: note — declares ${declared} but holds ${actual}; importing all ${actual}.`)
     }
 
     const rejected: Record<string, number> = {}
