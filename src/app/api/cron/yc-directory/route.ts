@@ -150,6 +150,28 @@ export async function GET(req: NextRequest) {
     if (!r.error) updatedCount++
   }
 
+  // ---- persist observed status changes -----------------------------------
+  // A status transition is the highest-value thing in this feed: it is how a
+  // company we passed on later shows up as Acquired, Public or Inactive, which
+  // is exactly what /api/cron/resurface watches. Recording the OBSERVED
+  // transition (not the current value) is what lets that job distinguish "this
+  // changed after the decision" from "this was already true".
+  let statusChangesRecorded = 0
+  if (statusChanges.length) {
+    const rows = statusChanges.map(c => ({
+      company_id: `yc-${c.slug}`,
+      from_status: c.from == null ? null : String(c.from),
+      to_status: String(c.to),
+      observed_at: new Date().toISOString(),
+    })).filter(r => r.to_status)
+    const r = await (sb.from('yc_status_changes') as unknown as UpsertTable).upsert(rows, {
+      onConflict: 'company_id,from_status,to_status,observed_at',
+    })
+    // Non-fatal: the metadata update above already landed, and losing a
+    // change row costs one resurfacing card, not correctness of the directory.
+    if (!r.error) statusChangesRecorded = rows.length
+  }
+
   // ---- removed: recorded, never deleted ----------------------------------
   // A company dropping out of YC's directory must not delete our row. It may
   // sit in a pipeline card or carry a decision, and destroying that to mirror
@@ -162,5 +184,6 @@ export async function GET(req: NextRequest) {
     removedReported: removed.length,
     removedSlugs: removed.map(r => r.slug).filter(Boolean).slice(0, 20),
     statusChanges,
+    statusChangesRecorded,
   })
 }

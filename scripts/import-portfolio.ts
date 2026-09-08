@@ -77,6 +77,20 @@ async function main() {
       continue
     }
 
+    // Refuse a half-written file. The agents write these while still running,
+    // so `count` (what the source actually has) can be far ahead of what is on
+    // disk. Importing the partial list would quietly record e.g. 115 of
+    // Lightspeed's 662 companies as the whole portfolio, and nothing
+    // downstream could tell the difference between "that is the portfolio" and
+    // "that is as far as the file got".
+    const declared = (pf as { count?: number }).count
+    const actual = pf.companies?.length ?? 0
+    if (typeof declared === 'number' && declared !== actual) {
+      console.log(`  ${fund}: SKIPPED — file declares ${declared} companies but holds ${actual}. ` +
+        `Likely still being written; re-run when the agent finishes.`)
+      continue
+    }
+
     const rejected: Record<string, number> = {}
     const norm: NormalizedEntry[] = []
     for (const e of pf.companies ?? []) {

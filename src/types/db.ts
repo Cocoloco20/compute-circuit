@@ -580,6 +580,14 @@ export interface YcCompany {
   updated_at: string
 }
 
+export interface YcStatusChange {
+  id: string
+  company_id: string
+  from_status: string | null
+  to_status: string
+  observed_at: string
+}
+
 // Supabase client generic — minimal shape so createClient<Database> typechecks.
 // The Database type below is intentionally light. When you adopt `supabase gen types`,
 // it will produce a much richer interface and this can be deleted.
@@ -625,6 +633,7 @@ export interface Database {
       notes: { Row: Note; Insert: Omit<Note, 'id' | 'created_at' | 'author'> & { id?: string; created_at?: string; author?: string }; Update: Partial<Note> }
       commit_log: { Row: CommitLogEntry; Insert: Omit<CommitLogEntry, 'id' | 'created_at' | 'author'> & { id?: string; created_at?: string; author?: string }; Update: Partial<CommitLogEntry> }
       yc_companies: { Row: YcCompany; Insert: Omit<YcCompany, 'updated_at'> & { updated_at?: string }; Update: Partial<YcCompany> }
+      yc_status_changes: { Row: YcStatusChange; Insert: Omit<YcStatusChange, 'id' | 'observed_at'> & { id?: string; observed_at?: string }; Update: Partial<YcStatusChange> }
       agencies: { Row: Agency; Insert: Omit<Agency, 'created_at'> & { created_at?: string }; Update: Partial<Agency> }
     }
     Views: Record<string, never>
