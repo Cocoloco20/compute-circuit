@@ -563,6 +563,23 @@ export interface CommitLogEntry {
   created_at: string
 }
 
+export interface YcCompany {
+  company_id: string
+  yc_id: number | null
+  slug: string | null
+  batch: string | null          // 'Summer 2009', 'Winter 2022'
+  status: string | null         // Active | Inactive | Acquired | Public
+  industry: string | null
+  subindustry: string | null
+  team_size: number | null
+  one_liner: string | null
+  website: string | null
+  yc_url: string | null
+  top_company: boolean
+  launched_at: string | null
+  updated_at: string
+}
+
 // Supabase client generic — minimal shape so createClient<Database> typechecks.
 // The Database type below is intentionally light. When you adopt `supabase gen types`,
 // it will produce a much richer interface and this can be deleted.
@@ -607,6 +624,7 @@ export interface Database {
       decision_resurfacings: { Row: DecisionResurfacing; Insert: Omit<DecisionResurfacing, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DecisionResurfacing> }
       notes: { Row: Note; Insert: Omit<Note, 'id' | 'created_at' | 'author'> & { id?: string; created_at?: string; author?: string }; Update: Partial<Note> }
       commit_log: { Row: CommitLogEntry; Insert: Omit<CommitLogEntry, 'id' | 'created_at' | 'author'> & { id?: string; created_at?: string; author?: string }; Update: Partial<CommitLogEntry> }
+      yc_companies: { Row: YcCompany; Insert: Omit<YcCompany, 'updated_at'> & { updated_at?: string }; Update: Partial<YcCompany> }
       agencies: { Row: Agency; Insert: Omit<Agency, 'created_at'> & { created_at?: string }; Update: Partial<Agency> }
     }
     Views: Record<string, never>

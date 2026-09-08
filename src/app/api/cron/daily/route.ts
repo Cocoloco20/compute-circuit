@@ -105,6 +105,7 @@ export async function GET(req: NextRequest) {
     { task: 'social', path: '/api/cron/social' },
     { task: 'interest', path: '/api/cron/interest' },
     { task: 'arxiv', path: '/api/cron/arxiv' },
+    { task: 'yc-directory', path: '/api/cron/yc-directory' },
     // Daily over a rotating 120-co window since Phase 7B (was Tuesdays-only
     // over the full set, which now blows the sub-cron's own 60s budget).
     { task: 'fundamentals', path: '/api/cron/fundamentals' },
