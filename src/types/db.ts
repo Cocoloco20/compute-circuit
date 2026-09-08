@@ -470,6 +470,99 @@ export interface Verification {
   created_at: string
 }
 
+// ---------------------------------------------------------------------------
+// Decision-memory layer (migration 0048). Every table below is RLS-enabled
+// with zero policies: readable and writable ONLY through the service role.
+// Never fetch these with supabaseServer()/supabaseBrowser() — you'll get an
+// empty array, not an error, which is exactly how the 0045 watchlist leak
+// went unnoticed in reverse.
+// ---------------------------------------------------------------------------
+
+export type PipelineStage =
+  | 'Sourcing' | 'Screening' | 'DD' | 'Term Sheet' | 'Closed' | 'Passed'
+
+export type DecisionOutcome = 'Pass' | 'Advance' | 'Invest'
+
+export type DecisionFactorName =
+  | 'Market Timing' | 'Team' | 'Product' | 'Competition'
+  | 'Traction' | 'Valuation' | 'Thesis Fit' | 'Other'
+
+export type ResurfaceVerdict = 'Yes' | 'Partially' | 'No'
+
+export interface PipelineCard {
+  company_id: string
+  stage: PipelineStage
+  amount_usd: number | null
+  lead: string | null
+  owner: string | null
+  deadline: string | null          // YYYY-MM-DD; drives the decision queue
+  entered_stage_at: string         // stamped on every stage change
+  flag: boolean
+  action_needed: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Decision {
+  id: string
+  company_id: string
+  outcome: DecisionOutcome
+  primary_factor: DecisionFactorName
+  confidence: 1 | 2 | 3 | 4 | 5
+  reasoning: string                        // 10-500 chars, enforced in SQL too
+  what_would_change_mind: string | null    // <= 200 chars
+  dissent: boolean
+  decided_by: string
+  decided_at: string
+  created_at: string
+}
+
+export interface DecisionFactorRow {
+  id: string
+  decision_id: string
+  factor: DecisionFactorName
+  weight: number                   // 0-1; primary factor writes 1.0
+  note: string | null
+  created_at: string
+}
+
+export interface DecisionResurfacing {
+  id: string
+  decision_id: string
+  // Not an FK — triggers come from tables that don't share a key space.
+  // (trigger_source, trigger_signal_id) + decision_id is the idempotency key.
+  trigger_source: 'funding_rounds' | 'signals' | 'transcript_signals' | 'manual'
+  trigger_signal_id: string
+  trigger_kind: 'FundingRound' | 'MA' | 'Shutdown' | 'IPO'
+  trigger_summary: string
+  trigger_date: string | null
+  trigger_url: string | null
+  verdict: ResurfaceVerdict | null
+  verdict_by: string | null
+  verdict_at: string | null
+  verdict_note: string | null
+  created_at: string
+}
+
+export interface Note {
+  id: string
+  company_id: string
+  body: string
+  author: string
+  created_at: string
+}
+
+export interface CommitLogEntry {
+  id: string
+  entity_type: string
+  entity_id: string
+  action: string
+  diff: unknown
+  summary: string
+  author: string
+  created_at: string
+}
+
 // Supabase client generic — minimal shape so createClient<Database> typechecks.
 // The Database type below is intentionally light. When you adopt `supabase gen types`,
 // it will produce a much richer interface and this can be deleted.
@@ -508,6 +601,12 @@ export interface Database {
       signal_companies: { Row: { signal_id: string; company_id: string }; Insert: { signal_id: string; company_id: string }; Update: Partial<{ signal_id: string; company_id: string }> }
       signal_bottlenecks: { Row: { signal_id: string; bottleneck_id: string }; Insert: { signal_id: string; bottleneck_id: string }; Update: Partial<{ signal_id: string; bottleneck_id: string }> }
       verifications: { Row: Verification; Insert: Omit<Verification, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Verification> }
+      pipeline_cards: { Row: PipelineCard; Insert: Omit<PipelineCard, 'created_at' | 'updated_at' | 'entered_stage_at'> & { created_at?: string; updated_at?: string; entered_stage_at?: string }; Update: Partial<PipelineCard> }
+      decisions: { Row: Decision; Insert: Omit<Decision, 'id' | 'created_at' | 'decided_at' | 'decided_by'> & { id?: string; created_at?: string; decided_at?: string; decided_by?: string }; Update: Partial<Decision> }
+      decision_factors: { Row: DecisionFactorRow; Insert: Omit<DecisionFactorRow, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DecisionFactorRow> }
+      decision_resurfacings: { Row: DecisionResurfacing; Insert: Omit<DecisionResurfacing, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<DecisionResurfacing> }
+      notes: { Row: Note; Insert: Omit<Note, 'id' | 'created_at' | 'author'> & { id?: string; created_at?: string; author?: string }; Update: Partial<Note> }
+      commit_log: { Row: CommitLogEntry; Insert: Omit<CommitLogEntry, 'id' | 'created_at' | 'author'> & { id?: string; created_at?: string; author?: string }; Update: Partial<CommitLogEntry> }
       agencies: { Row: Agency; Insert: Omit<Agency, 'created_at'> & { created_at?: string }; Update: Partial<Agency> }
     }
     Views: Record<string, never>
