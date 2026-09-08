@@ -248,7 +248,10 @@ function Results({ rows }: { rows: DecisionRow[] }) {
           {rows.map(r => (
             <tr key={r.id} className="align-top hover:bg-[#13151C]">
               <td className="px-4 py-2.5">
-                <div className="font-medium">{r.company}</div>
+                <Link
+                  href={`/company/${encodeURIComponent(r.companyId)}`}
+                  className="font-medium underline-offset-2 hover:text-[#A78BFA] hover:underline"
+                >{r.company}</Link>
                 {/* The reasoning is the row's real content — the rest is metadata. */}
                 <p className="mt-1 max-w-xl text-xs leading-relaxed text-[#6B6F7A]">{r.reasoning}</p>
                 {r.whatWouldChangeMind && (

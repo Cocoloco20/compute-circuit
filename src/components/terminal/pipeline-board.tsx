@@ -134,7 +134,10 @@ export default function PipelineBoard({ rows, stale }: { rows: BoardRow[]; stale
                 <tr key={r.companyId} className={busy === r.companyId ? 'opacity-50' : 'hover:bg-[#13151C]'}>
                   <td className="px-4 py-2.5">
                     {r.flag && <span className="mr-1.5 text-[#FBBF24]" title="Flagged">⚠</span>}
-                    <span className="font-medium">{r.company}</span>
+                    <a
+                      href={`/company/${encodeURIComponent(r.companyId)}`}
+                      className="font-medium underline-offset-2 hover:text-[#A78BFA] hover:underline"
+                    >{r.company}</a>
                     {r.actionNeeded && (
                       <span className="ml-2 text-[11px] text-[#6B6F7A]">{r.actionNeeded}</span>
                     )}
