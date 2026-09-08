@@ -1,0 +1,28 @@
+{
+ "generated_at": "2026-09-08T20:43:43.408Z",
+ "probed": 40,
+ "found": 3,
+ "boards": [
+  {
+   "id": "yc-beyond-reach-labs",
+   "name": "Beyond Reach Labs",
+   "provider": "ashby",
+   "slug": "beyondreachlabs",
+   "openReqs": 6
+  },
+  {
+   "id": "yc-stilta",
+   "name": "Stilta",
+   "provider": "ashby",
+   "slug": "stilta",
+   "openReqs": 4
+  },
+  {
+   "id": "yc-compresr",
+   "name": "Compresr",
+   "provider": "ashby",
+   "slug": "compresr",
+   "openReqs": 2
+  }
+ ]
+}
