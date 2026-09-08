@@ -120,6 +120,9 @@ export default async function TerminalPage() {
             </p>
           </div>
           <div className="flex items-center gap-3">
+            <Link href="/decisions" className="text-xs text-[#6B6F7A] underline-offset-2 hover:text-[#A5A8B0] hover:underline">
+              Decisions
+            </Link>
             <Link href="/pipeline" className="text-xs text-[#6B6F7A] underline-offset-2 hover:text-[#A5A8B0] hover:underline">
               Pipeline
             </Link>
