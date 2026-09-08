@@ -38,10 +38,21 @@ export async function GET(req: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
   const sb = supabaseServiceRole()
 
-  // Filter the static map to companies that actually exist in the db. This
-  // protects against drift if a company is deleted but its slug still lives
-  // in jobs.ts.
-  const cosResp = await sb.from('companies').select('id')
+  // Filter the static map to companies that actually exist in the db, to
+  // protect against drift if a company is deleted but its slug still lives in
+  // jobs.ts.
+  //
+  // Ask only for the ids in the map. This used to select('id') over the whole
+  // table, which Supabase silently caps at 1000 rows — so once `companies`
+  // grew past 1000 the validity set became an arbitrary slice that contained
+  // none of the board companies, and this cron returned "no companies map to
+  // a known job board" every night while reporting ok. That is why
+  // job_snapshots held 78 rows.
+  //
+  // Checking 79 known ids is also just the right query: it cannot be capped,
+  // and it does not read 11,000 rows to answer a question about 79.
+  const boardIds = Object.keys(JOB_BOARDS)
+  const cosResp = await sb.from('companies').select('id').in('id', boardIds)
   if (cosResp.error) return NextResponse.json({ error: cosResp.error.message }, { status: 500 })
   const validIds = new Set(((cosResp.data ?? []) as Array<{ id: string }>).map(c => c.id))
 
