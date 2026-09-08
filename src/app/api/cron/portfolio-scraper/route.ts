@@ -33,6 +33,7 @@ export const maxDuration = 60 // Vercel Hobby plan max
 interface InvestorRow {
   id: string
   name: string
+  last_scraped_at: string | null
 }
 interface CompanyMatch {
   id: string
@@ -55,7 +56,9 @@ export async function GET(req: NextRequest) {
   // ----- pull existing companies + investors -----
   const [coResp, invResp] = await Promise.all([
     sb.from('companies').select('id, name, cik'),
-    sb.from('investors').select('id, name'),
+    // Stalest-first so the rotation covers everyone over successive runs.
+    sb.from('investors').select('id, name, last_scraped_at')
+      .order('last_scraped_at', { ascending: true, nullsFirst: true }),
   ])
   if (coResp.error) return NextResponse.json({ error: coResp.error.message }, { status: 500 })
   if (invResp.error) return NextResponse.json({ error: invResp.error.message }, { status: 500 })
@@ -73,11 +76,20 @@ export async function GET(req: NextRequest) {
   }
 
   // ----- discover via Form D -----
-  const enabled = SCRAPER_CONFIGS.filter(
-    (cfg): cfg is { id: string; term: string } => !!cfg.term && knownInvestorIds.has(cfg.id),
-  )
+  // Order the configs by the investors' rotation order, not the file's order,
+  // so a run that ends at the deadline picks up where the last one stopped.
+  const rotation = new Map(investors.map((inv, i) => [inv.id, i]))
+  const enabled = SCRAPER_CONFIGS
+    .filter((cfg): cfg is { id: string; term: string } => !!cfg.term && knownInvestorIds.has(cfg.id))
+    .sort((a, b) => (rotation.get(a.id) ?? 1e9) - (rotation.get(b.id) ?? 1e9))
+
+  // Leave ~25s of the 60s cap for the company inserts and backer upserts that
+  // follow. Overrunning is not a partial run: Vercel kills the lambda before
+  // anything commits, which is exactly how `prices` spent 90 days writing zero
+  // rows while appearing to execute nightly.
+  const FETCH_DEADLINE_MS = 30_000
   const startedAt = Date.now()
-  const discovered = await discoverAcrossInvestors(enabled)
+  const { rows: discovered, completed, skipped } = await discoverAcrossInvestors(enabled, FETCH_DEADLINE_MS)
   const fetchMs = Date.now() - startedAt
 
   // ----- map each discovery → either existing company or a new one to insert -----
@@ -202,9 +214,24 @@ export async function GET(req: NextRequest) {
     byVia.set(d.via, e)
   }
 
+  // Stamp only the investors whose walk finished, so the next run resumes at
+  // the ones this run did not reach.
+  if (completed.length) {
+    const stamp = new Date().toISOString()
+    await (sb.from('investors') as unknown as {
+      update: (p: { last_scraped_at: string }) => {
+        in: (c: string, v: string[]) => Promise<{ error: unknown }>
+      }
+    }).update({ last_scraped_at: stamp }).in('id', completed)
+  }
+
   return NextResponse.json({
     ok: true,
     scanned: enabled.length,
+    covered: completed.length,
+    // Non-empty means the roster is bigger than one run's budget; those
+    // investors sort first next time. Expected, not an error.
+    deferred: skipped,
     fetched: discovered.length,
     companiesInserted,
     linksInserted,

@@ -121,16 +121,35 @@ function isLikelyVcShell(issuerName: string, vcTermLower: string, vcFirstWordUpp
 /** Drive Form-D discovery sequentially across N VCs with SEC-friendly spacing. */
 export async function discoverAcrossInvestors(
   configs: Array<{ id: string; term: string }>,
-): Promise<DiscoveredCompany[]> {
-  const all: DiscoveredCompany[] = []
+  /**
+   * Wall-clock budget in ms. The loop stops at the deadline and returns what
+   * it has, rather than running the whole roster and getting the lambda killed
+   * before any of it commits. Callers pass a deadline that leaves room for the
+   * writes that follow.
+   */
+  deadlineMs?: number,
+): Promise<{ rows: DiscoveredCompany[]; completed: string[]; skipped: string[] }> {
+  const rows: DiscoveredCompany[] = []
+  const completed: string[] = []
+  const skipped: string[] = []
+  const started = Date.now()
+
   for (const c of configs) {
+    if (deadlineMs != null && Date.now() - started > deadlineMs) {
+      skipped.push(c.id)
+      continue
+    }
     try {
-      const rows = await discoverViaFormD({ term: c.term, via: c.id })
-      all.push(...rows)
+      rows.push(...await discoverViaFormD({ term: c.term, via: c.id }))
+      // Only stamp investors whose walk actually finished. A thrown error
+      // must NOT count as covered, or the rotation would skip that investor
+      // for a full cycle every time its search misbehaves.
+      completed.push(c.id)
     } catch (err) {
       console.error(`[scraper] ${c.id} failed:`, err instanceof Error ? err.message : err)
+      skipped.push(c.id)
     }
     await sleep(200) // ~5 req/sec — well under SEC's 10/sec ceiling
   }
-  return all
+  return { rows, completed, skipped }
 }
