@@ -1,28 +1,426 @@
 {
- "generated_at": "2026-09-08T20:43:43.408Z",
- "probed": 40,
- "found": 3,
+ "generated_at": "2026-09-08T20:48:43.678Z",
+ "probed": 400,
+ "found": 45,
+ "rejected": 7,
  "boards": [
+  {
+   "id": "yc-reducto",
+   "name": "Reducto",
+   "provider": "ashby",
+   "slug": "reducto",
+   "openReqs": 40,
+   "teamSize": 30
+  },
+  {
+   "id": "yc-afterquery",
+   "name": "AfterQuery",
+   "provider": "ashby",
+   "slug": "afterquery",
+   "openReqs": 34,
+   "teamSize": 30
+  },
+  {
+   "id": "yc-harper",
+   "name": "Harper",
+   "provider": "ashby",
+   "slug": "harperinsure",
+   "openReqs": 27,
+   "teamSize": 25
+  },
+  {
+   "id": "yc-momentic",
+   "name": "Momentic",
+   "provider": "greenhouse",
+   "slug": "momentic",
+   "openReqs": 26,
+   "teamSize": 15
+  },
+  {
+   "id": "yc-garage-2",
+   "name": "Garage",
+   "provider": "ashby",
+   "slug": "garage",
+   "openReqs": 15,
+   "teamSize": 25
+  },
+  {
+   "id": "yc-greptile",
+   "name": "Greptile",
+   "provider": "ashby",
+   "slug": "greptile",
+   "openReqs": 15,
+   "teamSize": 35
+  },
+  {
+   "id": "yc-hud",
+   "name": "HUD",
+   "provider": "ashby",
+   "slug": "hud",
+   "openReqs": 13,
+   "teamSize": 15
+  },
+  {
+   "id": "yc-mercura",
+   "name": "Mercura",
+   "provider": "ashby",
+   "slug": "mercura",
+   "openReqs": 13,
+   "teamSize": 20
+  },
+  {
+   "id": "yc-pointone",
+   "name": "PointOne",
+   "provider": "ashby",
+   "slug": "pointone",
+   "openReqs": 13,
+   "teamSize": 35
+  },
+  {
+   "id": "yc-mosaic-2",
+   "name": "Mosaic",
+   "provider": "ashby",
+   "slug": "mosaic",
+   "openReqs": 7,
+   "teamSize": 5
+  },
+  {
+   "id": "yc-orbital-operations",
+   "name": "Orbital Operations",
+   "provider": "greenhouse",
+   "slug": "orbitaloperations",
+   "openReqs": 7,
+   "teamSize": 10
+  },
+  {
+   "id": "yc-osmosis",
+   "name": "Osmosis",
+   "provider": "greenhouse",
+   "slug": "osmosis",
+   "openReqs": 7,
+   "teamSize": 6
+  },
+  {
+   "id": "yc-solidroad",
+   "name": "Solidroad",
+   "provider": "ashby",
+   "slug": "solidroad",
+   "openReqs": 7,
+   "teamSize": 6
+  },
+  {
+   "id": "yc-weave-3",
+   "name": "Weave",
+   "provider": "greenhouse",
+   "slug": "weave",
+   "openReqs": 7,
+   "teamSize": 14
+  },
   {
    "id": "yc-beyond-reach-labs",
    "name": "Beyond Reach Labs",
    "provider": "ashby",
    "slug": "beyondreachlabs",
-   "openReqs": 6
+   "openReqs": 6,
+   "teamSize": 8
+  },
+  {
+   "id": "yc-cardboard",
+   "name": "Cardboard",
+   "provider": "ashby",
+   "slug": "cardboard",
+   "openReqs": 6,
+   "teamSize": 8
+  },
+  {
+   "id": "yc-lance",
+   "name": "Lance",
+   "provider": "ashby",
+   "slug": "lance",
+   "openReqs": 6,
+   "teamSize": 10
+  },
+  {
+   "id": "yc-mantis",
+   "name": "Mantis",
+   "provider": "greenhouse",
+   "slug": "mantis",
+   "openReqs": 6,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-pivot-robotics",
+   "name": "Pivot Robotics",
+   "provider": "ashby",
+   "slug": "pivotrobotics",
+   "openReqs": 6,
+   "teamSize": 7
+  },
+  {
+   "id": "yc-haladir",
+   "name": "Haladir",
+   "provider": "ashby",
+   "slug": "haladir",
+   "openReqs": 5,
+   "teamSize": 4
+  },
+  {
+   "id": "yc-salespatriot",
+   "name": "SalesPatriot",
+   "provider": "ashby",
+   "slug": "salespatriot",
+   "openReqs": 5,
+   "teamSize": 15
+  },
+  {
+   "id": "yc-constellation-space",
+   "name": "Constellation Space",
+   "provider": "ashby",
+   "slug": "constellationspace",
+   "openReqs": 4,
+   "teamSize": 4
+  },
+  {
+   "id": "yc-mundo-ai",
+   "name": "Mundo AI",
+   "provider": "ashby",
+   "slug": "mundo-ai",
+   "openReqs": 4,
+   "teamSize": 30
+  },
+  {
+   "id": "yc-one-robot",
+   "name": "One Robot",
+   "provider": "ashby",
+   "slug": "onerobot",
+   "openReqs": 4,
+   "teamSize": 2
+  },
+  {
+   "id": "yc-polymath",
+   "name": "Polymath",
+   "provider": "ashby",
+   "slug": "polymath",
+   "openReqs": 4,
+   "teamSize": 6
   },
   {
    "id": "yc-stilta",
    "name": "Stilta",
    "provider": "ashby",
    "slug": "stilta",
-   "openReqs": 4
+   "openReqs": 4,
+   "teamSize": 4
+  },
+  {
+   "id": "yc-arini",
+   "name": "Arini",
+   "provider": "ashby",
+   "slug": "arini",
+   "openReqs": 3,
+   "teamSize": 17
+  },
+  {
+   "id": "yc-asimov",
+   "name": "Asimov",
+   "provider": "ashby",
+   "slug": "asimov",
+   "openReqs": 3,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-bild-ai",
+   "name": "Bild AI",
+   "provider": "ashby",
+   "slug": "bild-ai",
+   "openReqs": 3,
+   "teamSize": 9
+  },
+  {
+   "id": "yc-cedar",
+   "name": "Cedar",
+   "provider": "ashby",
+   "slug": "cedar",
+   "openReqs": 3,
+   "teamSize": 2
+  },
+  {
+   "id": "yc-mastra",
+   "name": "Mastra",
+   "provider": "ashby",
+   "slug": "mastra",
+   "openReqs": 3,
+   "teamSize": 30
+  },
+  {
+   "id": "yc-newton",
+   "name": "Newton",
+   "provider": "lever",
+   "slug": "newton",
+   "openReqs": 3,
+   "teamSize": 4
+  },
+  {
+   "id": "yc-the-token-company",
+   "name": "The Token Company",
+   "provider": "ashby",
+   "slug": "the-token-company",
+   "openReqs": 3,
+   "teamSize": 2
   },
   {
    "id": "yc-compresr",
    "name": "Compresr",
    "provider": "ashby",
    "slug": "compresr",
-   "openReqs": 2
+   "openReqs": 2,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-deployparagon",
+   "name": "Paragon",
+   "provider": "ashby",
+   "slug": "paragon",
+   "openReqs": 2,
+   "teamSize": 2
+  },
+  {
+   "id": "yc-pax-historia",
+   "name": "Pax Historia",
+   "provider": "ashby",
+   "slug": "pax-historia",
+   "openReqs": 2,
+   "teamSize": 6
+  },
+  {
+   "id": "yc-revise-robotics",
+   "name": "Revise Robotics",
+   "provider": "ashby",
+   "slug": "reviserobotics",
+   "openReqs": 2,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-tekton-dynamics",
+   "name": "Tekton Dynamics",
+   "provider": "ashby",
+   "slug": "tekton-dynamics",
+   "openReqs": 2,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-argon-ai-inc",
+   "name": "Argon AI, Inc.",
+   "provider": "ashby",
+   "slug": "argon-ai",
+   "openReqs": 1,
+   "teamSize": 2
+  },
+  {
+   "id": "yc-brumby",
+   "name": "Brumby (Formerly GrazeMate)",
+   "provider": "ashby",
+   "slug": "brumby",
+   "openReqs": 1,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-butter",
+   "name": "Butter",
+   "provider": "ashby",
+   "slug": "butter",
+   "openReqs": 1,
+   "teamSize": 2
+  },
+  {
+   "id": "yc-flowtel",
+   "name": "Flowtel",
+   "provider": "ashby",
+   "slug": "flowtel",
+   "openReqs": 1,
+   "teamSize": 5
+  },
+  {
+   "id": "yc-general-legal",
+   "name": "General Legal",
+   "provider": "greenhouse",
+   "slug": "general",
+   "openReqs": 1,
+   "teamSize": 25
+  },
+  {
+   "id": "yc-paradigm",
+   "name": "Paradigm",
+   "provider": "greenhouse",
+   "slug": "paradigm",
+   "openReqs": 1,
+   "teamSize": 8
+  },
+  {
+   "id": "yc-quotient-labs",
+   "name": "Quotient Labs",
+   "provider": "greenhouse",
+   "slug": "quotient",
+   "openReqs": 1,
+   "teamSize": 2
+  }
+ ],
+ "rejected_boards": [
+  {
+   "id": "lcid",
+   "name": "Lucid Group",
+   "provider": "greenhouse",
+   "slug": "lucidmotors",
+   "openReqs": 317,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-sila",
+   "name": "Sila",
+   "provider": "lever",
+   "slug": "sila",
+   "openReqs": 214,
+   "teamSize": 2
+  },
+  {
+   "id": "yc-ion-design",
+   "name": "ion design",
+   "provider": "lever",
+   "slug": "ion",
+   "openReqs": 80,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-mesh-2",
+   "name": "Mesh",
+   "provider": "greenhouse",
+   "slug": "mesh",
+   "openReqs": 22,
+   "teamSize": 3
+  },
+  {
+   "id": "yc-axiom",
+   "name": "Axiom",
+   "provider": "greenhouse",
+   "slug": "axiom",
+   "openReqs": 13,
+   "teamSize": 2
+  },
+  {
+   "id": "yc-bubble-lab",
+   "name": "Bubble Lab",
+   "provider": "ashby",
+   "slug": "bubble",
+   "openReqs": 10,
+   "teamSize": 2
+  },
+  {
+   "id": "yc-joindex",
+   "name": "Dex",
+   "provider": "ashby",
+   "slug": "dex",
+   "openReqs": 7,
+   "teamSize": 2
   }
  ]
 }

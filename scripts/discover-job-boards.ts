@@ -79,7 +79,33 @@ async function probe(provider: Provider, slug: string): Promise<number | null> {
   }
 }
 
-interface Hit { id: string; name: string; provider: Provider; slug: string; openReqs: number }
+interface Hit {
+  id: string; name: string; provider: Provider; slug: string
+  openReqs: number; teamSize: number | null
+}
+
+/**
+ * A resolving slug is not a matching slug.
+ *
+ * Measured on the first 400-company run: 7 of 52 hits were another company
+ * entirely. "Lucid Group", a 3-person YC startup, matched greenhouse:lucidmotors
+ * — Lucid Motors, 317 open reqs. "Sila" (2 people) matched Sila
+ * Nanotechnologies, 214. Bubble Lab matched Bubble. Axiom, Mesh, Dex and ion
+ * all collided with larger companies holding the short generic slug.
+ *
+ * Headcount is the tell. A two-person company does not have 214 open roles, so
+ * a board whose posting count dwarfs the team is somebody else's board. The
+ * floor of 4 keeps a genuinely aggressive small team (2 people, 6 roles) from
+ * being thrown out.
+ *
+ * This is a one-way filter on purpose: a missed board costs one company's
+ * hiring signal, while a wrong board silently poisons the data with another
+ * company's, and nothing downstream can detect that.
+ */
+function implausible(openReqs: number, teamSize: number | null): boolean {
+  if (teamSize == null || teamSize <= 0) return false
+  return openReqs > Math.max(4, teamSize * 2)
+}
 
 async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -89,14 +115,18 @@ async function main() {
 
   let targets: Array<{ id: string; name: string; domain: string | null }> = []
 
+  const teamSize = new Map<string, number | null>()
+
   if (FUNDABLE) {
     // The subset worth the requests: alive, small, recent. A dead company's
     // board tells us nothing and costs the same three probes.
     const { data: yc } = await sb.from('yc_companies')
-      .select('company_id')
+      .select('company_id, team_size')
       .eq('status', 'Active').lte('team_size', 40)
       .order('batch', { ascending: false }).limit(LIMIT)
-    const ids = ((yc ?? []) as Array<{ company_id: string }>).map(y => y.company_id)
+    const rows = (yc ?? []) as Array<{ company_id: string; team_size: number | null }>
+    for (const r of rows) teamSize.set(r.company_id, r.team_size)
+    const ids = rows.map(y => y.company_id)
     if (ids.length) {
       const { data } = await sb.from('companies').select('id, name, domain').in('id', ids)
       targets = (data ?? []) as typeof targets
@@ -117,6 +147,7 @@ async function main() {
   }
 
   const hits: Hit[] = []
+  const rejected: Hit[] = []
   let done = 0
 
   async function work(t: { id: string; name: string; domain: string | null }) {
@@ -127,7 +158,13 @@ async function main() {
         // A board with zero open reqs is indistinguishable from a stale slug
         // that happens to resolve, so require at least one posting.
         if (n != null && n > 0) {
-          hits.push({ id: t.id, name: t.name, provider, slug, openReqs: n })
+          const team = teamSize.get(t.id) ?? null
+          if (implausible(n, team)) {
+            rejected.push({ id: t.id, name: t.name, provider, slug, openReqs: n, teamSize: team })
+            console.log(`  ✗ ${t.name} → ${provider}:${slug} (${n} open vs ${team} people) — another company`)
+            return
+          }
+          hits.push({ id: t.id, name: t.name, provider, slug, openReqs: n, teamSize: team })
           console.log(`  ✓ ${t.name} → ${provider}:${slug} (${n} open)`)
           return
         }
@@ -148,11 +185,16 @@ async function main() {
     generated_at: new Date().toISOString(),
     probed: targets.length,
     found: hits.length,
+    rejected: rejected.length,
     boards: hits.sort((a, b) => b.openReqs - a.openReqs),
+    // Kept, not discarded: each is a real board for SOME company, and the
+    // list is the evidence for why the filter exists.
+    rejected_boards: rejected.sort((a, b) => b.openReqs - a.openReqs),
   }, null, 1))
 
-  console.log(`\n${hits.length} boards found across ${targets.length} companies ` +
-    `(${((hits.length / Math.max(1, targets.length)) * 100).toFixed(0)}% hit rate)`)
+  console.log(`\n${hits.length} boards verified across ${targets.length} companies ` +
+    `(${((hits.length / Math.max(1, targets.length)) * 100).toFixed(0)}% hit rate), ` +
+    `${rejected.length} rejected as another company's board`)
   console.log(`written to ${out}`)
   console.log('Review before merging into JOB_BOARDS — a wrong slug attributes another company\'s hiring to this one.')
 }

@@ -87,6 +87,59 @@ export const JOB_BOARDS: Record<string, JobBoardConfig> = {
   // ----- Quantum + nuclear (downstream beneficiaries) -----
   ionq:        { provider: 'greenhouse', slug: 'ionq' },
   oklo:        { provider: 'greenhouse', slug: 'oklo' },
+
+  // ----- Discovered 2026-09-08 by scripts/discover-job-boards.ts -----
+  // Slugs probed against the live Greenhouse/Lever/Ashby board APIs, kept
+  // only when the open-req count was plausible for the team size. Seven
+  // hits were dropped as another company's board: Lucid Group (3 people)
+  // resolved to greenhouse:lucidmotors with 317 reqs, and Sila (2 people)
+  // to Sila Nanotechnologies with 214. A resolving slug is not a matching
+  // slug, and a wrong one silently credits another company's hiring here.
+  'yc-reducto': { provider: 'ashby', slug: 'reducto' },
+  'yc-afterquery': { provider: 'ashby', slug: 'afterquery' },
+  'yc-harper': { provider: 'ashby', slug: 'harperinsure' },
+  'yc-momentic': { provider: 'greenhouse', slug: 'momentic' },
+  'yc-garage-2': { provider: 'ashby', slug: 'garage' },
+  'yc-greptile': { provider: 'ashby', slug: 'greptile' },
+  'yc-hud': { provider: 'ashby', slug: 'hud' },
+  'yc-mercura': { provider: 'ashby', slug: 'mercura' },
+  'yc-pointone': { provider: 'ashby', slug: 'pointone' },
+  'yc-mosaic-2': { provider: 'ashby', slug: 'mosaic' },
+  'yc-orbital-operations': { provider: 'greenhouse', slug: 'orbitaloperations' },
+  'yc-osmosis': { provider: 'greenhouse', slug: 'osmosis' },
+  'yc-solidroad': { provider: 'ashby', slug: 'solidroad' },
+  'yc-weave-3': { provider: 'greenhouse', slug: 'weave' },
+  'yc-beyond-reach-labs': { provider: 'ashby', slug: 'beyondreachlabs' },
+  'yc-cardboard': { provider: 'ashby', slug: 'cardboard' },
+  'yc-lance': { provider: 'ashby', slug: 'lance' },
+  'yc-mantis': { provider: 'greenhouse', slug: 'mantis' },
+  'yc-pivot-robotics': { provider: 'ashby', slug: 'pivotrobotics' },
+  'yc-haladir': { provider: 'ashby', slug: 'haladir' },
+  'yc-salespatriot': { provider: 'ashby', slug: 'salespatriot' },
+  'yc-constellation-space': { provider: 'ashby', slug: 'constellationspace' },
+  'yc-mundo-ai': { provider: 'ashby', slug: 'mundo-ai' },
+  'yc-one-robot': { provider: 'ashby', slug: 'onerobot' },
+  'yc-polymath': { provider: 'ashby', slug: 'polymath' },
+  'yc-stilta': { provider: 'ashby', slug: 'stilta' },
+  'yc-arini': { provider: 'ashby', slug: 'arini' },
+  'yc-asimov': { provider: 'ashby', slug: 'asimov' },
+  'yc-bild-ai': { provider: 'ashby', slug: 'bild-ai' },
+  'yc-cedar': { provider: 'ashby', slug: 'cedar' },
+  'yc-mastra': { provider: 'ashby', slug: 'mastra' },
+  'yc-newton': { provider: 'lever', slug: 'newton' },
+  'yc-the-token-company': { provider: 'ashby', slug: 'the-token-company' },
+  'yc-compresr': { provider: 'ashby', slug: 'compresr' },
+  'yc-deployparagon': { provider: 'ashby', slug: 'paragon' },
+  'yc-pax-historia': { provider: 'ashby', slug: 'pax-historia' },
+  'yc-revise-robotics': { provider: 'ashby', slug: 'reviserobotics' },
+  'yc-tekton-dynamics': { provider: 'ashby', slug: 'tekton-dynamics' },
+  'yc-argon-ai-inc': { provider: 'ashby', slug: 'argon-ai' },
+  'yc-brumby': { provider: 'ashby', slug: 'brumby' },
+  'yc-butter': { provider: 'ashby', slug: 'butter' },
+  'yc-flowtel': { provider: 'ashby', slug: 'flowtel' },
+  'yc-general-legal': { provider: 'greenhouse', slug: 'general' },
+  'yc-paradigm': { provider: 'greenhouse', slug: 'paradigm' },
+  'yc-quotient-labs': { provider: 'greenhouse', slug: 'quotient' },
 }
 
 const UA = 'compute-circuit (research tool) luigui.h2002@gmail.com'
