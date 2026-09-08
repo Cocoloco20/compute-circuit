@@ -14,6 +14,12 @@ import { supabaseServiceRole } from '@/lib/supabase/service-role'
  *   POST   { company_id, shares?, avg_cost_usd?, target_buy_usd?,
  *            target_sell_usd?, thesis_note?, alerts_enabled? }   → upsert
  *   DELETE ?company_id=nvda                                       → remove
+ *   GET                                                          → all rows
+ *
+ * GET exists so the client-side Radar (MyRadar) and the drawer's track
+ * controls can read the watchlist through an authenticated path instead of
+ * the anon-role read that used to leak it into the public SSR payload
+ * (HOLE 1 fix — migration 0046 dropped the anon select policy).
  */
 
 export const runtime = 'nodejs'
@@ -77,4 +83,12 @@ export async function DELETE(req: NextRequest) {
   const r = await sb.from('watchlist').delete().eq('company_id', companyId)
   if (r.error) return NextResponse.json({ error: r.error.message }, { status: 500 })
   return NextResponse.json({ ok: true })
+}
+
+export async function GET(req: NextRequest) {
+  if (!checkAuth(req)) return unauthorized()
+  const sb = supabaseServiceRole()
+  const r = await sb.from('watchlist').select('*').order('added_at')
+  if (r.error) return NextResponse.json({ error: r.error.message }, { status: 500 })
+  return NextResponse.json(r.data ?? [])
 }

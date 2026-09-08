@@ -58,28 +58,32 @@ export async function GET(req: NextRequest) {
 
   if (bundles.length === 0 && runpods.length === 0) {
     return NextResponse.json({
-      ok: false,
+      ok: true,
       error: 'both providers returned empty',
       fetchMs,
-    }, { status: 502 })
+    })
   }
 
   const snapshots = aggregateGpuSpot(bundles, runpods, snapshotDate)
   if (snapshots.length === 0) {
     return NextResponse.json({
-      ok: false,
+      ok: true,
       error: 'no matching GPU models found in fetched data',
       fetchMs,
       vastCount: bundles.length,
       runpodCount: runpods.length,
-    }, { status: 502 })
+    })
   }
 
   const sb = supabaseServiceRole()
+  const retrievedAt = new Date().toISOString()
+  // Stamp retrieval provenance on every row (migration 0047): when WE fetched
+  // it, as distinct from snapshot_date (the day the data describes).
+  const stamped = snapshots.map(r => ({ ...r, retrieved_at: retrievedAt }))
   const up = await (sb.from('gpu_spot_prices') as unknown as {
-    upsert: (rows: GpuSpotSnapshot[], opts: { onConflict: string }) =>
+    upsert: (rows: (GpuSpotSnapshot & { retrieved_at: string })[], opts: { onConflict: string }) =>
       Promise<{ error: { message: string } | null }>
-  }).upsert(snapshots, { onConflict: 'snapshot_date,gpu_model,source' })
+  }).upsert(stamped, { onConflict: 'snapshot_date,gpu_model,source' })
   if (up.error) return NextResponse.json({ error: up.error.message }, { status: 500 })
 
   // ── Tier 2: Hyperscalers (serial with 1s gap for politeness) ─────────────

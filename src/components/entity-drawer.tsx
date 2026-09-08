@@ -14,6 +14,7 @@
  */
 
 import { useState } from 'react'
+import { useWatchlist } from '@/lib/watchlist-store'
 import type { GraphData } from '@/lib/graph-data'
 import type { Flow, Holding, Fundamental, HfActivity, GithubActivity, GridDemandSnapshot, PatentSnapshotRow, JobSnapshotRow, FundingRound, TranscriptSignal, SocialMention, InterestSignal } from '@/types/db'
 import { computeCapexTTM } from '@/lib/capex'
@@ -393,7 +394,7 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
 
   return (
     <>
-      <TrackControls company={company} data={data} />
+      <TrackControls company={company} />
       <AiThesisCard
         thesisAi={company.thesis_ai}
         riskAi={company.thesis_risk_ai}
@@ -1983,9 +1984,10 @@ function ComputeDealsSection({ companyId, data }: { companyId: string; data: Gra
 //
 // Single-user auth: writes hit /api/watchlist with Bearer CRON_SECRET. The
 // key is asked for ONCE (prompt) and cached in localStorage('cc_key'), so
-// after the first unlock tracking is one click. Reads come in with the page
-// payload (anon RLS), so a freshly-saved row shows optimistically here and
-// fully on next load.
+// after the first unlock tracking is one click. Reads now come from the
+// protected /api/watchlist via the shared watchlist store (HOLE 1 fix), not
+// from the SSR payload. The store invalidates on write so the Radar and the
+// drawer stay in sync without a reload.
 function getClientKey(): string | null {
   if (typeof window === 'undefined') return null
   let k = window.localStorage.getItem('cc_key')
@@ -1996,8 +1998,10 @@ function getClientKey(): string | null {
   return k?.trim() || null
 }
 
-function TrackControls({ company, data }: { company: GraphData['companies'][number]; data: GraphData }) {
-  const existing = data.watchlist.find(w => w.company_id === company.id)
+function TrackControls({ company }: { company: GraphData['companies'][number] }) {
+  // Watchlist state from the protected endpoint (shared with MyRadar).
+  const wl = useWatchlist()
+  const existing = wl.data?.find(w => w.company_id === company.id) ?? null
   const [tracked, setTracked] = useState(!!existing)
   const [editing, setEditing] = useState(false)
   const [busy, setBusy] = useState(false)

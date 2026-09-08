@@ -22,6 +22,7 @@ import type { GraphData } from '@/lib/graph-data'
 import { topCapexRunRate, type CapexRunRateRow } from '@/lib/capex'
 import type { SelectedRef } from './compute-graph'
 import type { ModelLeaderboardEntry, InterestSignal, ArxivSnapshot, GithubActivity } from '@/types/db'
+import { useWatchlist } from '@/lib/watchlist-store'
 
 interface Props {
   data: GraphData
@@ -1038,15 +1039,30 @@ function useGithubMomentum(data: GraphData): GithubMomentumRow[] {
 // zone, and how many signals (news + filings) hit it in the last 7 days.
 // Tracking is managed from each company's drawer (Track button).
 function MyRadar({ data, onSelect }: { data: GraphData; onSelect: (sel: SelectedRef) => void }) {
-  if (data.watchlist.length === 0) return null
+  // Watchlist data comes from the protected /api/watchlist endpoint (HOLE 1
+  // fix), not from the SSR GraphData payload. The shared store keeps this in
+  // sync with the drawer track controls across track/untrack edits.
+  const wl = useWatchlist()
+  // Auth failure / network error: hide the section rather than crash or leak.
+  if (wl.error) return null
+  // First render while the fetch is in flight.
+  if (wl.loading && !wl.data) {
+    return (
+      <PulseSection title="My Radar">
+        <div className="px-2 py-1.5 text-[11px] text-fg-dim">Loading…</div>
+      </PulseSection>
+    )
+  }
+  const watchlist = wl.data ?? []
+  if (watchlist.length === 0) return null
   const sevenAgo = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10)
   const recentSignalIds = new Set(data.signals.filter(sg => sg.date >= sevenAgo).map(sg => sg.id))
   const signalCount = (coId: string) =>
     data.signalCompanies.filter(l => l.company_id === coId && recentSignalIds.has(l.signal_id)).length
 
   return (
-    <PulseSection title={`My Radar · ${data.watchlist.length} tracked`}>
-      {data.watchlist.map(w => {
+    <PulseSection title={`My Radar · ${watchlist.length} tracked`}>
+      {watchlist.map(w => {
         const co = data.companies.find(c => c.id === w.company_id)
         if (!co) return null
         const px = co.last_price

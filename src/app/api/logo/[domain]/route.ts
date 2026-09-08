@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { assertSafeHostname } from '@/lib/ssrf-guard'
 
 /**
  * Same-origin logo proxy with a multi-provider fallback chain.
@@ -59,6 +60,13 @@ const CACHE_TTL_MS = 60 * 60 * 1000
 /** Per-provider timeout. Total worst case = NUM_PROVIDERS * PROVIDER_TIMEOUT_MS. */
 const PROVIDER_TIMEOUT_MS = 5000
 
+/** Same-UA constant shared by the plain and guarded fetchers. */
+const LOGO_UA =
+  'Mozilla/5.0 (compatible; compute-circuit-logo/1.0; +https://compute-circuit.vercel.app)'
+
+/** Max redirect hops the guarded fetcher will follow. */
+const MAX_REDIRECTS = 3
+
 type CacheEntry = {
   bytes: ArrayBuffer
   contentType: string
@@ -90,11 +98,78 @@ async function fetchWithTimeout(
       cache: 'no-store',
       headers: {
         // Some corporate sites + Brandfetch block default fetch UAs.
-        'User-Agent':
-          'Mozilla/5.0 (compatible; compute-circuit-logo/1.0; +https://compute-circuit.vercel.app)',
+        'User-Agent': LOGO_UA,
         Accept: accept,
       },
     })
+  } catch {
+    return null
+  } finally {
+    clearTimeout(t)
+  }
+}
+
+/**
+ * fetch with SSRF guard + re-validated redirects. Used by the homepage
+ * scrape path, where the target host name is attacker-influenced (the
+ * company domain and any <link rel="icon"> href scraped off their site).
+ *
+ * Before every hop it (a) reaches an absolute URL, (b) asserts the target
+ * hostname is safe (ssrf-guard: DNS resolve + default-deny on any
+ * loopback/link-local/private/reserved address), and (c) refuses a redirect
+ * whose next host is unsafe — so a redirect can't bounce us at an internal
+ * address. Redirects are followed manually (redirect:'manual'), up to
+ * MAX_REDIRECTS hops, http(s) only.
+ */
+async function fetchGuarded(
+  url: string,
+  ms: number,
+  accept: string,
+): Promise<Response | null> {
+  return fetchGuardedInner(url, ms, accept, MAX_REDIRECTS)
+}
+
+async function fetchGuardedInner(
+  url: string,
+  ms: number,
+  accept: string,
+  hops: number,
+): Promise<Response | null> {
+  let host: string
+  let proto: string
+  try {
+    host = new URL(url).hostname
+    proto = new URL(url).protocol
+  } catch {
+    return null
+  }
+  if (!/^https?$/i.test(proto)) return null
+  if (!(await assertSafeHostname(host))) return null
+
+  const ctrl = new AbortController()
+  const t = setTimeout(() => ctrl.abort(), ms)
+  try {
+    const res = await fetch(url, {
+      redirect: 'manual',
+      signal: ctrl.signal,
+      cache: 'no-store',
+      headers: { 'User-Agent': LOGO_UA, Accept: accept },
+    })
+    if (res.status >= 300 && res.status < 400) {
+      // Cancel the (unused) redirect body before recursing.
+      try { await res.body?.cancel() } catch { /* ignore */ }
+      if (hops <= 0) return null
+      const loc = res.headers.get('location')
+      if (!loc) return null
+      let next: string
+      try {
+        next = new URL(loc, url).toString()
+      } catch {
+        return null
+      }
+      return fetchGuardedInner(next, ms, accept, hops - 1)
+    }
+    return res
   } catch {
     return null
   } finally {
@@ -199,7 +274,9 @@ async function tryDuckDuckGoIcon(domain: string): Promise<ProviderResult | null>
 async function tryHomepageScrape(domain: string): Promise<ProviderResult | null> {
   for (const scheme of ['https://www.', 'https://']) {
     const homepageUrl = `${scheme}${domain}`
-    const htmlRes = await fetchWithTimeout(homepageUrl, PROVIDER_TIMEOUT_MS, 'text/html,*/*')
+    // Guarded fetch: DNS-resolves + default-denies private/loopback/link-local
+    // hosts, and re-validates every redirect hop.
+    const htmlRes = await fetchGuarded(homepageUrl, PROVIDER_TIMEOUT_MS, 'text/html,*/*')
     if (!htmlRes || !htmlRes.ok) continue
     let html = ''
     try {
@@ -234,7 +311,9 @@ async function tryHomepageScrape(domain: string): Promise<ProviderResult | null>
     for (const href of candidates) {
       const abs = absolutize(href, homepageUrl)
       if (!abs) continue
-      const iconRes = await fetchWithTimeout(abs, PROVIDER_TIMEOUT_MS)
+      // Re-validate the scraped favicon URL before fetching it: guard against
+      // a link rel="icon" that points at an internal/private host.
+      const iconRes = await fetchGuarded(abs, PROVIDER_TIMEOUT_MS, 'image/*')
       const result = await validateImageResponse(iconRes, 'homepage-scrape')
       if (result) return result
     }
@@ -280,6 +359,14 @@ export async function GET(_req: NextRequest, { params }: { params: { domain: str
   const domain = (params.domain || '').toLowerCase()
   if (!domain || !/^[a-z0-9.\-]+$/.test(domain)) {
     return new NextResponse('invalid domain', { status: 400 })
+  }
+  // SSRF guard (HOLE 2): reject bare IPs and single-label hosts, and deny
+  // any name whose DNS resolution lands in a private/loopback/link-local/
+  // reserved range. Runs BEFORE the cache lookup so an internal target is
+  // refused on every request, even one that previously resolved to a name.
+  const safe = await assertSafeHostname(domain)
+  if (!safe) {
+    return new NextResponse('forbidden domain', { status: 400 })
   }
 
   // Cache hit: serve directly. Saves the 6-provider walk on every node hover.

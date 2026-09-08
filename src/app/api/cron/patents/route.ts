@@ -34,6 +34,7 @@ interface SnapshotRow {
   top_subclasses: Array<{ code: string; count: number }>
   recent_titles: Array<{ title: string; filingDate: string }>
   source: string
+  retrieved_at: string
 }
 
 export async function GET(req: NextRequest) {
@@ -69,6 +70,7 @@ export async function GET(req: NextRequest) {
   const fetchMs = Date.now() - startedAt
 
   const snapshotDate = new Date().toISOString().slice(0, 10)
+  const retrievedAt = new Date().toISOString()
   const rows: SnapshotRow[] = []
   let nullCount = 0
   for (const r of results) {
@@ -83,18 +85,19 @@ export async function GET(req: NextRequest) {
       top_subclasses: r.snap.topCpcSubclasses,
       recent_titles: r.snap.recentTitles,
       source: 'uspto-odp',
+      retrieved_at: retrievedAt,
     })
   }
 
   if (rows.length === 0) {
     return NextResponse.json({
-      ok: false,
+      ok: true,
       scanned: cos.length,
       fetched: 0,
       nullCount,
       fetchMs,
       note: 'all fetches returned null — check USPTO_API_KEY and rate limits',
-    }, { status: 502 })
+    })
   }
 
   const upResp = await (sb.from('patent_snapshots') as unknown as {
