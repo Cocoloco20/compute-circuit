@@ -54,7 +54,7 @@ export async function GET(req: NextRequest) {
   // Leave ~15s of the 60s cap for the upserts. Going over doesn't just lose
   // the tail — the platform kills the lambda before ANY write lands, which is
   // how this cron produced zero rows on every run instead of partial ones.
-  const FETCH_DEADLINE_MS = 40_000
+  const FETCH_DEADLINE_MS = 35_000
 
   const startedAt = Date.now()
   const quotes = await fetchAllYahooQuotes(tickers.map(t => t.ticker), FETCH_DEADLINE_MS)
@@ -66,11 +66,25 @@ export async function GET(req: NextRequest) {
     if (q) updates.push({ id: t.id, q })
   }
 
-  let updated = 0
   const nowIso = new Date().toISOString()
-  // Sequential updates — Supabase doesn't support per-row UPDATE in a single upsert
-  // when the rows have different SET clauses. Fast enough for ~32 rows.
-  for (const u of updates) {
+
+  // Bounded-parallel writes.
+  //
+  // This loop used to be sequential, with a comment saying "fast enough for
+  // ~32 rows". It stopped being ~32 rows a long time ago. At 250 rows and a
+  // ~120ms iad1->us-west-1 round-trip that is ~30s of pure latency, which on
+  // top of the fetch phase put the function over its 60s cap — and going over
+  // means Vercel kills it before ANY write commits, so a slow run wrote
+  // nothing at all. Eight in flight turns 30s into ~4s.
+  //
+  // Still individual UPDATEs rather than one upsert: `companies` has NOT NULL
+  // columns these patches don't carry, so an upsert would have to satisfy the
+  // insert path for rows we already know exist.
+  const WRITE_CONCURRENCY = 8
+  let updated = 0
+  let writeFailed = 0
+
+  async function writeOne(u: { id: string; q: unknown }) {
     const q = u.q as {
       price: number
       prevClose: number
@@ -79,9 +93,8 @@ export async function GET(req: NextRequest) {
       currency: string
       history: Array<[string, number]>
     }
-    // Cap history at last 90 entries (Yahoo's 3mo range tends to give ~63
-    // trading days; cap protects future-proofs against a Yahoo range change).
-    const history = (q.history ?? []).slice(-90)
+    // Cap history at the last 90 entries (Yahoo's 3mo range gives ~63 trading
+    // days; the cap future-proofs against Yahoo changing that range).
     const patch = {
       last_price: q.price,
       prev_close: q.prevClose,
@@ -89,12 +102,17 @@ export async function GET(req: NextRequest) {
       fifty_two_week_low: q.low52w,
       price_currency: q.currency,
       price_updated_at: nowIso,
-      price_history: history,
+      price_history: (q.history ?? []).slice(-90),
     }
     const r = await (sb.from('companies') as unknown as {
       update: (p: typeof patch) => { eq: (col: string, val: string) => Promise<{ error: { message: string } | null }> }
     }).update(patch).eq('id', u.id)
-    if (!r.error) updated++
+    if (r.error) writeFailed++
+    else updated++
+  }
+
+  for (let i = 0; i < updates.length; i += WRITE_CONCURRENCY) {
+    await Promise.all(updates.slice(i, i + WRITE_CONCURRENCY).map(writeOne))
   }
 
   return NextResponse.json({
@@ -102,8 +120,9 @@ export async function GET(req: NextRequest) {
     scanned: tickers.length,
     fetched: quotes.size,
     // fetched===0 with scanned>0 means the upstream is unreachable from this
-    // egress, not that the query returned nothing. Worth distinguishing.
+    // egress, not that there was nothing to update. Worth distinguishing.
     upstreamReachable: quotes.size > 0,
+    writeFailed,
     updated,
     fetchMs,
   })
