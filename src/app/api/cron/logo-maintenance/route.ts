@@ -1,3 +1,4 @@
+import { selfOrigin } from '@/lib/self-origin'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 import { resolveDomainForCompany, verifyLogoForDomain } from '@/lib/logo-resolver'
@@ -55,8 +56,8 @@ export async function GET(req: NextRequest) {
   }
 
   const sb = supabaseServiceRole()
-  const host = req.headers.get('host') ?? 'compute-circuit.vercel.app'
-  const baseUrl = host.startsWith('localhost') ? `http://${host}` : `https://${host}`
+  // Never the inbound Host — see selfOrigin() for the 90-day outage that caused.
+  const baseUrl = selfOrigin(req)
   const BATCH = 30
 
   // Two pools:

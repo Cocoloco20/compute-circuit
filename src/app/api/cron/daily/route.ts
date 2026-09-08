@@ -1,3 +1,4 @@
+import { selfOrigin } from '@/lib/self-origin'
 import { NextRequest, NextResponse } from 'next/server'
 
 /**
@@ -65,8 +66,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
 
-  const host = req.headers.get('host') ?? 'compute-circuit.vercel.app'
-  const baseUrl = host.startsWith('localhost') ? `http://${host}` : `https://${host}`
+  // Never the inbound Host — see selfOrigin() for the 90-day outage that caused.
+  const baseUrl = selfOrigin(req)
 
   const now = new Date()
   const day = now.getUTCDay()    // 0 = Sunday

@@ -32,42 +32,32 @@ export async function GET(req: NextRequest) {
   if (!url || !key) return NextResponse.json({ error: 'supabase env missing' }, { status: 500 })
   const sb = supabaseServiceRole()
 
-  // Paginate — Supabase select() default cap is 1000 rows. Without this loop
-  // the prices cron silently stopped at 1000 ticker-having cos (post Phase-7B
-  // that's only ~40% of the table). Each page is one round-trip; 2-3 pages
-  // total adds <300ms.
-  const PAGE = 1000
-  const tickers: TickerRow[] = []
-  for (let from = 0; ; from += PAGE) {
-    const r = await sb.from('companies').select('id, ticker').not('ticker', 'is', null).range(from, from + PAGE - 1).order('id')
-    if (r.error) return NextResponse.json({ error: r.error.message }, { status: 500 })
-    const batch = ((r.data ?? []) as TickerRow[]).filter(x => x.ticker)
-    tickers.push(...batch)
-    if (batch.length < PAGE) break
-  }
+  // ONE query: stalest-priced tickers first, already capped at the budget.
+  //
+  // This used to page the whole 2,461-row table and then trim to 350, which
+  // spent round-trips reading 2,100 rows it was about to throw away — and
+  // those round-trips came out of the same 60s budget as the Yahoo calls.
+  // Postgres can do the ordering and the limit for us in a single trip.
+  //
+  // nullsFirst puts never-priced companies at the front, so a newly imported
+  // co gets a price on the next run rather than waiting out the rotation.
+  const CRON_BUDGET = 250
+  const { data: rows, error: rowsErr } = await sb
+    .from('companies')
+    .select('id, ticker')
+    .not('ticker', 'is', null)
+    .order('price_updated_at', { ascending: true, nullsFirst: true })
+    .limit(CRON_BUDGET)
+  if (rowsErr) return NextResponse.json({ error: rowsErr.message }, { status: 500 })
+  const tickers = ((rows ?? []) as unknown as TickerRow[]).filter(x => x.ticker)
 
-  // BUDGET GUARD — fetchAllYahooQuotes is sequential at ~8 req/sec
-  // (yahoo throttles aggressively). 2,400 tickers × 120ms = 288s, way over
-  // the 60s Vercel cap. Until we switch to a queue worker, rotate through
-  // a sliding window of 350 cos per invocation prioritized by stalest-price.
-  // Daily cycle covers every co in ~7 days.
-  const CRON_BUDGET = 350
-  if (tickers.length > CRON_BUDGET) {
-    // Prices are stored directly on companies.price_updated_at — there's no
-    // separate prices table. Sort by stalest (oldest update or never updated).
-    const { data: oldest } = await sb
-      .from('companies')
-      .select('id, price_updated_at')
-      .not('ticker', 'is', null)
-      .order('price_updated_at', { ascending: true, nullsFirst: true })
-      .limit(CRON_BUDGET)
-    const staleIds = new Set((oldest ?? []).map((r) => (r as { id: string }).id))
-    tickers.sort((a, b) => (staleIds.has(b.id) ? 1 : 0) - (staleIds.has(a.id) ? 1 : 0))
-    tickers.length = CRON_BUDGET
-  }
+  // Leave ~15s of the 60s cap for the upserts. Going over doesn't just lose
+  // the tail — the platform kills the lambda before ANY write lands, which is
+  // how this cron produced zero rows on every run instead of partial ones.
+  const FETCH_DEADLINE_MS = 40_000
 
   const startedAt = Date.now()
-  const quotes = await fetchAllYahooQuotes(tickers.map(t => t.ticker))
+  const quotes = await fetchAllYahooQuotes(tickers.map(t => t.ticker), FETCH_DEADLINE_MS)
   const fetchMs = Date.now() - startedAt
 
   const updates: Array<{ id: string; q: ReturnType<typeof Map.prototype.get> }> = []

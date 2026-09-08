@@ -198,9 +198,26 @@ export async function fetchEdgarFundamentals(cik: string, maxPerMetric = 12): Pr
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 
 /** Sequential, polite — Yahoo throttles aggressively. */
-export async function fetchAllYahooQuotes(tickers: string[]): Promise<Map<string, YahooQuote>> {
+export async function fetchAllYahooQuotes(
+  tickers: string[],
+  /**
+   * Wall-clock budget in ms. When it runs out the loop STOPS and returns what
+   * it has instead of running to the end of the list.
+   *
+   * This matters more than it looks. The caller is a Vercel function with a
+   * hard 60s cap, and on timeout the platform kills the lambda before any
+   * upsert runs — so an over-budget batch wrote ZERO rows, every night,
+   * forever. A table that is behind can then never catch up, because each
+   * attempt to catch up is exactly the attempt that times out. Partial
+   * progress is strictly better: the stalest-first ordering means the rows
+   * we do get are the ones that needed it most.
+   */
+  deadlineMs?: number,
+): Promise<Map<string, YahooQuote>> {
   const out = new Map<string, YahooQuote>()
+  const started = Date.now()
   for (const t of tickers) {
+    if (deadlineMs != null && Date.now() - started > deadlineMs) break
     const q = await fetchYahooQuote(t)
     if (q) out.set(t, q)
     await sleep(120) // ~8 req/sec
