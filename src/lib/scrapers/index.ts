@@ -87,3 +87,36 @@ export function normalizeName(s: string): string {
     .trim()
     .replace(/\s+/g, ' ')
 }
+
+/**
+ * Is this EDGAR issuer a fund's own vehicle rather than a portfolio company?
+ *
+ * Form D full-text search for "General Catalyst" returns the companies GC
+ * backed AND the Form Ds GC filed to raise its own funds — GC Venture XII (A),
+ * L.P., GC Aggregator I, L.P., and so on. Measured on the 2026-09-08 run,
+ * 59 of 285 discovered issuers (21%) were vehicles, concentrated in the firms
+ * that file the most fund entities: General Catalyst, USV, Insight, Menlo,
+ * Bessemer.
+ *
+ * Left in, they corrupt the one question company_backers exists to answer —
+ * who actually backed what — and they surface in the pipeline's company search
+ * as if they were investable companies.
+ *
+ * The discriminator is the legal form. Operating startups incorporate as Inc,
+ * Corp or LLC; fund vehicles are limited partnerships. So an L.P./LLLP suffix
+ * is the strong signal, and for the LLC-shaped vehicles a fund-series marker
+ * ("Fund", "Aggregator", "Co-Invest", "Venture <roman numeral>") catches the
+ * rest. Deliberately conservative in the other direction: THORLEY INDUSTRIES
+ * LLC is 4moms, a real Bain Capital Ventures company, and a naive "ends in
+ * LLC" rule would have thrown it out.
+ */
+const LP_SUFFIX = /,?\s*(l\.?\s*p\.?|lllp|l\.?l\.?l\.?p\.?)\s*$/i
+const FUND_MARKER = new RegExp(
+  '\\b(fund|aggregator|co-?invest(ment)?s?|private investors|feeder|spv' +
+  '|partners? (i{1,3}|iv|vi{0,3}|ix|x{1,3})\\b' +
+  '|ventures? (i{1,3}|iv|vi{0,3}|ix|x{1,3})\\b' +
+  '|opportunit(y|ies))\\b', 'i')
+
+export function isFundVehicle(name: string): boolean {
+  return LP_SUFFIX.test(name) || FUND_MARKER.test(name)
+}

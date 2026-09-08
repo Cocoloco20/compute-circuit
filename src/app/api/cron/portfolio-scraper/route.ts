@@ -4,6 +4,7 @@ import { supabaseServiceRole } from '@/lib/supabase/service-role'
 import { discoverAcrossInvestors } from '@/lib/scrapers/edgar-form-d'
 import {
   SCRAPER_CONFIGS,
+  isFundVehicle,
   normalizeName,
   slugifyName,
 } from '@/lib/scrapers/index'
@@ -89,8 +90,13 @@ export async function GET(req: NextRequest) {
   // rows while appearing to execute nightly.
   const FETCH_DEADLINE_MS = 30_000
   const startedAt = Date.now()
-  const { rows: discovered, completed, skipped } = await discoverAcrossInvestors(enabled, FETCH_DEADLINE_MS)
+  const { rows: rawDiscovered, completed, skipped } = await discoverAcrossInvestors(enabled, FETCH_DEADLINE_MS)
   const fetchMs = Date.now() - startedAt
+
+  // Drop the funds' own fund vehicles — see isFundVehicle() for why a Form D
+  // search for a firm returns its own partnerships alongside its portfolio.
+  const discovered = rawDiscovered.filter(d => !isFundVehicle(d.name))
+  const vehiclesFiltered = rawDiscovered.length - discovered.length
 
   // ----- map each discovery → either existing company or a new one to insert -----
   type Insert = {
@@ -233,6 +239,7 @@ export async function GET(req: NextRequest) {
     // investors sort first next time. Expected, not an error.
     deferred: skipped,
     fetched: discovered.length,
+    vehiclesFiltered,
     companiesInserted,
     linksInserted,
     fetchMs,
