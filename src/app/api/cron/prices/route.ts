@@ -101,6 +101,9 @@ export async function GET(req: NextRequest) {
     ok: true,
     scanned: tickers.length,
     fetched: quotes.size,
+    // fetched===0 with scanned>0 means the upstream is unreachable from this
+    // egress, not that the query returned nothing. Worth distinguishing.
+    upstreamReachable: quotes.size > 0,
     updated,
     fetchMs,
   })

@@ -15,6 +15,9 @@
  */
 
 const SEC_UA = 'compute-circuit (research tool) luigui.h2002@gmail.com'
+/** Per-request cap. Yahoo either answers fast or not at all. */
+const YAHOO_TIMEOUT_MS = 4_000
+
 const YAHOO_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15'
 
 // ----- Yahoo Finance -----
@@ -34,7 +37,15 @@ export async function fetchYahooQuote(ticker: string): Promise<YahooQuote | null
   // meta fields we already use.
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=1d&range=3mo`
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': YAHOO_UA, Accept: 'application/json' } })
+    // Hard per-request timeout. Without it a single hung call blocks the
+    // caller's whole wall-clock budget, and fetchAllYahooQuotes' deadline —
+    // which is only checked BETWEEN calls — never gets a chance to fire.
+    // Yahoo answers in ~350ms from a residential IP but stalls indefinitely
+    // from datacenter egress, so "slow" here means "never".
+    const r = await fetch(url, {
+      headers: { 'User-Agent': YAHOO_UA, Accept: 'application/json' },
+      signal: AbortSignal.timeout(YAHOO_TIMEOUT_MS),
+    })
     if (!r.ok) return null
     const data = (await r.json()) as {
       chart?: {
