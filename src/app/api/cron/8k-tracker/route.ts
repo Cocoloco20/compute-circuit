@@ -92,6 +92,7 @@ export async function GET(req: NextRequest) {
     url: string
     accession_number: string
     form_type: string
+    retrieved_at: string
   }
   const signalsToInsert: SignalRow[] = []
   const signalToCompany = new Map<string, string>() // accession → company.id
@@ -103,6 +104,7 @@ export async function GET(req: NextRequest) {
       if (f.form !== '8-K') continue
       const date = f.reportDate || f.filingDate
       if (!date) continue
+      const retrievedAt = new Date().toISOString()
       signalsToInsert.push({
         date,
         source: 'sec-edgar',
@@ -110,6 +112,7 @@ export async function GET(req: NextRequest) {
         url: filingIndexUrl(sub.cik, f.accessionNumber),
         accession_number: f.accessionNumber,
         form_type: '8-K',
+        retrieved_at: retrievedAt,
       })
       signalToCompany.set(f.accessionNumber, company.id)
     }

@@ -33,6 +33,7 @@ interface CommodityRow {
   unit: string
   label: string
   source_series: string
+  retrieved_at: string
 }
 
 export async function GET(req: NextRequest) {
@@ -59,6 +60,7 @@ export async function GET(req: NextRequest) {
       unit: 'EH/s',
       label: 'BTC network hashrate',
       source_series: 'mempool.space/api/v1/mining/hashrate/3d',
+      retrieved_at: new Date().toISOString(),
     },
     {
       series_id: 'BTC.DIFFICULTY.D',
@@ -67,6 +69,7 @@ export async function GET(req: NextRequest) {
       unit: 'T',
       label: `BTC difficulty (last adj ${snap.last_adj_pct >= 0 ? '+' : ''}${snap.last_adj_pct.toFixed(2)}%)`,
       source_series: 'mempool.space/api/v1/mining/difficulty-adjustments',
+      retrieved_at: new Date().toISOString(),
     },
     {
       series_id: 'BTC.NETWORK_POWER.D',
@@ -75,6 +78,7 @@ export async function GET(req: NextRequest) {
       unit: 'MW',
       label: 'BTC network power estimate (25 J/TH)',
       source_series: 'mempool.space/api/v1/mining/hashrate/3d',
+      retrieved_at: new Date().toISOString(),
     },
   ]
 

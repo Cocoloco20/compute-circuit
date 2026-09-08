@@ -54,6 +54,7 @@ interface CommodityRow {
   unit: string
   label: string
   source_series: string
+  retrieved_at: string
 }
 
 interface FuelMixRow {
@@ -62,6 +63,7 @@ interface FuelMixRow {
   fuel_mix: Record<string, number>
   total_mwh: number
   carbon_g_per_kwh: number
+  retrieved_at: string
 }
 
 interface IntlRow {
@@ -112,10 +114,11 @@ export async function GET(req: NextRequest) {
       last_hour: r.snap!.last_hour,
     }))
   if (demandRows.length > 0) {
+    const retrievedAt = new Date().toISOString()
     const up = await (sb.from('grid_demand_snapshots') as unknown as {
       upsert: (rows: DemandRow[], opts: { onConflict: string }) =>
         Promise<{ error: { message: string } | null }>
-    }).upsert(demandRows, { onConflict: 'company_id,snapshot_date' })
+    }).upsert(demandRows.map(r => ({ ...r, retrieved_at: retrievedAt })), { onConflict: 'company_id,snapshot_date' })
     if (up.error) console.warn('[eia] grid_demand upsert:', up.error.message)
   }
 
@@ -131,6 +134,7 @@ export async function GET(req: NextRequest) {
       unit: s.unit,
       label: s.label,
       source_series: s.source_series,
+      retrieved_at: new Date().toISOString(),
     }))
 
   // ----- 2b. Dedicated nuclear-outage fetch (different endpoint shape) -----
@@ -143,6 +147,7 @@ export async function GET(req: NextRequest) {
       unit: nukeOutage.unit,
       label: nukeOutage.label,
       source_series: nukeOutage.source_series,
+      retrieved_at: new Date().toISOString(),
     })
   }
 
@@ -165,6 +170,7 @@ export async function GET(req: NextRequest) {
       fuel_mix: f.snap!.fuel_mix,
       total_mwh: f.snap!.total_mwh,
       carbon_g_per_kwh: f.snap!.carbon_g_per_kwh,
+      retrieved_at: new Date().toISOString(),
     }))
   if (fuelRows.length > 0) {
     const up = await (sb.from('eia_fuelmix_snapshots') as unknown as {

@@ -20,6 +20,7 @@ interface ArxivPaperInsertRow {
   primary_category: string
   published_date: string
   url: string
+  retrieved_at: string
 }
 
 interface ArxivSnapshotInsertRow {
@@ -30,6 +31,7 @@ interface ArxivSnapshotInsertRow {
   top_paper_arxiv_id: string | null
   top_paper_title: string | null
   yoy_pct: number | null
+  retrieved_at: string
 }
 
 export async function GET(req: NextRequest) {
@@ -64,6 +66,7 @@ export async function GET(req: NextRequest) {
 
   const papersToUpsert: ArxivPaperInsertRow[] = []
   const snapshotsToUpsert: ArxivSnapshotInsertRow[] = []
+  const retrievedAt = new Date().toISOString()
 
   for (const r of results) {
     if (r.snap) {
@@ -75,6 +78,7 @@ export async function GET(req: NextRequest) {
         top_paper_arxiv_id: r.snap.topPaperArxivId,
         top_paper_title: r.snap.topPaperTitle,
         yoy_pct: r.snap.yoyPct,
+        retrieved_at: retrievedAt,
       })
     }
 
@@ -88,6 +92,7 @@ export async function GET(req: NextRequest) {
         primary_category: p.primaryCategory,
         published_date: p.publishedDate.toISOString().slice(0, 10),
         url: p.url,
+        retrieved_at: retrievedAt,
       })
     }
   }
@@ -122,7 +127,7 @@ export async function GET(req: NextRequest) {
     const snapResp = await (sb.from('arxiv_snapshots') as unknown as {
       upsert: (rows: ArxivSnapshotInsertRow[], opts: { onConflict: string }) =>
         Promise<{ error: { message: string } | null }>
-    }).upsert(snapshotsToUpsert, { onConflict: 'company_id,snapshot_date' })
+    }).upsert(snapshotsToUpsert.map(r => ({ ...r, retrieved_at: retrievedAt })), { onConflict: 'company_id,snapshot_date' })
 
     if (snapResp.error) {
       return NextResponse.json({ error: `Snapshots upsert failed: ${snapResp.error.message}` }, { status: 500 })

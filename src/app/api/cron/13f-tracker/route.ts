@@ -143,12 +143,15 @@ export async function GET(req: NextRequest) {
 
       const matched = rows.filter(r => r.company_id !== null).length
 
+      const retrievedAt = new Date().toISOString()
+      const rowsWithRetrieved = rows.map(r => ({ ...r, retrieved_at: retrievedAt }))
+
       // Upsert with dedup on (investor_id, period, cusip)
       // The typed client narrows too aggressively for our compound upsert — cast inputs.
       const upResp = (await (sb.from('holdings') as unknown as {
         upsert: (rows: unknown[], opts: { onConflict: string }) =>
           Promise<{ data: unknown[] | null; error: { message: string } | null }>
-      }).upsert(rows, { onConflict: 'investor_id,period,cusip' }))
+      }).upsert(rowsWithRetrieved, { onConflict: 'investor_id,period,cusip' }))
       if (upResp.error) {
         results.push({ investor: inv.id, period, fetched: holdings.length, matched, error: upResp.error.message })
         continue
