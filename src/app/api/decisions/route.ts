@@ -102,7 +102,8 @@ export async function POST(req: NextRequest) {
     reasoning,
     what_would_change_mind: wwcm || null,
     dissent: body.dissent === true,
-    decided_by: 'luigui',
+    decidedBy: typeof body.decided_by === 'string' && body.decided_by.trim()
+      ? body.decided_by.trim() : 'luigui',
     decided_at: new Date().toISOString(),
   }
 

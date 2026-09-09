@@ -50,6 +50,14 @@ export interface DecisionInput {
   reasoning: string
   whatWouldChangeMind?: string | null
   dissent?: boolean
+  /**
+   * Whose judgment this was. Defaults to the fund principal because that is
+   * the overwhelmingly common case, but it is explicit rather than hardcoded:
+   * the calibration set and the anti-portfolio exist to measure ONE person's
+   * judgment over time, and a decision an assistant made, filed under his
+   * name, silently corrupts the only baseline this system has.
+   */
+  decidedBy?: string
 }
 
 /** Returns an error string, or null when the input is good. */
@@ -99,7 +107,7 @@ export async function captureDecision(
     reasoning: input.reasoning.trim(),
     what_would_change_mind: (input.whatWouldChangeMind ?? '').trim() || null,
     dissent: input.dissent === true,
-    decided_by: 'luigui',
+    decided_by: input.decidedBy?.trim() || 'luigui',
     decided_at: new Date().toISOString(),
   }
 
