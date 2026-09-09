@@ -29,6 +29,7 @@ import {
 } from '@/lib/terminal-data'
 import type { CommitLogEntry } from '@/types/db'
 import DecisionCapture from '@/components/terminal/decision-capture'
+import { usd } from '@/lib/fund-data'
 import ResurfaceVerdictButtons from '@/components/terminal/resurface-verdict'
 
 export const dynamic = 'force-dynamic'
@@ -112,11 +113,13 @@ export default async function TerminalPage() {
             <p className="mt-0.5 text-xs text-[#6B6F7A]">
               Dry powder:{' '}
               <span className="tabular-nums text-[#A5A8B0]">
-                {d.dryPowderUsd == null
-                  ? '—'
-                  : `$${(d.dryPowderUsd / 1e6).toFixed(1)}M`}
+                {usd(d.dryPowderUsd)}
               </span>
-              {d.dryPowderUsd == null && <span className="ml-1 text-[#43474F]">(fund financials land in Milestone 2)</span>}
+              {d.dryPowderUsd == null && (
+                <Link href="/fund" className="ml-1 text-[#43474F] underline-offset-2 hover:text-[#6B6F7A] hover:underline">
+                  set up the fund
+                </Link>
+              )}
             </p>
           </div>
           <div className="flex items-center gap-3">
