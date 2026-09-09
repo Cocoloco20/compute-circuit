@@ -29,7 +29,7 @@ function fmtDate(d: string): string {
 export default async function CompanyPage({ params }: { params: { id: string } }) {
   const data = await fetchCompany(params.id)
   if (!data) notFound()
-  const { header: h, backers, yc, card, decisions, signals, notes } = data
+  const { header: h, backers, yc, card, decisions, signals, notes, brief } = data
 
   return (
     <main className="min-h-screen bg-[#05060a] px-4 py-6 text-[#F2F3F5] sm:px-8 sm:py-8">
@@ -111,6 +111,47 @@ export default async function CompanyPage({ params }: { params: { id: string } }
               )}
               {yc.one_liner && <span className="w-full text-[#A5A8B0]">{yc.one_liner}</span>}
             </Panel>
+          </Section>
+        )}
+
+        {/* What the company says it does — read from its own homepage. This
+            sits above our thesis because it is the primary source and ours is
+            the interpretation. */}
+        {brief && (brief.description || brief.headline || brief.title) && (
+          <Section
+            title="What they say they do"
+            meta={brief.fetched_at ? `read ${fmtDate(brief.fetched_at)}` : undefined}
+          >
+            <Panel className="px-4 py-3">
+              {brief.headline && (
+                <p className="text-sm font-medium leading-relaxed text-[#F2F3F5]">{brief.headline}</p>
+              )}
+              {brief.description && (
+                <p className={`text-sm leading-relaxed text-[#A5A8B0] ${brief.headline ? 'mt-1.5' : ''}`}>
+                  {brief.description}
+                </p>
+              )}
+              {!brief.headline && !brief.description && brief.title && (
+                <p className="text-sm text-[#A5A8B0]">{brief.title}</p>
+              )}
+              {brief.url && (
+                <a href={brief.url} target="_blank" rel="noreferrer"
+                   className="mt-2 inline-block text-[11px] text-[#22D3EE] hover:underline">
+                  {brief.url.replace(/^https?:\/\//, '').replace(/\/$/, '')}
+                </a>
+              )}
+            </Panel>
+          </Section>
+        )}
+
+        {brief && brief.fetch_status !== 'ok' && (
+          <Section title="What they say they do">
+            <Empty>
+              {/* A dead domain is itself information about a company. */}
+              Couldn&apos;t read the homepage ({brief.fetch_status.replace('_', ' ')}
+              {brief.http_status ? ` ${brief.http_status}` : ''}).
+              {brief.fetch_status === 'dns_error' && ' The domain does not resolve — worth knowing on its own.'}
+            </Empty>
           </Section>
         )}
 

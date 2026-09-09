@@ -1,6 +1,7 @@
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 import type {
   Decision, DecisionResurfacing, PipelineCard, Note, YcCompany, ResurfaceVerdict,
+  CompanyBrief,
 } from '@/types/db'
 
 /**
@@ -48,6 +49,7 @@ export interface DecisionWithVerdicts extends Decision {
 
 export interface CompanyPage {
   header: CompanyHeader
+  brief: CompanyBrief | null
   backers: Backer[]
   yc: YcCompany | null
   card: PipelineCard | null
@@ -82,7 +84,7 @@ export async function fetchCompany(id: string): Promise<CompanyPage | null> {
     discovered_via: string | null
   }
 
-  const [backers, yc, card, decisions, notes, funding, filings] = await Promise.all([
+  const [backers, yc, card, decisions, notes, funding, filings, brief] = await Promise.all([
     // ---- who else is in -------------------------------------------------
     safe<Backer[]>(async () => {
       const { data } = await sb.from('company_backers').select('investor_id').eq('company_id', id)
@@ -162,6 +164,12 @@ export async function fetchCompany(id: string): Promise<CompanyPage | null> {
         url: s.url,
       }))
     }, []),
+
+    // What the company says it does, in its own words (migration 0053).
+    safe<CompanyBrief | null>(async () => {
+      const { data } = await sb.from('company_briefs').select('*').eq('company_id', id).maybeSingle()
+      return (data as unknown as CompanyBrief) ?? null
+    }, null),
   ])
 
   const signals = [...funding, ...filings]
@@ -184,7 +192,7 @@ export async function fetchCompany(id: string): Promise<CompanyPage | null> {
       thesisRisk: co.thesis_risk_ai,
       discoveredVia: co.discovered_via,
     },
-    backers, yc, card, decisions, notes, signals,
+    backers, yc, card, decisions, notes, signals, brief,
   }
 }
 

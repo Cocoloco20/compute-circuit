@@ -629,6 +629,18 @@ export interface Mark {
   created_at: string
 }
 
+export interface CompanyBrief {
+  company_id: string
+  url: string | null
+  title: string | null
+  description: string | null
+  headline: string | null
+  extract: string | null
+  fetch_status: 'ok' | 'http_error' | 'timeout' | 'no_domain' | 'blocked' | 'parse_empty' | 'dns_error'
+  http_status: number | null
+  fetched_at: string
+}
+
 // Supabase client generic — minimal shape so createClient<Database> typechecks.
 // The Database type below is intentionally light. When you adopt `supabase gen types`,
 // it will produce a much richer interface and this can be deleted.
@@ -678,6 +690,7 @@ export interface Database {
       fund: { Row: Fund; Insert: Omit<Fund, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Fund> }
       investments: { Row: Investment; Insert: Omit<Investment, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<Investment> }
       marks: { Row: Mark; Insert: Omit<Mark, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Mark> }
+      company_briefs: { Row: CompanyBrief; Insert: Omit<CompanyBrief, 'fetched_at'> & { fetched_at?: string }; Update: Partial<CompanyBrief> }
       agencies: { Row: Agency; Insert: Omit<Agency, 'created_at'> & { created_at?: string }; Update: Partial<Agency> }
     }
     Views: Record<string, never>
