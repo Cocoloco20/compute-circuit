@@ -62,6 +62,7 @@ export default async function DecisionsPage({ searchParams }: { searchParams: SP
           </div>
           <nav className="flex items-center gap-3 text-xs text-[#6B6F7A]">
             <Link href="/terminal" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Terminal</Link>
+            <Link href="/fund" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Fund</Link>
             <Link href="/screen" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Screen</Link>
             <Link href="/pipeline" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Pipeline</Link>
           </nav>

@@ -29,6 +29,7 @@ export default async function PipelinePage() {
             </p>
           </div>
           <nav className="flex items-center gap-3">
+            <Link href="/fund" className="text-xs text-[#6B6F7A] underline-offset-2 hover:text-[#A5A8B0] hover:underline">Fund</Link>
             <Link href="/screen" className="text-xs text-[#6B6F7A] underline-offset-2 hover:text-[#A5A8B0] hover:underline">Screen</Link>
             <Link href="/decisions" className="text-xs text-[#6B6F7A] underline-offset-2 hover:text-[#A5A8B0] hover:underline">Decisions</Link>
             <Link href="/terminal" className="text-xs text-[#6B6F7A] underline-offset-2 hover:text-[#A5A8B0] hover:underline">Terminal</Link>

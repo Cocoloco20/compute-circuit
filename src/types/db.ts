@@ -588,6 +588,47 @@ export interface YcStatusChange {
   observed_at: string
 }
 
+export interface Fund {
+  id: string
+  name: string
+  vintage_year: number | null
+  committed_usd: number
+  called_usd: number
+  /** Share of committed held back for follow-ons (0-1). */
+  reserve_ratio: number
+  target_check_usd: number | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Investment {
+  id: string
+  company_id: string
+  invested_at: string
+  amount_usd: number
+  instrument: 'SAFE' | 'Convertible Note' | 'Equity' | 'Token' | 'Other'
+  round: string | null
+  post_money_usd: number | null
+  ownership_pct: number | null
+  reserved_usd: number
+  status: 'Active' | 'Exited' | 'Written Off'
+  decision_id: string | null
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface Mark {
+  id: string
+  investment_id: string
+  marked_at: string
+  value_usd: number
+  source: 'Last Round' | 'Secondary' | 'Write-Down' | 'Write-Off' | 'Exit' | 'Estimate'
+  note: string | null
+  created_at: string
+}
+
 // Supabase client generic — minimal shape so createClient<Database> typechecks.
 // The Database type below is intentionally light. When you adopt `supabase gen types`,
 // it will produce a much richer interface and this can be deleted.
@@ -634,6 +675,9 @@ export interface Database {
       commit_log: { Row: CommitLogEntry; Insert: Omit<CommitLogEntry, 'id' | 'created_at' | 'author'> & { id?: string; created_at?: string; author?: string }; Update: Partial<CommitLogEntry> }
       yc_companies: { Row: YcCompany; Insert: Omit<YcCompany, 'updated_at'> & { updated_at?: string }; Update: Partial<YcCompany> }
       yc_status_changes: { Row: YcStatusChange; Insert: Omit<YcStatusChange, 'id' | 'observed_at'> & { id?: string; observed_at?: string }; Update: Partial<YcStatusChange> }
+      fund: { Row: Fund; Insert: Omit<Fund, 'created_at' | 'updated_at'> & { created_at?: string; updated_at?: string }; Update: Partial<Fund> }
+      investments: { Row: Investment; Insert: Omit<Investment, 'id' | 'created_at' | 'updated_at'> & { id?: string; created_at?: string; updated_at?: string }; Update: Partial<Investment> }
+      marks: { Row: Mark; Insert: Omit<Mark, 'id' | 'created_at'> & { id?: string; created_at?: string }; Update: Partial<Mark> }
       agencies: { Row: Agency; Insert: Omit<Agency, 'created_at'> & { created_at?: string }; Update: Partial<Agency> }
     }
     Views: Record<string, never>

@@ -14,6 +14,7 @@
  */
 
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
+import { fetchFund } from '@/lib/fund-data'
 import type {
   PipelineCard, PipelineStage, Decision, DecisionResurfacing, CommitLogEntry,
 } from '@/types/db'
@@ -313,11 +314,17 @@ export async function fetchTerminal(): Promise<TerminalData> {
     alerts.push({ kind: 'sync', label: 'ingestion stale', count: 1, href: '/terminal' })
   }
 
+  // Fund financials (migration 0052). Non-fatal: a terminal that fails to
+  // render because the fund row is missing is worse than one showing "—".
+  let dryPowderUsd: number | null = null
+  try {
+    const f = await fetchFund()
+    if (f.fund && !f.error) dryPowderUsd = f.totals.dryPowder
+  } catch { /* leave null */ }
+
   return {
     dataAsOf: freshness,
-    // Not modelled yet — Milestone 2 owns fund financials. Null renders as
-    // "—", which is honest; a hardcoded number would not be.
-    dryPowderUsd: null,
+    dryPowderUsd,
     queue, heat: heatZ, pipeline, resurfaced: resurfZ, commits: commitsZ, alerts,
   }
 }
