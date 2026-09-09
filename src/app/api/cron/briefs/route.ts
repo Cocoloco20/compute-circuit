@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
-import { fetchBrief } from '@/lib/company-brief'
+import { fetchBriefWithFallback } from '@/lib/company-brief'
 
 /**
  * Read homepages for the companies that matter, stalest first.
@@ -31,8 +31,14 @@ export const maxDuration = 60
 
 const FETCH_DEADLINE_MS = 40_000
 const CONCURRENCY = 6
-/** Re-read a homepage at most this often — copy does not change daily. */
+/** Re-read a good homepage at most this often — copy does not change daily. */
 const REFRESH_DAYS = 30
+/**
+ * A failure is not a settled fact. A 403, a timeout or a dead DNS answer can
+ * all be different next week, so a failed read is retried far sooner than a
+ * good one is refreshed — without hammering a site that just refused us.
+ */
+const RETRY_FAILED_DAYS = 7
 
 /**
  * PostgREST caps an unbounded select() at 1000 rows and reports no error. This
@@ -64,8 +70,15 @@ export async function GET(req: NextRequest) {
   const cutoff = new Date(Date.now() - REFRESH_DAYS * 86_400_000).toISOString()
 
   // Already-fresh briefs are skipped, so the budget goes to new ground.
-  const fresh = new Set(await allCompanyIds(
-    sb.from('company_briefs').select('company_id').gte('fetched_at', cutoff)))
+  const retryCutoff = new Date(Date.now() - RETRY_FAILED_DAYS * 86_400_000).toISOString()
+  // Fresh = a good brief inside the refresh window, or a failed one still
+  // inside its shorter retry window. Anything else is fair game again.
+  const fresh = new Set([
+    ...await allCompanyIds(sb.from('company_briefs').select('company_id')
+      .eq('fetch_status', 'ok').gte('fetched_at', cutoff)),
+    ...await allCompanyIds(sb.from('company_briefs').select('company_id')
+      .neq('fetch_status', 'ok').gte('fetched_at', retryCutoff)),
+  ])
 
   const ordered: string[] = []
   const push = (ids: string[]) => {
@@ -99,9 +112,9 @@ export async function GET(req: NextRequest) {
   }
 
   const { data: cos } = await sb.from('companies')
-    .select('id, domain').in('id', ordered.slice(0, 400))
-  const domainById = new Map(((cos ?? []) as unknown as Array<{ id: string; domain: string | null }>)
-    .map(c => [c.id, c.domain]))
+    .select('id, domain, name').in('id', ordered.slice(0, 400))
+  const byId = new Map(((cos ?? []) as unknown as
+    Array<{ id: string; domain: string | null; name: string | null }>).map(c => [c.id, c]))
 
   const started = Date.now()
   const rows: Array<Record<string, unknown>> = []
@@ -112,12 +125,14 @@ export async function GET(req: NextRequest) {
   for (let i = 0; i < targets.length; i += CONCURRENCY) {
     if (Date.now() - started > FETCH_DEADLINE_MS) break
     await Promise.all(targets.slice(i, i + CONCURRENCY).map(async id => {
-      const b = await fetchBrief(domainById.get(id) ?? null)
+      const c = byId.get(id)
+      const b = await fetchBriefWithFallback(c?.domain ?? null, c?.name ?? null)
       attempted++
-      counts[b.fetchStatus] = (counts[b.fetchStatus] ?? 0) + 1
+      const key = b.source === 'wikipedia' ? 'ok_via_wikipedia' : b.fetchStatus
+      counts[key] = (counts[key] ?? 0) + 1
       rows.push({
         company_id: id, url: b.url, title: b.title, description: b.description,
-        headline: b.headline, extract: b.extract,
+        headline: b.headline, extract: b.extract, source: b.source,
         fetch_status: b.fetchStatus, http_status: b.httpStatus,
         fetched_at: new Date().toISOString(),
       })

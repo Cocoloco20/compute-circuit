@@ -8,12 +8,21 @@
  * Deliberately no LLM. A meta description written by the company is a better
  * summary than anything generated from it, it costs nothing, and it cannot
  * hallucinate a product that does not exist.
+ *
+ * When the homepage refuses — OpenAI and xAI both return 403 to any
+ * unauthenticated GET — it falls back to Wikipedia's summary API: free, no key,
+ * no meaningful rate limit. That text is a THIRD PARTY describing the company,
+ * not the company describing itself, so every brief carries its `source` and
+ * the UI must not present a Wikipedia extract under "What they say they do".
  */
 
 export type FetchStatus =
   | 'ok' | 'http_error' | 'timeout' | 'no_domain' | 'blocked' | 'parse_empty' | 'dns_error'
 
+export type BriefSource = 'homepage' | 'wikipedia'
+
 export interface Brief {
+  source: BriefSource
   url: string | null
   title: string | null
   description: string | null
@@ -63,6 +72,7 @@ function extractText(html: string): string | null {
 
 export async function fetchBrief(domain: string | null): Promise<Brief> {
   const empty: Brief = {
+    source: 'homepage',
     url: null, title: null, description: null, headline: null,
     extract: null, fetchStatus: 'no_domain', httpStatus: null,
   }
@@ -106,6 +116,7 @@ export async function fetchBrief(domain: string | null): Promise<Brief> {
 
   const anything = title || description || headline || extract
   return {
+    source: 'homepage',
     url,
     title: title ? decode(title) : null,
     description,
@@ -114,4 +125,115 @@ export async function fetchBrief(domain: string | null): Promise<Brief> {
     fetchStatus: anything ? 'ok' : 'parse_empty',
     httpStatus: res.status,
   }
+}
+
+
+/* ------------------------------------------------------------------ */
+/* Wikipedia fallback                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * The danger here is not a failed lookup, it is a confident wrong one.
+ * "Expanse" is a GPU-scheduling startup and also a television series; "Arch",
+ * "Basis", "Alliance" and "Color" are all portfolio companies AND common
+ * nouns with articles. A brief that quietly describes the wrong subject is
+ * worse than no brief, because nothing downstream can tell it is wrong.
+ *
+ * So a Wikipedia hit is accepted only when it looks like an organisation and
+ * its title actually corresponds to the company name.
+ */
+const ORG_HINT = new RegExp(
+  '\\b(compan(y|ies)|corporation|corp\\b|incorporated|\\binc\\b|holdings|start-?up|firm|' +
+  'business|enterprise|conglomerate|subsidiary|manufacturer|developer|laborator(y|ies)|' +
+  'research (lab|organi[sz]ation|institute)|venture capital|technology (company|firm)|' +
+  'software|platform|marketplace|brand|bank|airline|studio)\\b', 'i')
+
+function normTitle(s: string): string {
+  return s.toLowerCase().replace(/\(.*?\)/g, ' ').replace(/[^a-z0-9]+/g, ' ').trim()
+}
+
+/** Does this Wikipedia page plausibly describe THIS company? */
+function titleMatches(companyName: string, pageTitle: string): boolean {
+  const a = normTitle(companyName)
+  const b = normTitle(pageTitle)
+  if (!a || !b) return false
+  if (a === b) return true
+  // Allow "Anthropic" -> "Anthropic PBC" and "OpenAI" -> "OpenAI", but reject
+  // "Expanse" -> "The Expanse", where the page title carries extra leading
+  // words that change the subject.
+  return b.startsWith(a + ' ') || a.startsWith(b + ' ')
+}
+
+interface WikiSummary {
+  type?: string; title?: string; description?: string; extract?: string
+  content_urls?: { desktop?: { page?: string } }
+}
+
+async function wikiSummary(title: string): Promise<WikiSummary | null> {
+  try {
+    const res = await fetch(
+      `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`,
+      { redirect: 'follow', signal: AbortSignal.timeout(TIMEOUT_MS),
+        headers: { 'User-Agent': UA, Accept: 'application/json' } },
+    )
+    if (!res.ok) return null
+    return (await res.json()) as WikiSummary
+  } catch {
+    return null
+  }
+}
+
+export async function fetchWikipediaBrief(
+  companyName: string | null,
+): Promise<Brief | null> {
+  if (!companyName || companyName.trim().length < 2) return null
+  const name = companyName.trim()
+
+  let j = await wikiSummary(name)
+  // A bare name often lands on a disambiguation page — "xAI" resolves to "Xai",
+  // which lists a Chinese given name, a game studio and the company. Wikipedia's
+  // own convention disambiguates with a "(company)" suffix, so ask for that
+  // exact page rather than guessing among the alternatives.
+  if (j && j.type === 'disambiguation') j = await wikiSummary(`${name} (company)`)
+  if (!j || (j.type && j.type !== 'standard')) return null
+  if (!j.title || !titleMatches(name, j.title)) return null
+
+  // Test the SHORT descriptor, not the article body. The body of "Alliance"
+  // ("groups, or states that have joined together for mutual benefit...")
+  // trips an organisation regex while describing a concept, not a company;
+  // its descriptor, "Coalition of individuals to secure common interests",
+  // correctly does not. Only fall back to the extract when there is no
+  // descriptor at all.
+  const descriptor = (j.description ?? '').trim()
+  if (!ORG_HINT.test(descriptor || (j.extract ?? ''))) return null
+
+  const extract = (j.extract ?? '').trim().slice(0, MAX_EXTRACT) || null
+  if (!extract && !descriptor) return null
+
+  return {
+    source: 'wikipedia',
+    url: j.content_urls?.desktop?.page ?? `https://en.wikipedia.org/wiki/${encodeURIComponent(j.title)}`,
+    title: j.title,
+    description: j.description ?? null,
+    headline: null,
+    extract,
+    fetchStatus: 'ok',
+    httpStatus: 200,
+  }
+}
+
+/**
+ * Homepage first, Wikipedia only to rescue a failure. Never the other way
+ * round: the company's own words outrank an encyclopedia's whenever we can get
+ * them. The original failure status is preserved on the returned brief's
+ * httpStatus so a rescued 403 is still visibly a 403 upstream.
+ */
+export async function fetchBriefWithFallback(
+  domain: string | null,
+  companyName: string | null,
+): Promise<Brief> {
+  const primary = await fetchBrief(domain)
+  if (primary.fetchStatus === 'ok') return primary
+  const wiki = await fetchWikipediaBrief(companyName)
+  return wiki ?? primary
 }

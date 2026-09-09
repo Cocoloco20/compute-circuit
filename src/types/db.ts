@@ -638,6 +638,8 @@ export interface CompanyBrief {
   extract: string | null
   fetch_status: 'ok' | 'http_error' | 'timeout' | 'no_domain' | 'blocked' | 'parse_empty' | 'dns_error'
   http_status: number | null
+  /** Whose words these are. 'homepage' is the company's own; 'wikipedia' is not. */
+  source: 'homepage' | 'wikipedia'
   fetched_at: string
 }
 

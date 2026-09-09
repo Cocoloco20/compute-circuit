@@ -119,7 +119,11 @@ export default async function CompanyPage({ params }: { params: { id: string } }
             the interpretation. */}
         {brief && (brief.description || brief.headline || brief.title) && (
           <Section
-            title="What they say they do"
+            /* The heading is a claim about provenance, so it changes with the
+               source. Wikipedia describing a company is not the company
+               describing itself, and presenting one as the other would make
+               this section quietly dishonest. */
+            title={brief.source === 'wikipedia' ? 'What Wikipedia says they do' : 'What they say they do'}
             meta={brief.fetched_at ? `read ${fmtDate(brief.fetched_at)}` : undefined}
           >
             <Panel className="px-4 py-3">
@@ -149,7 +153,8 @@ export default async function CompanyPage({ params }: { params: { id: string } }
             <Empty>
               {/* A dead domain is itself information about a company. */}
               Couldn&apos;t read the homepage ({brief.fetch_status.replace('_', ' ')}
-              {brief.http_status ? ` ${brief.http_status}` : ''}).
+              {brief.http_status ? ` ${brief.http_status}` : ''}), and no Wikipedia entry matched
+              this company confidently enough to stand in.
               {brief.fetch_status === 'dns_error' && ' The domain does not resolve — worth knowing on its own.'}
             </Empty>
           </Section>
