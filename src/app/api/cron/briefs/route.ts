@@ -13,6 +13,13 @@ import { fetchBrief } from '@/lib/company-brief'
  *   1. anything in pipeline_cards        — you are deciding about these
  *   2. anything you have invested in     — you own these
  *   3. recent, active, small YC names    — the sourcing set
+ *   4. companies the tracked funds back  — most backers first
+ *
+ * Tier 4 exists because tiers 1-3 could never reach the reference layer: after
+ * the 2026-09-09 portfolio rebuild, 1,271 companies that GC, GV, Coatue, BCV,
+ * Khosla, Craft and Initialized have money in would have sat with no brief
+ * forever. Ordering by backer count is the useful signal — four tracked funds
+ * in one company is a stronger reason to read its homepage than one.
  *
  * Bounded by wall clock, not by count, and it commits what it has. The pattern
  * every other cron here needed the hard way.
@@ -27,6 +34,25 @@ const CONCURRENCY = 6
 /** Re-read a homepage at most this often — copy does not change daily. */
 const REFRESH_DAYS = 30
 
+/**
+ * PostgREST caps an unbounded select() at 1000 rows and reports no error. This
+ * repo has been bitten by that four times — most recently here, where a silently
+ * truncated `fresh` set would make the cron re-read homepages it already had
+ * until the budget was gone. Page explicitly; never trust a bare select().
+ */
+async function allCompanyIds(query: {
+  range: (from: number, to: number) => PromiseLike<{ data: unknown[] | null }>
+}): Promise<string[]> {
+  const PAGE = 1000
+  const out: string[] = []
+  for (let from = 0; ; from += PAGE) {
+    const { data } = await query.range(from, from + PAGE - 1)
+    const rows = (data ?? []) as Array<{ company_id: string }>
+    out.push(...rows.map(r => r.company_id).filter(Boolean))
+    if (rows.length < PAGE) return out
+  }
+}
+
 export async function GET(req: NextRequest) {
   const secret = process.env.CRON_SECRET
   if (!secret) return NextResponse.json({ error: 'CRON_SECRET not configured' }, { status: 500 })
@@ -38,10 +64,8 @@ export async function GET(req: NextRequest) {
   const cutoff = new Date(Date.now() - REFRESH_DAYS * 86_400_000).toISOString()
 
   // Already-fresh briefs are skipped, so the budget goes to new ground.
-  const { data: freshRows } = await sb.from('company_briefs')
-    .select('company_id').gte('fetched_at', cutoff)
-  const fresh = new Set(((freshRows ?? []) as unknown as Array<{ company_id: string }>)
-    .map(r => r.company_id))
+  const fresh = new Set(await allCompanyIds(
+    sb.from('company_briefs').select('company_id').gte('fetched_at', cutoff)))
 
   const ordered: string[] = []
   const push = (ids: string[]) => {
@@ -58,6 +82,17 @@ export async function GET(req: NextRequest) {
     .select('company_id').eq('status', 'Active').lte('team_size', 40)
     .order('batch', { ascending: false }).limit(300)
   push(((yc ?? []) as unknown as Array<{ company_id: string }>).map(c => c.company_id))
+
+  // Tier 4: everything a tracked fund backs, most-backed first. company_backers
+  // is ~14.8k rows, so this MUST page — an unbounded select() returns 1000 and
+  // says nothing about the rest.
+  if (ordered.length < 400) {
+    const backerCount = new Map<string, number>()
+    for (const id of await allCompanyIds(sb.from('company_backers').select('company_id'))) {
+      backerCount.set(id, (backerCount.get(id) ?? 0) + 1)
+    }
+    push([...backerCount.entries()].sort((a, b) => b[1] - a[1]).map(([id]) => id))
+  }
 
   if (!ordered.length) {
     return NextResponse.json({ ok: true, considered: 0, fetched: 0, note: 'everything in scope is fresh' })
