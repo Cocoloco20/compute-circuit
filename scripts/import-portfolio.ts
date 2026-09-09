@@ -143,7 +143,7 @@ async function main() {
     for (let i = 0; i < fresh.length; i += CHUNK) {
       const batch = fresh.slice(i, i + CHUNK).map(({ n, id }) => ({
         id, name: n.name, ticker: null,
-        domain: hostOf(n.url),
+        domain: companyHost(n.url, pf.domain),
         layer_id: null, weight: 0, private: true, position_held: false,
         discovered_via: fund, discovered_at: new Date().toISOString(),
       }))
@@ -165,6 +165,24 @@ async function main() {
   console.log(DRY
     ? '\n--dry-run: nothing written.'
     : `\nDone. ${grandNew} companies inserted, ${grandLinks} backer links.`)
+}
+
+/**
+ * The COMPANY's host, never the fund's.
+ *
+ * Most funds link to a page on their own site (nea.com/portfolio/x), so taking
+ * the URL host wrote the fund's domain onto 4,132 company rows. The brief cron
+ * then dutifully read those homepages, and 2,249 companies ended up described
+ * as "Lightspeed Venture Partners is a multi-stage VC firm" in a tool whose
+ * entire job is telling you what a company does. A wrong domain is worse than
+ * no domain: null is visibly missing, wrong is confidently misleading.
+ */
+function companyHost(u: string | null, fundDomain?: string): string | null {
+  const h = hostOf(u)
+  if (!h) return null
+  const fd = (fundDomain ?? '').replace(/^www\./, '')
+  if (fd && (h === fd || h.endsWith('.' + fd))) return null
+  return h
 }
 
 function hostOf(u: string | null): string | null {
