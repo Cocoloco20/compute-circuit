@@ -46,6 +46,11 @@ import { assertSafeHostname } from '@/lib/ssrf-guard'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 86400
+/**
+ * Explicit so the route doesn't inherit the plan default. The provider walk
+ * below is bounded to RESOLVE_BUDGET_MS, which must fit under this.
+ */
+export const maxDuration = 30
 
 /**
  * Minimum byte size to be considered a real logo (vs placeholder sentinel).
@@ -57,8 +62,17 @@ export const revalidate = 86400
 const MIN_BYTES = 150
 /** In-memory cache TTL — 1h matches the in-flight lambda lifetime well. */
 const CACHE_TTL_MS = 60 * 60 * 1000
-/** Per-provider timeout. Total worst case = NUM_PROVIDERS * PROVIDER_TIMEOUT_MS. */
+/** Per-provider timeout. */
 const PROVIDER_TIMEOUT_MS = 5000
+/**
+ * Whole-walk ceiling. Five CDN providers at 5s each is already 25s, and the
+ * homepage scrape behind them is open-ended (two schemes x N <link> icons x
+ * 5s). Without a cap a miss could run for minutes; the logo-maintenance
+ * cron calling this route inherited that and was killed at 60s.
+ */
+const RESOLVE_BUDGET_MS = 22_000
+/** Icon candidates the homepage scrape will try per scheme. */
+const MAX_ICON_CANDIDATES = 4
 
 /** Same-UA constant shared by the plain and guarded fetchers. */
 const LOGO_UA =
@@ -271,8 +285,9 @@ async function tryDuckDuckGoIcon(domain: string): Promise<ProviderResult | null>
  * Tries https://www.{domain} first, then https://{domain} (some cos don't
  * have a www. CNAME). 2 HTTP calls in the happy path.
  */
-async function tryHomepageScrape(domain: string): Promise<ProviderResult | null> {
+async function tryHomepageScrape(domain: string, deadlineAt: number): Promise<ProviderResult | null> {
   for (const scheme of ['https://www.', 'https://']) {
+    if (Date.now() >= deadlineAt) return null
     const homepageUrl = `${scheme}${domain}`
     // Guarded fetch: DNS-resolves + default-denies private/loopback/link-local
     // hosts, and re-validates every redirect hop.
@@ -305,10 +320,11 @@ async function tryHomepageScrape(domain: string): Promise<ProviderResult | null>
       ordered.push({ priority, href })
     }
     ordered.sort((a, b) => b.priority - a.priority)
-    const candidates = ordered.map(o => o.href)
+    const candidates = ordered.map(o => o.href).slice(0, MAX_ICON_CANDIDATES - 1)
     // Always try /favicon.ico last even if not declared.
     candidates.push('/favicon.ico')
     for (const href of candidates) {
+      if (Date.now() >= deadlineAt) return null
       const abs = absolutize(href, homepageUrl)
       if (!abs) continue
       // Re-validate the scraped favicon URL before fetching it: guard against
@@ -335,16 +351,18 @@ function absolutize(href: string, base: string): string | null {
  * providers later in the list never run for that domain.
  */
 async function resolveLogoBytes(domain: string): Promise<ProviderResult | null> {
-  const providers = [
+  const deadlineAt = Date.now() + RESOLVE_BUDGET_MS
+  const providers: Array<(d: string) => Promise<ProviderResult | null>> = [
     tryBrandfetch,
     tryLogoDev,
     tryClearbit,
     tryGoogleFavicon,
     tryDuckDuckGoIcon,
     // Homepage scrape last — most reliable for niche cos but slowest.
-    tryHomepageScrape,
+    d => tryHomepageScrape(d, deadlineAt),
   ]
   for (const p of providers) {
+    if (Date.now() >= deadlineAt) break
     try {
       const out = await p(domain)
       if (out) return out

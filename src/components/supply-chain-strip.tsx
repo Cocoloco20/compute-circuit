@@ -643,8 +643,12 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
   // gracefully at narrow widths (e.g. 768–1024px tablets) and each chip is
   // `flex-none` so chips never squash.
   return (
-    <div className="pointer-events-auto absolute left-1/2 top-14 z-10 hidden max-w-[calc(100vw-2rem)] -translate-x-1/2 md:block">
-      <div className="flex snap-x snap-mandatory gap-1 overflow-x-auto rounded-md border border-border-default bg-bg-overlay p-1 text-meta font-mono shadow-panel backdrop-blur">
+    <div className="pointer-events-none absolute left-[14rem] right-[22rem] top-14 z-10 hidden flex-col items-center md:flex">
+      {/* Bounded to the gap between the layer key (left-4 + w-48) and the
+          Pulse Board (right-4 + w-[320px]). Centered on the viewport with
+          max-w-[calc(100vw-2rem)] it ran under both of them. The rail
+          keeps its own horizontal scroll for when the gap is narrow. */}
+      <div className="pointer-events-auto flex max-w-full snap-x snap-mandatory gap-1 overflow-x-auto rounded-md border border-border-default bg-bg-overlay p-1 text-meta font-mono shadow-panel backdrop-blur">
         {summary.map((s) => {
           const isOpen = expanded === s.label
           const hasData = s.entries.length > 0
@@ -673,7 +677,7 @@ export default function SupplyChainStrip({ data, variant = 'desktop' }: { data: 
         const s = summary.find(x => x.label === expanded)
         if (!s || s.entries.length === 0) return null
         return (
-          <div className="mt-1 max-h-[400px] w-[min(480px,calc(100vw-2rem))] overflow-y-auto rounded-card border border-border-default bg-bg-overlay p-3 text-[11px] font-mono shadow-panel backdrop-blur">
+          <div className="pointer-events-auto mt-1 max-h-[400px] w-[min(480px,100%)] overflow-y-auto rounded-card border border-border-default bg-bg-overlay p-3 text-[11px] font-mono shadow-panel backdrop-blur">
             <div className="mb-2 flex items-baseline justify-between">
               <span className="uppercase tracking-wider text-fg-secondary">{s.emoji} {s.label} layer · {s.entries.length} series</span>
               <button

@@ -1,3 +1,4 @@
+import { upstreamSignal } from './cron-budget'
 /**
  * Logo auto-resolver.
  *
@@ -74,7 +75,7 @@ export async function verifyLogoForDomain(
     // HEAD first to avoid pulling bytes when we just need Content-Length.
     // The /api/logo proxy supports HEAD via Next's default handler chaining
     // (it returns the same headers as GET, sans body).
-    const headRes = await fetch(`${baseUrl}/api/logo/${encodeURIComponent(domain)}`, {
+    const headRes = await fetch(`${baseUrl}/api/logo/${encodeURIComponent(domain)}`, { signal: upstreamSignal(15_000),
       method: 'HEAD',
       headers: { 'User-Agent': UA },
     })
@@ -89,7 +90,7 @@ export async function verifyLogoForDomain(
     }
     // No content-length (some edges strip it). Fall back to a real GET so we
     // can measure the body length ourselves.
-    const getRes = await fetch(`${baseUrl}/api/logo/${encodeURIComponent(domain)}`, {
+    const getRes = await fetch(`${baseUrl}/api/logo/${encodeURIComponent(domain)}`, { signal: upstreamSignal(15_000),
       headers: { 'User-Agent': UA },
     })
     if (!getRes.ok) return 'missing'
@@ -117,7 +118,7 @@ async function tryWikipedia(name: string): Promise<string | null> {
   for (const slug of candidates) {
     const summaryUrl = `https://en.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(slug)}`
     try {
-      const summary = await fetch(summaryUrl, {
+      const summary = await fetch(summaryUrl, { signal: upstreamSignal(8_000),
         headers: { 'User-Agent': UA, Accept: 'application/json' },
       })
       if (!summary.ok) continue
@@ -132,7 +133,7 @@ async function tryWikipedia(name: string): Promise<string | null> {
       const pageUrl = json.content_urls?.desktop?.page
       if (!pageUrl) continue
 
-      const pageRes = await fetch(pageUrl, {
+      const pageRes = await fetch(pageUrl, { signal: upstreamSignal(8_000),
         headers: { 'User-Agent': UA, Accept: 'text/html' },
       })
       if (!pageRes.ok) continue
@@ -213,7 +214,7 @@ async function tryDuckDuckGo(name: string, ticker?: string | null): Promise<stri
   const query = ticker ? `${name} ${ticker}` : name
   const url = `https://api.duckduckgo.com/?q=${encodeURIComponent(query)}&format=json&no_html=1&skip_disambig=1`
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } })
+    const r = await fetch(url, { signal: upstreamSignal(8_000), headers: { 'User-Agent': UA, Accept: 'application/json' } })
     if (!r.ok) return null
     const j = await r.json() as { AbstractURL?: string; Results?: Array<{ FirstURL?: string }> }
     if (j.AbstractURL) {

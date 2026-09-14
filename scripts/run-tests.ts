@@ -16,12 +16,51 @@ import { pickEarningsExhibit } from '../src/lib/edgar'
 import { extractTranscriptSignal, stripHtml, totalMentions } from '../src/lib/transcripts'
 import { computeCapexTTM } from '../src/lib/capex'
 import type { Fundamental } from '../src/types/db'
+import { isPrivateAddr } from '../src/lib/ssrf-guard'
+import { startBudget } from '../src/lib/cron-budget'
 
 let passed = 0
 let failed = 0
 function check(name: string, cond: boolean, detail = '') {
   if (cond) { passed++; console.log(`  ✓ ${name}`) }
   else { failed++; console.error(`  ✗ ${name}${detail ? ` — ${detail}` : ''}`) }
+}
+
+// ---------- ssrf-guard.isPrivateAddr ----------
+// Shipped bug: ipv4ToUint used signed `<<`, so every address >= 128.0.0.0
+// went negative and read as 0.0.0.0/8. /api/logo returned 400 "forbidden
+// domain" for anthropic.com, arm.com, greylock.com and roughly half the
+// company table. The IPv6 prefix check was also reading 8 bits, not 16.
+console.log('ssrf-guard.isPrivateAddr')
+{
+  const publicV4 = ['160.79.104.10', '217.140.110.36', '216.150.1.1', '8.8.8.8', '17.253.144.10', '223.255.255.254']
+  const privateV4 = ['10.0.0.5', '127.0.0.1', '169.254.169.254', '172.16.0.1', '172.31.255.255', '192.168.1.1',
+    '100.64.0.1', '198.18.0.1', '0.0.0.0', '224.0.0.1', '255.255.255.255']
+  check('public IPv4 (incl. first octet >= 128) is NOT private', publicV4.every(a => !isPrivateAddr(a)),
+    publicV4.filter(isPrivateAddr).join(','))
+  check('private/reserved IPv4 IS private', privateV4.every(isPrivateAddr),
+    privateV4.filter(a => !isPrivateAddr(a)).join(','))
+  const publicV6 = ['2606:4700::6812:1234', '2a00:1450:4001:80b::200e', '2001:db8::1']
+  const privateV6 = ['::1', '::', 'fe80::1', 'fec0::1', 'fc00::1', 'fd12:3456::1', 'ff02::1', '::ffff:10.0.0.1', '::ffff:169.254.169.254']
+  check('public IPv6 is NOT private', publicV6.every(a => !isPrivateAddr(a)), publicV6.filter(isPrivateAddr).join(','))
+  check('loopback/link-local/ULA/multicast/mapped-private IPv6 IS private', privateV6.every(isPrivateAddr),
+    privateV6.filter(a => !isPrivateAddr(a)).join(','))
+  check('IPv4-mapped public v6 is NOT private', !isPrivateAddr('::ffff:160.79.104.10'))
+  check('garbage is private (default deny)', isPrivateAddr('not-an-ip') && isPrivateAddr(''))
+}
+
+// ---------- cron-budget ----------
+console.log('cron-budget')
+{
+  let t = 1_000
+  const b = startBudget(500, () => t)
+  check('fresh budget is not expired', !b.expired() && b.remaining() === 500 && b.elapsed() === 0)
+  t = 1_499
+  check('1ms before deadline still live', !b.expired() && b.remaining() === 1)
+  t = 1_500
+  check('expires exactly at deadline', b.expired() && b.remaining() === 0)
+  t = 9_999
+  check('remaining never goes negative', b.remaining() === 0 && b.elapsed() === 8_999)
 }
 
 // ---------- rotatingWindow ----------

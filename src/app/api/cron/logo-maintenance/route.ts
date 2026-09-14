@@ -1,4 +1,5 @@
 import { selfOrigin } from '@/lib/self-origin'
+import { startBudget, DEFAULT_FETCH_BUDGET_MS } from '@/lib/cron-budget'
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 import { resolveDomainForCompany, verifyLogoForDomain } from '@/lib/logo-resolver'
@@ -58,7 +59,10 @@ export async function GET(req: NextRequest) {
   const sb = supabaseServiceRole()
   // Never the inbound Host — see selfOrigin() for the 90-day outage that caused.
   const baseUrl = selfOrigin(req)
-  const BATCH = 30
+  // Upper bound on rows pulled per run; the budget below decides how many
+  // are actually processed. 30 was sized for a fixed loop and left 12,676
+  // companies queued at 30/night; the budget makes a larger pull safe.
+  const BATCH = 120
 
   // Two pools:
   //   A) rows that have never been resolved (logo_status pending/missing/null) — highest priority
@@ -96,12 +100,22 @@ export async function GET(req: NextRequest) {
   const results: RunResult[] = []
   const nowIso = new Date().toISOString()
 
+  // Each company costs up to ~15s (Wikipedia + DuckDuckGo lookups, then a
+  // self-call to /api/logo that walks six providers). 30 of those never fit
+  // in 60s; the loop now stops when the budget is gone and the untouched
+  // rows stay pending/missing for tomorrow's batch.
+  const budget = startBudget(DEFAULT_FETCH_BUDGET_MS)
+  let skipped = 0
+
   for (const co of pool) {
+    if (budget.expired()) { skipped++; continue }
     let domain = co.domain
     let source: string | null = null
 
     // Step 1: resolve a domain if we don't have one.
-    if (!domain) {
+    // Domain discovery is the slow half; skip it (verify-only) when the
+    // budget can't absorb it, rather than overrunning the kill line.
+    if (!domain && budget.remaining() > 20_000) {
       const resolved = await resolveDomainForCompany(co.name, co.ticker)
       if (resolved) {
         domain = resolved.domain
@@ -147,6 +161,8 @@ export async function GET(req: NextRequest) {
     fallback: results.filter(r => r.status_after === 'fallback').length,
     missing: results.filter(r => r.status_after === 'missing').length,
     newDomains: results.filter(r => !r.domain_before && r.domain_after).length,
+    skippedForBudget: skipped,
+    budgetExhausted: budget.expired(),
   }
 
   return NextResponse.json({

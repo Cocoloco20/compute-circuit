@@ -29,7 +29,13 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-const FETCH_DEADLINE_MS = 40_000
+/**
+ * Checked between batches only, and one batch can run 18s (9s homepage
+ * timeout + 9s Wikipedia fallback), so the fetch phase can overrun this by
+ * a full batch. 28s + 18s + the four scope queries + the upsert stays under
+ * the 60s kill; 40s did not.
+ */
+const FETCH_DEADLINE_MS = 28_000
 const CONCURRENCY = 6
 /** Re-read a good homepage at most this often — copy does not change daily. */
 const REFRESH_DAYS = 30

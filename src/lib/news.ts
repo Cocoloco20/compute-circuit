@@ -11,6 +11,7 @@
  */
 
 import { XMLParser } from 'fast-xml-parser'
+import { upstreamSignal, type Budget } from './cron-budget'
 
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 14_5) AppleWebKit/605.1.15'
 
@@ -32,7 +33,10 @@ interface RssItem {
 export async function fetchGoogleNewsRss(query: string): Promise<NewsItem[]> {
   const url = `https://news.google.com/rss/search?q=${encodeURIComponent(query)}&hl=en-US&gl=US&ceid=US:en`
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/rss+xml' } })
+    const r = await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: 'application/rss+xml' },
+      signal: upstreamSignal(),
+    })
     if (!r.ok) return []
     const xml = await r.text()
     const parser = new XMLParser({
@@ -63,13 +67,21 @@ export async function fetchGoogleNewsRss(query: string): Promise<NewsItem[]> {
   }
 }
 
-/** Fetch news for many search terms in parallel chunks. */
+/**
+ * Fetch news for many search terms in parallel chunks.
+ *
+ * Stops launching new chunks once `budget` expires and returns what it has —
+ * callers order `queries` staleness-first so the rows that miss are the ones
+ * that were refreshed most recently.
+ */
 export async function fetchNewsForMany(
   queries: Array<{ id: string; query: string }>,
   chunkSize = 10,
+  budget?: Budget,
 ): Promise<Map<string, NewsItem[]>> {
   const out = new Map<string, NewsItem[]>()
   for (let i = 0; i < queries.length; i += chunkSize) {
+    if (budget?.expired()) break
     const chunk = queries.slice(i, i + chunkSize)
     const res = await Promise.all(chunk.map(async (q) => ({ id: q.id, news: await fetchGoogleNewsRss(q.query) })))
     for (const r of res) out.set(r.id, r.news)

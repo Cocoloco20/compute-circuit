@@ -1,3 +1,4 @@
+import { upstreamSignal, type Budget } from './cron-budget'
 /**
  * Job board client — Greenhouse / Lever / Ashby.
  *
@@ -158,7 +159,7 @@ const UNCATEGORIZED = 'Uncategorized'
 
 async function fetchJson<T>(url: string): Promise<T | null> {
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' } })
+    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/json' }, signal: upstreamSignal() })
     if (!r.ok) return null
     return (await r.json()) as T
   } catch {
@@ -223,9 +224,11 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
 /** Fetch all configured boards sequentially with a tiny pause between calls. */
 export async function fetchAllJobBoards(
   entries: Array<{ companyId: string; cfg: JobBoardConfig }>,
+  budget?: Budget,
 ): Promise<Array<{ companyId: string; cfg: JobBoardConfig; snap: JobsSnapshot | null }>> {
   const out: Array<{ companyId: string; cfg: JobBoardConfig; snap: JobsSnapshot | null }> = []
   for (const e of entries) {
+    if (budget?.expired()) break
     const snap = await fetchJobsSnapshot(e.cfg)
     out.push({ companyId: e.companyId, cfg: e.cfg, snap })
     await sleep(120)

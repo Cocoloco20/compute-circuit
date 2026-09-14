@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser'
+import { upstreamSignal } from './cron-budget'
 
 const INNERTUBE_API_URL = 'https://www.youtube.com/youtubei/v1/player?prettyPrint=false'
 const INNERTUBE_CLIENT_VERSION = '20.10.38'
@@ -35,7 +36,7 @@ export async function findEarningsCallVideo(
   if (youtubeChannel) {
     try {
       const rssUrl = `https://www.youtube.com/feeds/videos.xml?channel_id=${encodeURIComponent(youtubeChannel)}`
-      const res = await fetch(rssUrl, {
+      const res = await fetch(rssUrl, { signal: upstreamSignal(10_000),
         headers: {
           'User-Agent': USER_AGENT,
         },
@@ -79,7 +80,7 @@ export async function findEarningsCallVideo(
   const query = `${companyName} Q${quarter} ${year} earnings call`
   const searchUrl = `https://www.youtube.com/results?search_query=${encodeURIComponent(query)}`
   try {
-    const res = await fetch(searchUrl, {
+    const res = await fetch(searchUrl, { signal: upstreamSignal(10_000),
       headers: {
         'User-Agent': USER_AGENT,
         'Accept-Language': 'en-US,en;q=0.9',
@@ -116,7 +117,7 @@ export async function fetchTranscript(videoId: string): Promise<string> {
 
   // Try InnerTube API first
   try {
-    const resp = await fetch(INNERTUBE_API_URL, {
+    const resp = await fetch(INNERTUBE_API_URL, { signal: upstreamSignal(10_000),
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -145,7 +146,7 @@ export async function fetchTranscript(videoId: string): Promise<string> {
   // Fallback: scrape web page
   if (!tracks) {
     try {
-      const res = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`, {
+      const res = await fetch(`https://www.youtube.com/watch?v=${encodeURIComponent(videoId)}`, { signal: upstreamSignal(10_000),
         headers: { 'User-Agent': USER_AGENT },
       })
       if (res.ok) {
@@ -184,7 +185,7 @@ export async function fetchTranscript(videoId: string): Promise<string> {
   if (!track || !track.baseUrl) return ''
 
   try {
-    const res = await fetch(track.baseUrl, { headers: { 'User-Agent': USER_AGENT } })
+    const res = await fetch(track.baseUrl, { signal: upstreamSignal(10_000), headers: { 'User-Agent': USER_AGENT } })
     if (!res.ok) return ''
     const xml = await res.text()
     

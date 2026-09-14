@@ -1,3 +1,4 @@
+import { upstreamSignal, type Budget } from './cron-budget'
 /**
  * GitHub REST API client — snapshot a company's primary open-source repo.
  *
@@ -89,10 +90,9 @@ function ghHeaders(): HeadersInit {
 
 /** Fetch JSON with one retry on transient 5xx / 429 / 403-rate-limit. */
 async function ghFetch<T>(url: string): Promise<T | null> {
-  const opts: RequestInit = { headers: ghHeaders() }
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
-      const r = await fetch(url, opts)
+      const r = await fetch(url, { headers: ghHeaders(), signal: upstreamSignal() })
       if (r.status === 404) return null
       if (r.ok) return (await r.json()) as T
       // Retry once on rate-limit-ish errors
@@ -262,9 +262,11 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms))
  */
 export async function fetchAllRepoActivity(
   entries: Array<{ companyId: string; repo: string }>,
+  budget?: Budget,
 ): Promise<Array<{ companyId: string; snap: RepoActivitySnapshot | null }>> {
   const out: Array<{ companyId: string; snap: RepoActivitySnapshot | null }> = []
   for (const e of entries) {
+    if (budget?.expired()) break
     const snap = await fetchRepoActivity(e.repo)
     out.push({ companyId: e.companyId, snap })
     await sleep(350)

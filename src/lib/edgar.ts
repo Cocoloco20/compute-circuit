@@ -33,7 +33,7 @@ export interface TickerCikRow {
 }
 
 export async function fetchTickerCikMap(): Promise<Map<string, TickerCikRow>> {
-  const r = await fetch('https://www.sec.gov/files/company_tickers.json', {
+  const r = await fetch('https://www.sec.gov/files/company_tickers.json', { signal: upstreamSignal(10_000),
     headers: { 'User-Agent': UA, Accept: 'application/json' },
   })
   if (!r.ok) throw new Error(`company_tickers.json HTTP ${r.status}`)
@@ -66,7 +66,7 @@ export interface CompanySubmissions {
 
 export async function fetchCompanyFilings(cik: string): Promise<CompanySubmissions> {
   const padded = pad10(cik)
-  const r = await fetch(`https://data.sec.gov/submissions/CIK${padded}.json`, {
+  const r = await fetch(`https://data.sec.gov/submissions/CIK${padded}.json`, { signal: upstreamSignal(10_000),
     headers: { 'User-Agent': UA, Accept: 'application/json' },
   })
   if (!r.ok) throw new Error(`submissions CIK${padded} HTTP ${r.status}`)
@@ -145,6 +145,7 @@ export function filingIndexUrl(cik: string, accession: string): string {
 // ---------- 13F holdings ----------
 
 import { XMLParser } from 'fast-xml-parser'
+import { upstreamSignal } from './cron-budget'
 
 export interface ParsedHolding {
   cusip: string
@@ -172,7 +173,7 @@ export async function fetchInformationTableUrl(cik: string, accession: string): 
   const cikInt = parseInt(cik, 10)
   const accNoDashes = accession.replace(/-/g, '')
   const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/index.json`
-  const r = await fetch(indexUrl, { headers: { 'User-Agent': UA, Accept: 'application/json' } })
+  const r = await fetch(indexUrl, { signal: upstreamSignal(10_000), headers: { 'User-Agent': UA, Accept: 'application/json' } })
   if (!r.ok) return null
   const data = (await r.json()) as { directory?: { item?: Array<{ name: string; type?: string }> } }
   const items = data.directory?.item ?? []
@@ -228,7 +229,7 @@ export function parseInformationTable(xml: string): ParsedHolding[] {
 export async function fetch13FHoldings(cik: string, filing: EdgarFiling): Promise<{ period: string; holdings: ParsedHolding[] }> {
   const xmlUrl = await fetchInformationTableUrl(cik, filing.accessionNumber)
   if (!xmlUrl) return { period: filing.reportDate ?? filing.filingDate, holdings: [] }
-  const r = await fetch(xmlUrl, { headers: { 'User-Agent': UA, Accept: 'application/xml' } })
+  const r = await fetch(xmlUrl, { signal: upstreamSignal(10_000), headers: { 'User-Agent': UA, Accept: 'application/xml' } })
   if (!r.ok) return { period: filing.reportDate ?? filing.filingDate, holdings: [] }
   const xml = await r.text()
   return {
@@ -379,7 +380,7 @@ function unwrapValue(node: unknown): string | null {
 export async function fetchForm4(cik: string, accession: string, primaryDocument: string): Promise<ParsedInsiderTx[]> {
   const url = form4PrimaryDocUrl(cik, accession, primaryDocument)
   try {
-    const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/xml' } })
+    const r = await fetch(url, { signal: upstreamSignal(10_000), headers: { 'User-Agent': UA, Accept: 'application/xml' } })
     if (!r.ok) return []
     const xml = await r.text()
     return parseForm4(xml)
@@ -532,7 +533,7 @@ export async function fetchFormDOfferingForCik(
   for (const f of recentFormDs) {
     const url = formDPrimaryDocUrl(cik, f.accessionNumber)
     try {
-      const r = await fetch(url, { headers: { 'User-Agent': UA, Accept: 'application/xml' } })
+      const r = await fetch(url, { signal: upstreamSignal(10_000), headers: { 'User-Agent': UA, Accept: 'application/xml' } })
       if (!r.ok) {
         await sleep(150)
         continue
@@ -636,7 +637,7 @@ export async function fetchEarningsExhibitText(
   const indexUrl = `https://www.sec.gov/Archives/edgar/data/${cikInt}/${accNoDashes}/index.json`
   let exhibitUrl: string | null = null
   try {
-    const r = await fetch(indexUrl, { headers: { 'User-Agent': UA, Accept: 'application/json' } })
+    const r = await fetch(indexUrl, { signal: upstreamSignal(10_000), headers: { 'User-Agent': UA, Accept: 'application/json' } })
     if (r.ok) {
       const data = (await r.json()) as { directory?: { item?: Array<{ name: string; size?: string }> } }
       const items = data.directory?.item ?? []
@@ -650,7 +651,7 @@ export async function fetchEarningsExhibitText(
   }
   if (!exhibitUrl) return null
   try {
-    const r = await fetch(exhibitUrl, { headers: { 'User-Agent': UA, Accept: 'text/html,text/plain' } })
+    const r = await fetch(exhibitUrl, { signal: upstreamSignal(10_000), headers: { 'User-Agent': UA, Accept: 'text/html,text/plain' } })
     if (!r.ok) return null
     const lenHeader = r.headers.get('content-length')
     if (lenHeader && Number(lenHeader) > 2_000_000) return null

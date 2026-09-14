@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { startBudget, DEFAULT_FETCH_BUDGET_MS } from '@/lib/cron-budget'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import { fetchAllRepoActivity } from '@/lib/github'
@@ -59,9 +60,20 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, scanned: 0, inserted: 0, note: 'no github-repo-tagged companies' })
   }
 
-  const startedAt = Date.now()
-  const results = await fetchAllRepoActivity(cos.map(c => ({ companyId: c.id, repo: c.github_repo })))
-  const fetchMs = Date.now() - startedAt
+  // Each repo costs 4-6 GitHub calls plus a 350ms pace, so ~7s/repo when the
+  // search API is slow. Stop launching new repos once the budget is gone and
+  // upsert the ones that finished; the unvisited tail leads tomorrow's walk.
+  const budget = startBudget(DEFAULT_FETCH_BUDGET_MS)
+  // Rotate the start point once per UTC day so a budget stop doesn't leave
+  // the same repos at the tail unvisited every night.
+  const start = Math.floor(Date.now() / 86_400_000) % cos.length
+  const ordered = [...cos.slice(start), ...cos.slice(0, start)]
+  const results = await fetchAllRepoActivity(
+    ordered.map(c => ({ companyId: c.id, repo: c.github_repo })),
+    budget,
+  )
+  const fetchMs = budget.elapsed()
+  const budgetExhausted = budget.expired()
 
   const snapshotDate = new Date().toISOString().slice(0, 10)
   const rows: ActivityRow[] = []
@@ -87,7 +99,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (rows.length === 0) {
-    return NextResponse.json({ ok: true, scanned: cos.length, fetched: 0, fetchMs })
+    return NextResponse.json({ ok: true, scanned: results.length, planned: cos.length, fetched: 0, fetchMs, budgetExhausted })
   }
 
   const upResp = await (sb.from('github_activity') as unknown as {
@@ -98,9 +110,11 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    scanned: cos.length,
+    scanned: results.length,
+    planned: cos.length,
     fetched: rows.length,
     fetchMs,
+    budgetExhausted,
     top: rows
       .slice()
       .sort((a, b) => b.stars - a.stars)

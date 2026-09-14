@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { startBudget, DEFAULT_FETCH_BUDGET_MS } from '@/lib/cron-budget'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import { fetchAllJobBoards, JOB_BOARDS, type JobBoardConfig } from '@/lib/jobs'
@@ -65,9 +66,13 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, scanned: 0, inserted: 0, note: 'no companies map to a known job board' })
   }
 
-  const startedAt = Date.now()
-  const results = await fetchAllJobBoards(entries)
-  const fetchMs = Date.now() - startedAt
+  // 79 boards at ~0.5s each fits comfortably, but one slow Greenhouse
+  // tenant used to stall the whole run past 60s. Budget + per-request
+  // timeout: the run ends with a partial snapshot instead of no snapshot.
+  const budget = startBudget(DEFAULT_FETCH_BUDGET_MS)
+  const results = await fetchAllJobBoards(entries, budget)
+  const fetchMs = budget.elapsed()
+  const budgetExhausted = budget.expired()
 
   const snapshotDate = new Date().toISOString().slice(0, 10)
   const rows: SnapshotRow[] = []
@@ -91,7 +96,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (rows.length === 0) {
-    return NextResponse.json({ ok: true, scanned: entries.length, fetched: 0, fetchMs, failures })
+    return NextResponse.json({ ok: true, scanned: results.length, planned: entries.length, fetched: 0, fetchMs, budgetExhausted, failures })
   }
 
   const upResp = await (sb.from('job_snapshots') as unknown as {
@@ -102,9 +107,11 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    scanned: entries.length,
+    scanned: results.length,
+    planned: entries.length,
     fetched: rows.length,
     fetchMs,
+    budgetExhausted,
     failures,
     top: rows
       .slice()

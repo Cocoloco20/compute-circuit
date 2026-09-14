@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { startBudget, CRON_HARD_CAP_MS } from '@/lib/cron-budget'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import { fetchAllYahooQuotes } from '@/lib/market'
@@ -54,7 +55,9 @@ export async function GET(req: NextRequest) {
   // Leave ~15s of the 60s cap for the upserts. Going over doesn't just lose
   // the tail — the platform kills the lambda before ANY write lands, which is
   // how this cron produced zero rows on every run instead of partial ones.
-  const FETCH_DEADLINE_MS = 35_000
+  // 30s for Yahoo, leaving ~25s for the 250 row writes below plus the cold
+  // start; 35s was enough to push slow nights past the 60s kill.
+  const FETCH_DEADLINE_MS = 30_000
 
   const startedAt = Date.now()
   const quotes = await fetchAllYahooQuotes(tickers.map(t => t.ticker), FETCH_DEADLINE_MS)
@@ -80,7 +83,12 @@ export async function GET(req: NextRequest) {
   // Still individual UPDATEs rather than one upsert: `companies` has NOT NULL
   // columns these patches don't carry, so an upsert would have to satisfy the
   // insert path for rows we already know exist.
-  const WRITE_CONCURRENCY = 8
+  const WRITE_CONCURRENCY = 16
+  // Writes are bounded too: a row that isn't written keeps its old
+  // price_updated_at and sorts to the front of tomorrow's batch.
+  // fetchMs excludes the cold start and the row select, hence the 14s margin.
+  const writeBudget = startBudget(CRON_HARD_CAP_MS - 14_000 - fetchMs)
+  let writeSkipped = 0
   let updated = 0
   let writeFailed = 0
 
@@ -112,6 +120,7 @@ export async function GET(req: NextRequest) {
   }
 
   for (let i = 0; i < updates.length; i += WRITE_CONCURRENCY) {
+    if (writeBudget.expired()) { writeSkipped = updates.length - i; break }
     await Promise.all(updates.slice(i, i + WRITE_CONCURRENCY).map(writeOne))
   }
 
@@ -123,6 +132,7 @@ export async function GET(req: NextRequest) {
     // egress, not that there was nothing to update. Worth distinguishing.
     upstreamReachable: quotes.size > 0,
     writeFailed,
+    writeSkipped,
     updated,
     fetchMs,
   })

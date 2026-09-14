@@ -1,4 +1,5 @@
 import { XMLParser } from 'fast-xml-parser'
+import { upstreamSignal, type Budget } from './cron-budget'
 
 const UA = 'compute-circuit (research tool) luigui.h2002@gmail.com'
 
@@ -38,7 +39,7 @@ export async function fetchPapersForAffiliation(
   )}&start=0&max_results=100&sortBy=submittedDate&sortOrder=descending`
 
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA } })
+    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: upstreamSignal(12_000) })
     if (!res.ok) {
       // eslint-disable-next-line no-console
       console.warn(`[arxiv] Fetch failed with status ${res.status} for affiliation: ${affiliation}`)
@@ -119,7 +120,8 @@ export async function fetchPapersForAffiliation(
 }
 
 export async function fetchAllArxivSnapshots(
-  entries: Array<{ companyId: string; affiliation: string }>
+  entries: Array<{ companyId: string; affiliation: string }>,
+  budget?: Budget,
 ): Promise<Array<{ companyId: string; snap: ArxivSnapshotInfo | null; papers: ArxivPaperInfo[] }>> {
   const out: Array<{ companyId: string; snap: ArxivSnapshotInfo | null; papers: ArxivPaperInfo[] }> = []
   
@@ -130,6 +132,7 @@ export async function fetchAllArxivSnapshots(
   // Process in parallel batches of 3
   const batchSize = 3
   for (let i = 0; i < entries.length; i += batchSize) {
+    if (budget?.expired()) break
     const batch = entries.slice(i, i + batchSize)
     const batchRes = await Promise.all(
       batch.map(async (entry) => {

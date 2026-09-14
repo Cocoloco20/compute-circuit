@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { startBudget, DEFAULT_FETCH_BUDGET_MS } from '@/lib/cron-budget'
+import { rotatingWindow } from '@/lib/cron-window'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 import { fetchAllArxivSnapshots } from '@/lib/arxiv'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
+
+/** Companies per run; see the rotatingWindow note in GET. */
+const ARXIV_WINDOW = 18
 
 interface CompanyRow {
   id: string
@@ -58,11 +63,18 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ ok: true, scanned: 0, snapshotsUpserted: 0, papersUpserted: 0, note: 'no arxiv-tagged companies' })
   }
 
-  const startedAt = Date.now()
+  // arXiv asks for a 3s gap between requests, so batches of 3 cost ~5-8s
+  // each: roughly ARXIV_WINDOW companies fit in one budgeted run. Rotate a
+  // window of that size per UTC day so every affiliation is refreshed every
+  // ceil(N / ARXIV_WINDOW) days, and stop early if arXiv is slow.
+  const window = rotatingWindow(cos, ARXIV_WINDOW)
+  const budget = startBudget(DEFAULT_FETCH_BUDGET_MS)
   const results = await fetchAllArxivSnapshots(
-    cos.map((c) => ({ companyId: c.id, affiliation: c.arxiv_affiliation }))
+    window.map((c) => ({ companyId: c.id, affiliation: c.arxiv_affiliation })),
+    budget,
   )
-  const fetchMs = Date.now() - startedAt
+  const fetchMs = budget.elapsed()
+  const budgetExhausted = budget.expired()
 
   const papersToUpsert: ArxivPaperInsertRow[] = []
   const snapshotsToUpsert: ArxivSnapshotInsertRow[] = []
@@ -137,7 +149,10 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    scanned: cos.length,
+    scanned: results.length,
+    window: window.length,
+    planned: cos.length,
+    budgetExhausted,
     snapshotsUpserted,
     papersUpserted,
     fetchMs,

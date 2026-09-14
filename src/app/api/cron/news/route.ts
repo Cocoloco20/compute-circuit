@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { startBudget, DEFAULT_FETCH_BUDGET_MS } from '@/lib/cron-budget'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 
 import { fetchNewsForMany } from '@/lib/news'
@@ -96,9 +97,15 @@ export async function GET(req: NextRequest) {
     query: c.ticker ? `${c.ticker} stock` : c.name,
   }))
 
-  const startedAt = Date.now()
-  const byCompany = await fetchNewsForMany(queries, 12)
-  const fetchMs = Date.now() - startedAt
+  // Wall-clock budget for the RSS walk. 600 queries x 12-wide chunks was
+  // never going to fit in 60s once Google News slowed down; without a stop
+  // the lambda was killed mid-walk and nothing was written (54 timeouts in
+  // the week of 2026-09-08). Now we stop early and persist what we have —
+  // `prioritized` is staleness-first, so the misses are the freshest rows.
+  const budget = startBudget(DEFAULT_FETCH_BUDGET_MS)
+  const byCompany = await fetchNewsForMany(queries, 12, budget)
+  const fetchMs = budget.elapsed()
+  const budgetExhausted = budget.expired()
 
   // Shape signal rows + remember the (companyId, source_key) link mapping
   const signalRows: SignalInsert[] = []
@@ -123,7 +130,7 @@ export async function GET(req: NextRequest) {
   }
 
   if (signalRows.length === 0) {
-    return NextResponse.json({ ok: true, scanned: queries.length, fetched: 0, inserted: 0, fetchMs })
+    return NextResponse.json({ ok: true, scanned: byCompany.size, planned: queries.length, fetched: 0, inserted: 0, fetchMs, budgetExhausted })
   }
 
   // Upsert signals — duplicates (same source_key) get ignored.
@@ -173,7 +180,9 @@ export async function GET(req: NextRequest) {
 
   return NextResponse.json({
     ok: true,
-    scanned: queries.length,
+    scanned: byCompany.size,
+    planned: queries.length,
+    budgetExhausted,
     fetched: totalFetched,
     candidates: signalRows.length,
     insertedOrExisting: insResp.data?.length ?? 0,

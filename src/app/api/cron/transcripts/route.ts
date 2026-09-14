@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { startBudget } from '@/lib/cron-budget'
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
 import { rotatingWindow } from '@/lib/cron-window'
 
@@ -45,6 +46,8 @@ export const maxDuration = 60
 const LOOKBACK_DAYS = 365
 const QUARTERS_PER_CO = 4   // cap per-co earnings 8-Ks pulled per run
 const BATCH_SIZE = 5
+/** Fetch-phase budget; the seen-set query and the upsert take the rest. */
+const TRANSCRIPT_BUDGET_MS = 34_000
 
 interface CompanyRow {
   id: string
@@ -118,12 +121,20 @@ export async function GET(req: NextRequest) {
 
   const cutoff = new Date(Date.now() - LOOKBACK_DAYS * 86400_000).toISOString().slice(0, 10)
   const startedAt = Date.now()
+  // 120 CIKs x up to 4 exhibits x (SEC fetch + YouTube search + transcript)
+  // cannot finish in 60s on a slow night, and it was being killed before
+  // the upsert. Budget checks sit at three depths: before each batch,
+  // before each exhibit, and before the (slowest) YouTube step, which is
+  // skipped outright once fewer than 15s remain. All fetches on this path
+  // now carry a 10s ceiling, so the overrun past the deadline is bounded.
+  const budget = startBudget(TRANSCRIPT_BUDGET_MS)
   const rows: TranscriptSignalInsert[] = []
   const perCo: Record<string, { scanned: number; processed: number; skipped: number }> = {}
 
   // Parallel batches of 5 CIKs. SEC limit is 10 req/sec; with ≤ 4 inner
   // exhibit fetches per CIK + the 150 ms inner sleep, burst stays safe.
   for (let i = 0; i < companies.length; i += BATCH_SIZE) {
+    if (budget.expired()) break
     const batch = companies.slice(i, i + BATCH_SIZE)
     const results = await Promise.all(
       batch.map(async (co) => {
@@ -136,6 +147,7 @@ export async function GET(req: NextRequest) {
           for (const f of earnings) {
             const k = `${co.id}|${f.accessionNumber}`
             if (seen.has(k)) { stats.skipped++; continue }
+            if (budget.expired()) { stats.skipped++; continue }
             // Politeness pause between exhibit fetches (~6 req/sec inside batch).
             await sleep(150)
             const exhibit = await fetchEarningsExhibitText(co.cik, f.accessionNumber, f.primaryDocument)
@@ -158,7 +170,9 @@ export async function GET(req: NextRequest) {
             const { quarter, year } = getQuarterAndYear(dateStr)
 
             try {
-              const videoId = await findEarningsCallVideo(co.name, quarter, year, co.youtube_channel)
+              const videoId = budget.remaining() < 15_000
+                ? null
+                : await findEarningsCallVideo(co.name, quarter, year, co.youtube_channel)
               if (videoId) {
                 youtubeVideoId = videoId
                 await sleep(1000) // Politeness pause before fetching transcript
@@ -244,6 +258,7 @@ export async function GET(req: NextRequest) {
     scanned: companies.length,
     rowsUpserted: rows.length,
     fetchMs,
+    budgetExhausted: budget.expired(),
     perCo,
   })
 }

@@ -29,7 +29,11 @@ function ipv4ToUint(ip: string): number | null {
   if (!m) return null
   const parts = m.slice(1).map(Number)
   if (parts.some(p => p > 255)) return null
-  return ((((parts[0] << 8) | parts[1]) << 8) | parts[2]) << 8 | parts[3]
+  // `>>> 0` forces an unsigned result. Plain `<<` yields a SIGNED 32-bit int,
+  // so any first octet >= 128 went negative and tripped the `n < 0x01000000`
+  // "0.0.0.0/8" check below — anthropic.com (160.x), arm.com (217.x) and
+  // every other host in the upper half of v4 space was denied as "private".
+  return (((((parts[0] << 8) | parts[1]) << 8) | parts[2]) << 8 | parts[3]) >>> 0
 }
 
 /** True when the dotted-quad falls in a private/loopback/link-local/etc range. */
@@ -111,7 +115,9 @@ function isPrivateIpv6(bi: bigint): boolean {
   if ((bi >> 112n) === 0n && (bi >> 32n) === 0xffffn) {
     return isPrivateIpv4Uint(Number(bi & 0xffffffffn))
   }
-  const top = bi >> 120n
+  // Top 16 bits (first hextet). `>> 120n` only exposed the top 8 bits, so
+  // none of the fe80/fec0/fc00/ff00 comparisons below could ever match.
+  const top = bi >> 112n
   if (top >= 0xfe80n && top <= 0xfebfn) return true           // fe80::/10 link-local
   if (top >= 0xfec0n && top <= 0xfeffn) return true           // fec0::/10 site-local
   if (top >= 0xfc00n && top <= 0xfdffn) return true           // fc00::/7 ULA
@@ -123,7 +129,12 @@ function isBareIpv6(s: string): boolean {
   return ipv6ToBigInt(s) !== null
 }
 
-function isPrivateAddr(addr: string): boolean {
+/**
+ * Exported for the regression test in scripts/run-tests.ts — the signed-shift
+ * bug lived here undetected because nothing exercised the classifier with a
+ * real upper-half address.
+ */
+export function isPrivateAddr(addr: string): boolean {
   const u = ipv4ToUint(addr)
   if (u !== null) return isPrivateIpv4Uint(u)
   const b = ipv6ToBigInt(addr)

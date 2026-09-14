@@ -1029,7 +1029,9 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           iOS notch via safe-area-inset-top.
           Desktop (md:): full bar with the live counters. */}
       <div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-center justify-between gap-2 px-3 pt-[max(env(safe-area-inset-top),0.5rem)] pb-2 md:p-4">
-        <div className="pointer-events-auto min-w-0 font-mono text-sm">
+        {/* truncate: at ~1024px the counters wrapped to a second line that
+            ran into the layer key below. One line, ellipsis, always. */}
+        <div className="pointer-events-auto min-w-0 truncate font-mono text-sm">
           <span className="font-semibold text-fg-primary">Compute Circuit</span>
           <span className="ml-3 hidden text-fg-muted sm:inline">
             {data.companies.filter(c => c.layer_id).length} cos
@@ -1141,9 +1143,14 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         </div>
       </div>
 
-      {/* ----- Backer filter chips — left rail (bottom), desktop only ----- */}
-      <div className="pointer-events-auto absolute bottom-4 left-4 z-10 hidden max-w-[200px] space-y-1 text-[11px] font-mono md:block">
+      {/* ----- Backer filter chips — left rail (bottom), desktop only -----
+          The list is as tall as the investor table (30+ rows and growing).
+          Anchored at bottom-4 with no height cap it grew UP through the
+          layer key, the title bar and the supply-chain strip. Cap it so it
+          ends below the layer key (top-16 + ~200px) and scroll inside. */}
+      <div className="pointer-events-auto absolute bottom-4 left-4 z-10 hidden w-[200px] text-[11px] font-mono md:block">
         <div className="mb-1 text-label text-fg-dim">Filter by backer</div>
+        <div className="max-h-[calc(100vh-19rem)] space-y-1 overflow-y-auto pr-1.5 scrollbar-thin">
         {data.investors.map((inv) => {
           const active = backerFilter === inv.id
           return (
@@ -1162,11 +1169,12 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
             </button>
           )
         })}
+        </div>
         {backerFilter && (
           <button
             type="button"
             onClick={() => setBackerFilter(null)}
-            className="block w-full rounded-md border border-border-default bg-bg-overlay px-2 py-1 text-center text-fg-muted hover:text-fg-primary"
+            className="mt-1 block w-full rounded-md border border-border-default bg-bg-overlay px-2 py-1 text-center text-fg-muted hover:text-fg-primary"
           >
             clear
           </button>
