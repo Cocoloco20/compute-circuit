@@ -115,6 +115,8 @@ export async function GET(req: NextRequest) {
     { task: 'fundamentals', path: '/api/cron/fundamentals' },
     // Bounded + idempotent; see header for why it no longer waits on form-d.
     { task: 'logo-maintenance', path: '/api/cron/logo-maintenance' },
+    // Contract ledger: last 10 days of provider filings, budgeted.
+    { task: 'contracts', path: '/api/cron/contracts' },
   ]
   // Weekly: 13F holdings (Sundays). Monthly: VC portfolio scraper (1st).
   if (day === 0) tasks.push({ task: '13f-tracker', path: '/api/cron/13f-tracker' })
