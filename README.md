@@ -1,4 +1,10 @@
-# Bloomberg-grade research dashboard for the AI compute ecosystem and beyond — 100% free data sources, 100% open source.
+# Offtake
+
+**The ledger of disclosed AI compute contracts.** Every colocation lease, GPU cloud capacity agreement, hosting deal, power supply contract and equipment purchase that a public company has disclosed, read from the SEC filing it appeared in, one row per disclosure, with the verbatim excerpt the figures came from. Free data sources, open source.
+
+Live: https://compute-circuit.vercel.app/contracts · CSV: `/api/contracts/export`
+
+Underneath it: the Compute Circuit research backbone — the AI-compute supply-chain graph and 25 free daily data feeds.
 
 ---
 

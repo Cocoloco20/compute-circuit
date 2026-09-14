@@ -1,4 +1,4 @@
-# Compute Circuit — project rules
+# Offtake (repo: compute-circuit) — project rules
 
 **Product (since 2026-09-14): the contract ledger** — every disclosed AI compute, colocation, hosting, power and equipment contract, read from SEC filings, one row per disclosure with the source excerpt. Buyers: credit desks, GPU lenders, equity analysts. `/contracts` is the surface; `src/lib/contracts/` the pipeline; `ROADMAP.md` the work queue. The 3D graph and the 25 data feeds remain as the research backbone. The VC terminal pages (/terminal, /screen, /pipeline, /decisions, /fund) are scheduled for archival.
 

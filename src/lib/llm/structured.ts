@@ -109,7 +109,7 @@ async function viaOpenRouter<S extends z.ZodType>(req: StructuredRequest<S>, mod
         Authorization: `Bearer ${key}`,
         'Content-Type': 'application/json',
         'HTTP-Referer': 'https://compute-circuit.vercel.app',
-        'X-Title': 'Compute Circuit contract ledger',
+        'X-Title': 'Offtake contract ledger',
       },
       body: JSON.stringify(body),
     })

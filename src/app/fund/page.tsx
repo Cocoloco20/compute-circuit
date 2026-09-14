@@ -12,7 +12,7 @@ import { fetchFund, usd } from '@/lib/fund-data'
 import type { PositionRow } from '@/lib/fund-data'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Fund — Compute Circuit' }
+export const metadata = { title: 'Fund — Offtake' }
 
 function fmtDate(d: string): string {
   return new Date(`${d}T12:00:00`).toLocaleDateString('en-US', { year: 'numeric', month: 'short' })

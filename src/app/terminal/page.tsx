@@ -33,7 +33,7 @@ import { usd } from '@/lib/fund-data'
 import ResurfaceVerdictButtons from '@/components/terminal/resurface-verdict'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Terminal — Compute Circuit' }
+export const metadata = { title: 'Terminal — Offtake' }
 
 // ---------------------------------------------------------------- helpers
 

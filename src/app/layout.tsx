@@ -14,8 +14,8 @@ const geistMono = localFont({
 })
 
 export const metadata: Metadata = {
-  title: 'Compute Circuit',
-  description: 'AI compute ecosystem — companies, investors, capital flows, bottlenecks.',
+  title: 'Offtake',
+  description: 'Offtake — the ledger of disclosed AI compute, colocation, hosting and power contracts, read from SEC filings with the source excerpt on every row.',
 }
 
 export default function RootLayout({

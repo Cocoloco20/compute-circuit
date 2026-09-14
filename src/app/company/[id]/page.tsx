@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({ params }: { params: { id: string } }) {
   const c = await fetchCompany(params.id).catch(() => null)
-  return { title: c ? `${c.header.name} — Compute Circuit` : 'Company — Compute Circuit' }
+  return { title: c ? `${c.header.name} — Offtake` : 'Company — Offtake' }
 }
 
 function fmtDate(d: string): string {

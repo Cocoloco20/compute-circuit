@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
     weekday: 'short', month: 'short', day: 'numeric',
     timeZone: 'America/New_York',
   })
-  const subject = `Compute Circuit Digest · ${dateStr}`
+  const subject = `Offtake Digest · ${dateStr}`
 
   // ── Send ──────────────────────────────────────────────────────────────────
   const { id, error } = await sendEmail({ to: digestEmail, subject, html })

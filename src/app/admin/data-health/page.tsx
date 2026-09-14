@@ -305,7 +305,7 @@ export default async function DataHealthPage({ searchParams }: PageProps) {
       <div className="mx-auto max-w-6xl space-y-8">
         {/* ---- Headline ---- */}
         <header className="space-y-2 border-b border-border-default pb-4">
-          <h1 className="text-headline text-fg-primary">Data Health — Compute Circuit</h1>
+          <h1 className="text-headline text-fg-primary">Data Health — Offtake</h1>
           <div className="flex flex-wrap gap-x-6 gap-y-1 text-meta text-fg-secondary">
             <span>
               generated <span className="text-fg-primary">{generatedAt}</span>

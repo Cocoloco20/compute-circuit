@@ -11,7 +11,7 @@ import { fetchPipeline, STALE_STAGE_DAYS } from '@/lib/pipeline-data'
 import PipelineBoard from '@/components/terminal/pipeline-board'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Pipeline — Compute Circuit' }
+export const metadata = { title: 'Pipeline — Offtake' }
 
 export default async function PipelinePage() {
   const data = await fetchPipeline()

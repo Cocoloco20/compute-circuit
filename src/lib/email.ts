@@ -7,7 +7,7 @@
  * Usage:
  *   const { id, error } = await sendEmail({
  *     to: 'me@example.com',
- *     subject: 'Compute Circuit Digest',
+ *     subject: 'Offtake Digest',
  *     html: '<h1>Hello</h1>',
  *   })
  */
@@ -28,7 +28,7 @@ export async function sendEmail({
   to,
   subject,
   html,
-  from = 'Compute Circuit <onboarding@resend.dev>',
+  from = 'Offtake <onboarding@resend.dev>',
 }: SendEmailOptions): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY
   if (!apiKey) {

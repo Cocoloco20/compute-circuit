@@ -1032,7 +1032,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
         {/* truncate: at ~1024px the counters wrapped to a second line that
             ran into the layer key below. One line, ellipsis, always. */}
         <div className="pointer-events-auto min-w-0 truncate font-mono text-sm">
-          <span className="font-semibold text-fg-primary">Compute Circuit</span>
+          <span className="font-semibold text-fg-primary">Offtake</span>
           <span className="ml-3 hidden text-fg-muted sm:inline">
             {data.companies.filter(c => c.layer_id).length} cos
             {data.companies.filter(c => !c.layer_id).length > 0 && (

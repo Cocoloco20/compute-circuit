@@ -128,7 +128,7 @@ export default function GlossaryView({ data, onSelect }: Props) {
         <header className="mb-8 border-b border-border-subtle pb-6">
           <h1 className="text-headline text-fg-primary">Glossary</h1>
           <p className="mt-2 max-w-3xl text-body text-fg-secondary">
-            A tour of the Compute Circuit ontology — every layer in the stack, every
+            A tour of the Offtake ontology — every layer in the stack, every
             regulator that governs it, every flow type that connects two nodes. Skim
             top-to-bottom once and the rest of the app will read naturally.
           </p>

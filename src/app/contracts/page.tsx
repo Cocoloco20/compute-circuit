@@ -16,7 +16,7 @@ import { usd } from '@/lib/fund-data'
 
 export const dynamic = 'force-dynamic'
 export const metadata = {
-  title: 'Contract Ledger — Compute Circuit',
+  title: 'Contract Ledger — Offtake',
   description: 'Every disclosed AI compute, colocation, hosting and power contract, extracted from SEC filings with the source excerpt.',
 }
 

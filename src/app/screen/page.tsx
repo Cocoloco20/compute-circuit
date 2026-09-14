@@ -13,7 +13,7 @@ import type { ScreenRow } from '@/lib/screen-data'
 import AddToPipeline from '@/components/terminal/add-to-pipeline'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Screen — Compute Circuit' }
+export const metadata = { title: 'Screen — Offtake' }
 
 type SP = Record<string, string | string[] | undefined>
 

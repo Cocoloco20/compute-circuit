@@ -16,7 +16,7 @@ import { FACTORS, OUTCOMES } from '@/lib/decisions'
 import type { DecisionRow } from '@/lib/decision-search'
 
 export const dynamic = 'force-dynamic'
-export const metadata = { title: 'Decisions — Compute Circuit' }
+export const metadata = { title: 'Decisions — Offtake' }
 
 type SP = Record<string, string | string[] | undefined>
 

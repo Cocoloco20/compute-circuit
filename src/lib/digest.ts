@@ -331,7 +331,7 @@ export function renderEmailHtml(digest: Digest): string {
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Compute Circuit Digest – ${date}</title>
+<title>Offtake Digest – ${date}</title>
 </head>
 <body style="margin:0;padding:0;background-color:${T.bg.canvas};font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;">
 
