@@ -21,13 +21,13 @@ import { upstreamSignal } from '@/lib/cron-budget'
 export type Provider = 'openrouter' | 'anthropic'
 
 export const DEFAULT_MODEL: Record<Provider, string> = {
-  openrouter: 'deepseek/deepseek-v4-flash-latest',
+  openrouter: 'deepseek/deepseek-v4-flash-0731',
   anthropic: 'claude-opus-5',
 }
 
 /** $ per million tokens: [input, output, cached input]. For run summaries only. */
 export const PRICE_PER_M: Record<string, [number, number, number]> = {
-  'deepseek/deepseek-v4-flash-latest': [0.04, 0.10, 0.01],
+  'deepseek/deepseek-v4-flash-0731': [0.06, 0.12, 0.01],
   'deepseek/deepseek-v4-flash': [0.076, 0.153, 0.01],
   'deepseek/deepseek-v4-pro': [0.58, 1.74, 0.02],
   'moonshotai/kimi-k2.5': [0.45, 2.25, 0.45],

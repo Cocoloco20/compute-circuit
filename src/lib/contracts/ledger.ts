@@ -137,12 +137,13 @@ export async function logScan(sb: Sb, row: ScanRow): Promise<void> {
   await sb.from('contract_filing_scans').upsert(row, { onConflict: 'accession' })
 }
 
-/** Accessions already scanned, for one filer. */
+/** Accessions already scanned without error, for one filer. A filing whose
+ *  extraction errored (bad model id, timeout) is retried on the next run. */
 export async function scannedAccessions(sb: Sb, filerId: string): Promise<Set<string>> {
   const out = new Set<string>()
   const PAGE = 1000
   for (let from = 0; ; from += PAGE) {
-    const r = await sb.from('contract_filing_scans').select('accession').eq('filer_id', filerId).range(from, from + PAGE - 1)
+    const r = await sb.from('contract_filing_scans').select('accession').eq('filer_id', filerId).is('error', null).range(from, from + PAGE - 1)
     const rows = (r.data ?? []) as Array<{ accession: string }>
     rows.forEach(x => out.add(x.accession))
     if (rows.length < PAGE) break

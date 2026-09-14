@@ -18,7 +18,7 @@ npx tsx scripts/backfill-contracts.ts --since=2024-01-01 --limit=150
 ```
 
 ## Extractor
-`src/lib/llm/structured.ts` routes structured extraction to OpenRouter (default model `deepseek/deepseek-v4-flash-latest`, ~$0.04/M input) or Anthropic (`claude-opus-5`). One key is enough: `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`; `LLM_PROVIDER` / `LLM_MODEL` override. Both paths validate against the same Zod schema.
+`src/lib/llm/structured.ts` routes structured extraction to OpenRouter (default model `deepseek/deepseek-v4-flash-0731`, ~$0.04/M input) or Anthropic (`claude-opus-5`). One key is enough: `OPENROUTER_API_KEY` or `ANTHROPIC_API_KEY`; `LLM_PROVIDER` / `LLM_MODEL` override. Both paths validate against the same Zod schema.
 
 ## Rules
 - **Free-tier only** is the core constraint and the product's identity (Yahoo, SEC/EDGAR, Google News, HuggingFace, Greenhouse). Never introduce a paid data source without flagging the cost first.
