@@ -6,6 +6,7 @@ import { PROVIDER_IDS } from '@/lib/contracts/universe'
 import { isCandidateFiling, fetchFilingDocuments, prefilter } from '@/lib/contracts/filings'
 import { extractContracts, EXTRACTOR_MODEL } from '@/lib/contracts/extract'
 import { shapeRow, upsertDisclosures, logScan, scannedAccessions } from '@/lib/contracts/ledger'
+import { providerConfigured, resolveProvider } from '@/lib/llm/structured'
 
 /**
  * Nightly incremental scan of the contract-ledger universe.
@@ -16,8 +17,9 @@ import { shapeRow, upsertDisclosures, logScan, scannedAccessions } from '@/lib/c
  * this route exists so a contract disclosed at 4pm is in the ledger by
  * 10pm without anyone running anything.
  *
- * Needs ANTHROPIC_API_KEY in the deployment environment. Without it the
- * route reports the gap loudly instead of silently scanning nothing.
+ * Needs an LLM key in the deployment environment (OPENROUTER_API_KEY by
+ * default, see src/lib/llm/structured.ts). Without one the route reports the
+ * gap loudly instead of silently scanning nothing.
  */
 
 export const runtime = 'nodejs'
@@ -34,8 +36,9 @@ export async function GET(req: NextRequest) {
   if (req.headers.get('authorization') !== `Bearer ${secret}`) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return NextResponse.json({ error: 'ANTHROPIC_API_KEY not configured — contract extraction cannot run' }, { status: 500 })
+  if (!providerConfigured()) {
+    const { provider } = resolveProvider()
+    return NextResponse.json({ error: `LLM provider "${provider}" has no key configured (OPENROUTER_API_KEY or ANTHROPIC_API_KEY) — contract extraction cannot run` }, { status: 500 })
   }
   const sb = supabaseServiceRole()
   const since = new Date(Date.now() - LOOKBACK_DAYS * 86_400_000).toISOString().slice(0, 10)

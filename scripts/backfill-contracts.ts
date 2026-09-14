@@ -21,6 +21,7 @@ import { fetchCompanyFilings } from '../src/lib/edgar'
 import { PROVIDER_IDS } from '../src/lib/contracts/universe'
 import { isCandidateFiling, fetchFilingDocuments, prefilter } from '../src/lib/contracts/filings'
 import { extractContracts, EXTRACTOR_MODEL } from '../src/lib/contracts/extract'
+import { estimateCost, providerConfigured, resolveProvider } from '../src/lib/llm/structured'
 import { shapeRow, upsertDisclosures, logScan, scannedAccessions } from '../src/lib/contracts/ledger'
 
 const args = Object.fromEntries(process.argv.slice(2).map(a => {
@@ -39,9 +40,11 @@ async function main() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) throw new Error('NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY missing')
-  if (!DRY && !process.env.ANTHROPIC_API_KEY && !process.env.ANTHROPIC_AUTH_TOKEN) {
-    console.warn('No ANTHROPIC_API_KEY in env; relying on an `ant auth login` profile if one exists.')
+  const { provider, model } = resolveProvider()
+  if (!DRY && !providerConfigured()) {
+    throw new Error(`LLM provider "${provider}" has no key in the environment (OPENROUTER_API_KEY or ANTHROPIC_API_KEY)`)
   }
+  console.log(`extractor: ${provider} / ${model}${DRY ? ' (dry run)' : ''}`)
   const sb = createClient(url, key, { auth: { persistSession: false } })
 
   const cos = await sb.from('companies').select('id, name, cik').in('id', HOSTS)
@@ -86,7 +89,7 @@ async function main() {
         const up = await upsertDisclosures(sb, rows)
         if (up.error) throw new Error(up.error)
         totalRows += rows.length
-        console.log(`${label} — ${rows.length} contract(s)${res.refused ? ' [REFUSED]' : ''} in=${res.inputTokens} cached=${res.cacheReadTokens} out=${res.outputTokens}${res.output.notes ? ` · ${res.output.notes.slice(0, 120)}` : ''}`)
+        console.log(`${label} — ${rows.length} contract(s)${res.failure ? ` [${res.failure}]` : ''} in=${res.inputTokens} cached=${res.cacheReadTokens} out=${res.outputTokens}${res.output.notes ? ` · ${res.output.notes.slice(0, 120)}` : ''}`)
         for (const r of rows) console.log(`      ${r.status.padEnd(10)} ${r.kind.padEnd(18)} ${(r.provider_name).slice(0, 24).padEnd(24)} -> ${(r.customer_name ?? '(undisclosed)').slice(0, 24).padEnd(24)} ${r.capacity_mw ?? '-'}MW $${r.total_value_usd ? (r.total_value_usd / 1e9).toFixed(2) + 'B' : '-'} ${r.term_months ?? '-'}mo conf=${r.confidence}`)
         await logScan(sb, { accession: f.accessionNumber, filer_id: hostId, form: f.form, filing_date: f.filingDate, prefilter_hit: true, documents_read: docs.length, chars_read: text.length, extracted: rows.length, extractor: res.model, error: null, scanned_at: new Date().toISOString() })
       } catch (err) {
@@ -98,8 +101,8 @@ async function main() {
     }
     if (processed >= LIMIT) break
   }
-  const cost = (totalIn - totalCacheRead) * 5 / 1e6 + totalCacheRead * 0.5 / 1e6 + totalOut * 25 / 1e6
-  console.log(`\ncandidates=${totalCandidates} prefilter_hits=${totalHits} rows=${totalRows} tokens in=${totalIn} (cached ${totalCacheRead}) out=${totalOut} ≈ $${cost.toFixed(2)}${DRY ? ' (dry run: no model calls made)' : ''}`)
+  const cost = estimateCost(model, totalIn, totalOut, totalCacheRead)
+  console.log(`\ncandidates=${totalCandidates} prefilter_hits=${totalHits} rows=${totalRows} tokens in=${totalIn} (cached ${totalCacheRead}) out=${totalOut}${cost != null ? ` ≈ $${cost.toFixed(2)}` : ''}${DRY ? ' (dry run: no model calls made)' : ''}`)
 }
 
 main().catch(e => { console.error(e); process.exit(1) })

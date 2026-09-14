@@ -10,12 +10,12 @@
  * cron) supplies the text and persists the result.
  */
 
-import Anthropic from '@anthropic-ai/sdk'
-import { zodOutputFormat } from '@anthropic-ai/sdk/helpers/zod'
 import { z } from 'zod'
 import type { FilingDocument } from './filings'
+import { structured, resolveProvider } from '@/lib/llm/structured'
 
-export const EXTRACTOR_MODEL = 'claude-opus-5'
+/** Whatever the environment routes to; see src/lib/llm/structured.ts. */
+export const EXTRACTOR_MODEL = resolveProvider().model
 
 export const CONTRACT_KINDS = [
   'colocation_lease', 'gpu_cloud_capacity', 'hosting_services',
@@ -80,12 +80,7 @@ export interface ExtractionResult {
   outputTokens: number
   cacheReadTokens: number
   refused: boolean
-}
-
-let client: Anthropic | null = null
-function getClient(): Anthropic {
-  if (!client) client = new Anthropic()
-  return client
+  failure: string | null
 }
 
 export interface FilingContext {
@@ -101,21 +96,20 @@ export function buildUserMessage(ctx: FilingContext): string {
 }
 
 export async function extractContracts(ctx: FilingContext): Promise<ExtractionResult> {
-  const response = await getClient().messages.parse({
-    model: EXTRACTOR_MODEL,
-    max_tokens: 16000,
-    system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
-    messages: [{ role: 'user', content: buildUserMessage(ctx) }],
-    output_config: { format: zodOutputFormat(OutputSchema), effort: 'medium' },
+  const r = await structured({
+    system: SYSTEM_PROMPT,
+    user: buildUserMessage(ctx),
+    schema: OutputSchema,
+    schemaName: 'contract_disclosures',
+    maxTokens: 12000,
   })
-  const refused = response.stop_reason === 'refusal'
-  const output: ExtractionOutput = (!refused && response.parsed_output) ? response.parsed_output : { contracts: [], notes: refused ? 'refused' : 'unparseable' }
   return {
-    output,
-    model: response.model,
-    inputTokens: response.usage.input_tokens,
-    outputTokens: response.usage.output_tokens,
-    cacheReadTokens: response.usage.cache_read_input_tokens ?? 0,
-    refused,
+    output: r.parsed ?? { contracts: [], notes: r.failure },
+    model: r.model,
+    inputTokens: r.inputTokens,
+    outputTokens: r.outputTokens,
+    cacheReadTokens: r.cacheReadTokens,
+    refused: r.refused,
+    failure: r.failure,
   }
 }
