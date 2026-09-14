@@ -105,11 +105,61 @@ export async function fetchGraph(): Promise<GraphData> {
   // Cap signals to the last 365 days so the initial payload stays small even
   // as filings accumulate. Full history is still in Postgres for ad-hoc queries.
   const yearAgo = new Date(Date.now() - 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  const PAGE = 1000
+
+  // Supabase REST caps EVERY response at 1000 rows, silently, whatever
+  // .limit() says. companies passed that on 2026-09-09 (14,830 rows after the
+  // portfolio import) and company_backers long before (14,858). A bare
+  // select('*') on either returns an arbitrary 1000-row slice: the graph was
+  // drawing the 121 placed companies that happen to sort first by name and
+  // reporting the other 879 rows as "unplaced", while the backer filter ran
+  // over 1000 of 14,858 edges. Fifth instance of this cap in the repo.
+  //
+  // Only companies that sit on a layer are graph nodes, so the fetch is
+  // scoped to those (1,738 today, not 14,830) and paged. Count first, then
+  // all pages in parallel, as fetchFundamentals does below.
+  const fetchPlacedCompanies = async (): Promise<{ data: Company[]; error: { message: string } | null }> => {
+    const cnt = await sb.from('companies')
+      .select('id', { count: 'exact', head: true })
+      .not('layer_id', 'is', null)
+    if (cnt.error) return { data: [], error: cnt.error }
+    const total = Math.min(cnt.count ?? 0, 10_000)
+    const pages = []
+    for (let offset = 0; offset < total; offset += PAGE) {
+      pages.push(sb.from('companies').select('*')
+        .not('layer_id', 'is', null)
+        .order('name').order('id')
+        .range(offset, offset + PAGE - 1))
+    }
+    const results = await Promise.all(pages)
+    const err = results.find(r => r.error)?.error ?? null
+    return { data: results.flatMap(r => (r.data ?? []) as Company[]), error: err }
+  }
+
+  // Backer edges, paged the same way. 'name' edges are excluded: migration
+  // 0055 records that a normalised-name match is not evidence of identity
+  // (the Astro collision), and the graph asserts "backed by" visually.
+  const fetchBackers = async (): Promise<{ data: CompanyBacker[]; error: { message: string } | null }> => {
+    const cnt = await sb.from('company_backers')
+      .select('company_id', { count: 'exact', head: true })
+    if (cnt.error) return { data: [], error: cnt.error }
+    const total = Math.min(cnt.count ?? 0, 50_000)
+    const pages = []
+    for (let offset = 0; offset < total; offset += PAGE) {
+      pages.push(sb.from('company_backers').select('*')
+        .order('company_id').order('investor_id')
+        .range(offset, offset + PAGE - 1))
+    }
+    const results = await Promise.all(pages)
+    const err = results.find(r => r.error)?.error ?? null
+    return { data: results.flatMap(r => (r.data ?? []) as CompanyBacker[]), error: err }
+  }
+
   const [l, i, c, b, f, bn, bb, s] = await Promise.all([
     sb.from('layers').select('*').order('order_index'),
     sb.from('investors').select('*').order('name'),
-    sb.from('companies').select('*').order('name'),
-    sb.from('company_backers').select('*'),
+    fetchPlacedCompanies(),
+    fetchBackers(),
     sb.from('flows').select('*'),
     sb.from('bottlenecks').select('*'),
     sb.from('bottleneck_beneficiaries').select('*'),
@@ -131,7 +181,6 @@ export async function fetchGraph(): Promise<GraphData> {
   const oneEightyDaysAgo = new Date(Date.now() - 180 * 86_400_000).toISOString().slice(0, 10)
   const thirtyFiveDaysAgo = new Date(Date.now() - 35 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
   const fourteenDaysAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
-  const PAGE = 1000
 
   // signal_companies: links only for our already-windowed signal IDs.
   // CHUNK the .in() lookup (200 IDs/chunk) — a single .in() with 2000 IDs
@@ -272,11 +321,16 @@ export async function fetchGraph(): Promise<GraphData> {
   if (errors.length > 0) {
     throw new Error('Supabase fetch failed: ' + errors.map(e => e!.message).join('; '))
   }
+  const placed = (c.data ?? []) as Company[]
+  const placedIds = new Set(placed.map(x => x.id))
+
   return {
     layers: (l.data ?? []) as Layer[],
     investors: (i.data ?? []) as Investor[],
-    companies: (c.data ?? []) as Company[],
-    backers: (b.data ?? []) as CompanyBacker[],
+    companies: placed,
+    // Only edges into a graph node, and only ones with identity evidence.
+    backers: ((b.data ?? []) as CompanyBacker[])
+      .filter(e => placedIds.has(e.company_id) && e.match_method !== 'name'),
     flows: (f.data ?? []) as Flow[],
     bottlenecks: (bn.data ?? []) as Bottleneck[],
     bottleneckBeneficiaries: (bb.data ?? []) as BottleneckBeneficiary[],
@@ -306,7 +360,7 @@ export async function fetchGraph(): Promise<GraphData> {
     agencies: (ag.data ?? []) as Agency[],
     computeContracts: (cc.data ?? []) as ComputeContract[],
     lastUpdates: {
-      price: ((c.data ?? []) as Company[])
+      price: placed
         .map(co => co.price_updated_at)
         .filter((x): x is string => !!x)
         .sort()

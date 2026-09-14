@@ -415,6 +415,9 @@ export interface Fundamental {
 export interface CompanyBacker {
   company_id: string
   investor_id: string
+  /** Migration 0055 provenance: 'domain' | 'slug' | 'source' | 'manual' | 'name' | null. */
+  match_method?: string | null
+  source_url?: string | null
 }
 
 export interface Flow {
