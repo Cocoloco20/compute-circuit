@@ -19,9 +19,10 @@ import type { Fundamental } from '../src/types/db'
 import { isPrivateAddr } from '../src/lib/ssrf-guard'
 import { startBudget } from '../src/lib/cron-budget'
 import { sampleRows, resolveId, formatReviewCard, wrap, type ReviewableRow } from '../src/lib/contracts/review'
-import { splitLedgerByRole, type LedgerRow } from '../src/lib/contract-ledger-data'
+import { splitLedgerByRole, lastNDaysRows, type LedgerRow } from '../src/lib/contract-ledger-data'
 import { hasQuantityInfo, type ExtractedContract } from '../src/lib/contracts/extract'
 import { shapeRow, dedupeByKey, type DisclosureRow } from '../src/lib/contracts/ledger'
+import { escapeXml, toRfc822 } from '../src/lib/rss'
 
 let passed = 0
 let failed = 0
@@ -248,6 +249,38 @@ console.log('contracts/ledger.shapeRow & dedupeByKey')
   const mkRow = (key: string, updated_at: string) => ({ ...named, dedupe_key: key, updated_at } as DisclosureRow)
   const deduped = dedupeByKey([mkRow('k1', 't1'), mkRow('k2', 't1'), mkRow('k1', 't2')])
   check('same-key rows collapse to the last occurrence', deduped.length === 2 && deduped.find(r => r.dedupe_key === 'k1')?.updated_at === 't2')
+}
+
+// ---------- contract-ledger-data.lastNDaysRows ----------
+// The /wire page and its RSS feed both window the ledger to "the last 7
+// days" — same function, so the page and the feed can never disagree.
+console.log('contract-ledger-data.lastNDaysRows')
+{
+  const mk = (id: string, filing_date: string) => ({ id, filing_date } as unknown as LedgerRow)
+  const now = new Date('2026-09-15T12:00:00Z')
+  const rows = [
+    mk('today', '2026-09-15'),
+    mk('6-days-ago', '2026-09-09'),
+    mk('8-days-ago', '2026-09-07'),
+    mk('old', '2026-01-01'),
+  ]
+  const win = lastNDaysRows(rows, 7, now)
+  check('keeps rows within the window, drops older ones', win.map(r => r.id).join() === 'today,6-days-ago')
+  check('sorts newest filing_date first regardless of input order', (() => {
+    const shuffled = [mk('a', '2026-09-10'), mk('b', '2026-09-15'), mk('c', '2026-09-12')]
+    return lastNDaysRows(shuffled, 7, now).map(r => r.id).join() === 'b,c,a'
+  })())
+  check('zero matches → empty array, not an error', lastNDaysRows([mk('old', '2020-01-01')], 7, now).length === 0)
+}
+
+// ---------- rss.escapeXml / rss.toRfc822 ----------
+// Provider/customer names routinely carry `&` ("AT&T", "Bain Capital &
+// Co"); an unescaped feed is invalid XML and most readers just drop it.
+console.log('rss.escapeXml / rss.toRfc822')
+{
+  check('escapes the five XML entities', escapeXml(`AT&T <deal> "big" 'co'`) === 'AT&amp;T &lt;deal&gt; &quot;big&quot; &apos;co&apos;')
+  check('leaves plain text untouched', escapeXml('CoreWeave to OpenAI') === 'CoreWeave to OpenAI')
+  check('RFC 822 date from YYYY-MM-DD', toRfc822('2026-09-10') === 'Thu, 10 Sep 2026 00:00:00 GMT')
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)
