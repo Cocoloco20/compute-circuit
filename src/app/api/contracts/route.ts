@@ -15,7 +15,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const RATE_LIMIT_PER_HOUR = 120
-const DATA_LICENSE = 'CC-BY-4.0; attribution required; https://offtakeledger.vercel.app'
+const DATA_LICENSE = 'CC-BY-4.0; attribution required; https://offtake-ledger.vercel.app'
 
 export async function GET(req: NextRequest) {
   const ip = clientIp(req.headers)

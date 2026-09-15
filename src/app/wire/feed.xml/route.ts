@@ -8,7 +8,7 @@ export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const WINDOW_DAYS = 7
-const SITE_URL = 'https://offtakeledger.vercel.app'
+const SITE_URL = 'https://offtake-ledger.vercel.app'
 const FALLBACK_LINK = `${SITE_URL}/contracts`
 
 function itemXml(r: LedgerRow): string {
