@@ -110,13 +110,14 @@ export function buildUserMessage(ctx: FilingContext): string {
 export async function extractContracts(
   ctx: FilingContext,
   override?: { provider?: 'openrouter' | 'anthropic'; model?: string },
+  maxTokens = 16000,
 ): Promise<ExtractionResult> {
   const r = await structured({
     system: SYSTEM_PROMPT,
     user: buildUserMessage(ctx),
     schema: OutputSchema,
     schemaName: 'contract_disclosures',
-    maxTokens: 16000,
+    maxTokens,
     override,
   })
   return {
@@ -143,6 +144,12 @@ export async function extractContracts(
  * extraction than a true negative. One retry, same model, catches that at
  * negligible extra cost — the alternative is silently losing real
  * contracts to API-level variance.
+ *
+ * When the failure was a truncated response (max_tokens cut the JSON off
+ * mid-structure), retrying at the same token budget would deterministically
+ * hit the identical wall -- observed live on filings with several contracts
+ * and long excerpts even after the 12k -> 16k raise. The retry gets 50% more
+ * headroom in that one case.
  */
 export async function extractContractsWithRetry(
   ctx: FilingContext,
@@ -150,7 +157,7 @@ export async function extractContractsWithRetry(
 ): Promise<ExtractionResult & { retried: boolean }> {
   const first = await extractContracts(ctx, override)
   if (first.output.contracts.length > 0 || first.refused) return { ...first, retried: false }
-  const second = await extractContracts(ctx, override)
+  const second = await extractContracts(ctx, override, first.failure === 'truncated' ? 24000 : 16000)
   if (second.output.contracts.length > 0) {
     return {
       ...second,

@@ -146,6 +146,10 @@ async function viaOpenRouter<S extends z.ZodType>(req: StructuredRequest<S>, mod
       refused,
     }
     if (refused) return { ...base, parsed: null, failure: 'refused' }
+    // finish_reason 'length' means max_tokens cut the response off mid-JSON
+    // -- checked before parsing, since a truncated body is unreliable even
+    // on the rare chance it happens to still parse.
+    if (choice?.finish_reason === 'length') return { ...base, parsed: null, failure: 'truncated' }
     let json: unknown
     try { json = JSON.parse(stripFences(content)) } catch { return { ...base, parsed: null, failure: 'invalid json' } }
     const v = req.schema.safeParse(json)
