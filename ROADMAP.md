@@ -16,6 +16,23 @@ in Supabase. If an item is blocked, write why under it and move on.
 - [ ] Backfill the ledger from 2024-01-01 across all 34 filers in
       `src/lib/contracts/universe.ts` (`npx tsx scripts/backfill-contracts.ts`,
       dry run first). Report rows, cost, and any filings that errored.
+- [x] Two-stage extraction pipeline: separate the EDGAR fetch (must stay
+      paced under SEC's 10 req/sec ceiling) from the model extraction
+      calls (OpenRouter handles real concurrency fine) so many filings
+      extract in parallel instead of one at a time end to end.
+      Done 2026-09-15, in the middle of the running backfill: fetch stage
+      queues every prefilter-hit filing exactly as before (same pacing,
+      same per-call error handling); extraction stage runs the queue
+      through a small worker pool at `--concurrency` (default 6) via
+      `extractContractsWithRetry`. Naive multi-process parallelization
+      doesn't work here — that just multiplies EDGAR requests and risks
+      SEC throttling the whole site's access, not only the backfill.
+      Verified against known-good CoreWeave filings before switching the
+      live run over: `--rescan --limit=3 --concurrency=3` reproduced the
+      same two contracts already in the ledger and logged the one timeout
+      among the three without the pool crashing. Same benefit applies to
+      `/api/cron/contracts` (its own separate implementation, not yet
+      updated) — worth doing there too since the cron runs forever.
 - [x] Review pass: for every row with `review_status = 'auto'`, re-open the
       excerpt against the source URL. Mark `verified` when the numbers match,
       `rejected` when the row is not a contract disclosure. Write a
@@ -163,14 +180,3 @@ in Supabase. If an item is blocked, write why under it and move on.
       IREN's home-market disclosures.
 - [ ] Pricing page and a paid tier: CSV/API for free with a 30-day lag, live
       access paid.
-- [ ] Two-stage extraction pipeline: separate the EDGAR fetch (must stay
-      paced under SEC's 10 req/sec ceiling — a single stream already uses
-      ~6-7 of that) from the model extraction calls (OpenRouter handles
-      real concurrency fine) so many filings can be extracted in parallel
-      once their text is queued, instead of one filing at a time end to
-      end. Naive parallelization of the whole backfill script across
-      multiple processes doesn't work — that just multiplies EDGAR
-      requests and risks SEC throttling the whole site's access, not only
-      the backfill. Worth doing properly: this helps the nightly cron's
-      ongoing incremental scans as much as any future historical backfill,
-      since the cron runs forever and a faster pipeline compounds.
