@@ -203,6 +203,48 @@ export function ledgerTotals(rows: LedgerRow[]) {
   }
 }
 
+// ---------------------------------------------------------------- per company
+
+export interface CompanyLedger {
+  asProvider: LedgerRow[]
+  asCustomer: LedgerRow[]
+  asGuarantor: LedgerRow[]
+}
+
+/** Split one company's rows by the role it plays in each. A row where the
+ *  company is both provider and customer (a filer disclosing its own
+ *  purchase) lands under provider only, so nothing is counted twice. */
+export function splitLedgerByRole(rows: LedgerRow[], companyId: string): CompanyLedger {
+  const out: CompanyLedger = { asProvider: [], asCustomer: [], asGuarantor: [] }
+  for (const r of rows) {
+    if (r.provider_id === companyId) out.asProvider.push(r)
+    else if (r.customer_id === companyId) out.asCustomer.push(r)
+    else if (r.guarantor_id === companyId) out.asGuarantor.push(r)
+  }
+  return out
+}
+
+const SAFE_ID = /^[a-z0-9][a-z0-9._-]{0,63}$/i
+
+/** Every non-rejected row naming the company as provider, customer or
+ *  guarantor, newest filing first. Non-fatal: a read error yields no rows. */
+export async function fetchCompanyLedger(companyId: string): Promise<CompanyLedger> {
+  const empty: CompanyLedger = { asProvider: [], asCustomer: [], asGuarantor: [] }
+  if (!SAFE_ID.test(companyId)) return empty
+  try {
+    const sb = supabaseServiceRole()
+    const r = await sb.from('contract_disclosures').select('*')
+      .neq('review_status', 'rejected')
+      .or(`provider_id.eq.${companyId},customer_id.eq.${companyId},guarantor_id.eq.${companyId}`)
+      .order('filing_date', { ascending: false }).order('created_at', { ascending: false })
+      .limit(500)
+    if (r.error) return empty
+    return splitLedgerByRole((r.data ?? []) as unknown as LedgerRow[], companyId)
+  } catch {
+    return empty
+  }
+}
+
 export const CSV_COLUMNS: Array<keyof LedgerRow> = [
   'filing_date', 'source_form', 'status', 'kind', 'provider_name', 'provider_id', 'customer_name', 'customer_id',
   'customer_disclosed', 'guarantor_name', 'site', 'capacity_mw', 'gpu_count', 'gpu_model', 'term_months',

@@ -19,6 +19,7 @@ import type { Fundamental } from '../src/types/db'
 import { isPrivateAddr } from '../src/lib/ssrf-guard'
 import { startBudget } from '../src/lib/cron-budget'
 import { sampleRows, resolveId, formatReviewCard, wrap, type ReviewableRow } from '../src/lib/contracts/review'
+import { splitLedgerByRole, type LedgerRow } from '../src/lib/contract-ledger-data'
 
 let passed = 0
 let failed = 0
@@ -183,6 +184,23 @@ console.log('contracts/review')
   check('card carries id prefix, parties, money, term, excerpt and URL',
     card.includes('#3  abcdef12') && card.includes('CoreWeave  →  OpenAI') && card.includes('$11.90B') &&
     card.includes('term 60mo') && card.includes('$11.9 billion agreement') && card.includes('https://www.sec.gov/x'))
+}
+
+// ---------- contract-ledger-data.splitLedgerByRole ----------
+// /company/[id] shows a company's rows as provider and as customer. A filer
+// that discloses its own purchase (provider_id === customer_id) must appear
+// once, not in both tables, or its MW and $ would be double-counted.
+console.log('contract-ledger-data.splitLedgerByRole')
+{
+  const mk = (id: string, p: string | null, c: string | null, g: string | null = null) =>
+    ({ id, provider_id: p, customer_id: c, guarantor_id: g } as unknown as LedgerRow)
+  const rows = [mk('a', 'crwv', 'openai'), mk('b', 'corz', 'crwv'), mk('c', 'crwv', 'crwv'), mk('d', 'apld', 'x', 'crwv'), mk('e', 'nbis', 'msft')]
+  const s = splitLedgerByRole(rows, 'crwv')
+  check('provider rows', s.asProvider.map(r => r.id).join() === 'a,c')
+  check('customer rows exclude self-dealing duplicate', s.asCustomer.map(r => r.id).join() === 'b')
+  check('guarantor rows', s.asGuarantor.map(r => r.id).join() === 'd')
+  check('unrelated rows dropped', s.asProvider.length + s.asCustomer.length + s.asGuarantor.length === 4)
+  check('unknown company → all empty', (() => { const e = splitLedgerByRole(rows, 'nobody'); return !e.asProvider.length && !e.asCustomer.length && !e.asGuarantor.length })())
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

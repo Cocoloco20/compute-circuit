@@ -38,8 +38,12 @@ in Supabase. If an item is blocked, write why under it and move on.
       layer's cron) and the decision/pipeline/notes sections of
       `/company/[id]`. Kept: `/api/watchlist` (the graph uses it), every
       migration and table. `usd()` moved to `src/lib/format.ts`.
-- [ ] Company pages (`/company/[id]`) show the company's ledger rows (as
+- [x] Company pages (`/company/[id]`) show the company's ledger rows (as
       provider and as customer) above the signals list.
+      Done 2026-09-14: two tables (plus guarantor when relevant), same
+      columns and excerpt-under-row pattern as `/contracts`, each linking
+      to the filtered ledger. `fetchCompanyLedger` / `splitLedgerByRole`
+      in `src/lib/contract-ledger-data.ts`.
 
 ## Next
 
