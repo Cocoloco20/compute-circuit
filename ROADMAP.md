@@ -84,8 +84,22 @@ in Supabase. If an item is blocked, write why under it and move on.
 - [ ] Widen the universe: Crusoe, Lambda, Nscale, Fluidstack appear only
       through counterparties today; add Oracle's, Microsoft's and Google's
       10-K/10-Q commitment tables (purchase obligations) as a source.
-- [ ] Public API: `/api/contracts` JSON with the same filters as the CSV,
+- [x] Public API: `/api/contracts` JSON with the same filters as the CSV,
       rate-limited, with an `X-Data-License` header naming the terms.
+      Done 2026-09-15: same query params and underlying data as the CSV
+      export (`fetchAllLedgerRows` / `applyLedgerFilters` / `parseLedgerFilters`),
+      returns `{ rows, count, generated_at }`. `X-Data-License: CC-BY-4.0;
+      attribution required`. Rate limiting is real, not a placeholder:
+      migration 0057 adds `api_rate_limits` (one row per IP per hour) and an
+      `increment_rate_limit` RPC that upserts-and-returns the new count in
+      one atomic statement, so concurrent requests from the same IP can't
+      race past the 120/hour limit. Fails open on an RPC error rather than
+      break the API over an infra hiccup. `X-RateLimit-Limit` /
+      `-Remaining` on every response; 429 with `Retry-After` over the cap.
+      Five-minute CDN cache means repeated identical queries don't touch
+      Supabase or the limit at all. Known gap: `api_rate_limits` has no
+      cleanup job yet -- fine at today's traffic, worth a periodic delete
+      of old windows if this ever gets real volume.
 - [x] `customer_disclosed` (`docs/extractor-eval.md`): stop asking the
       extractor to judge this — derive it as `customer_name != null` in
       `shapeRow`. Both models disagreed with themselves on it, in both

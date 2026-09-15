@@ -23,6 +23,7 @@ import { splitLedgerByRole, type LedgerRow } from '../src/lib/contract-ledger-da
 import { hasQuantityInfo, type ExtractedContract } from '../src/lib/contracts/extract'
 import { shapeRow, dedupeByKey, type DisclosureRow } from '../src/lib/contracts/ledger'
 import { formatAlertMessage } from '../src/lib/contracts/alerts'
+import { clientIp, hourWindow } from '../src/lib/rate-limit'
 
 let passed = 0
 let failed = 0
@@ -276,6 +277,16 @@ console.log('contracts/alerts.formatAlertMessage')
 
   const many = formatAlertMessage(Array.from({ length: 13 }, () => mkRow()))
   check('caps at 10 lines with an overflow note', many.includes('…and 3 more') && many.split('\n').filter(l => l.startsWith('•')).length === 10)
+}
+
+// ---------- rate-limit.clientIp & hourWindow ----------
+console.log('rate-limit.clientIp & hourWindow')
+{
+  check('first entry of x-forwarded-for wins', clientIp(new Headers({ 'x-forwarded-for': '1.2.3.4, 5.6.7.8' })) === '1.2.3.4')
+  check('falls back to x-real-ip', clientIp(new Headers({ 'x-real-ip': '9.9.9.9' })) === '9.9.9.9')
+  check('falls back to a constant when neither header is present', clientIp(new Headers()) === 'unknown')
+  check('hourWindow floors to the top of the hour', hourWindow(new Date('2026-03-10T14:37:22.123Z')) === '2026-03-10T14:00:00.000Z')
+  check('hourWindow is stable within the same hour', hourWindow(new Date('2026-03-10T14:01:00Z')) === hourWindow(new Date('2026-03-10T14:59:59Z')))
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)
