@@ -25,6 +25,12 @@ in Supabase. If an item is blocked, write why under it and move on.
       sample of `auto` rows as cards; `--verified=`/`--rejected=` records
       verdicts by id prefix, nothing is deleted). The verdicts themselves are
       a standing human task: run it after each backfill batch.
+      Ran 2026-09-15 against the growing backfill batch (108 auto rows at
+      the time, sampled 20): found and fixed a real recurring extractor bug
+      (see the "kind reflects this contract" commit) and flagged three
+      specific rows for a human verdict -- see that commit's message for
+      which ones and why. The actual verified/rejected marking is still the
+      standing human step; this pass only did the read-and-flag half.
 - [x] Extractor eval: pick 25 filings with known contracts (the CoreWeave
       OpenAI/Meta 8-Ks, IREN/Microsoft, Cipher/Fluidstack, TeraWulf/Google
       backstop, Core Scientific/CoreWeave, Applied Digital/CoreWeave). Run
