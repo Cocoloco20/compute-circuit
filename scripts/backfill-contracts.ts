@@ -57,7 +57,13 @@ async function main() {
   for (const hostId of HOSTS) {
     const co = byId.get(hostId)
     if (!co?.cik) { console.log(`[${hostId}] no CIK on companies row — skipped`); continue }
-    const subs = await fetchCompanyFilings(co.cik)
+    let subs
+    try {
+      subs = await fetchCompanyFilings(co.cik)
+    } catch (err) {
+      console.error(`[${hostId}] ${co.name}: fetchCompanyFilings failed — ${err instanceof Error ? err.message : String(err)}`)
+      continue
+    }
     const seen = RESCAN ? new Set<string>() : await scannedAccessions(sb, hostId)
     const candidates = subs.filings
       .filter(f => f.filingDate >= SINCE && isCandidateFiling(f) && !seen.has(f.accessionNumber))
@@ -68,7 +74,16 @@ async function main() {
     for (const f of candidates) {
       if (processed >= LIMIT) break
       processed++
-      const docs = await fetchFilingDocuments(co.cik, f.accessionNumber, f.primaryDocument)
+      let docs
+      try {
+        docs = await fetchFilingDocuments(co.cik, f.accessionNumber, f.primaryDocument)
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err)
+        console.error(`  ${f.filingDate} ${f.form.padEnd(5)} — fetchFilingDocuments failed — ${msg}`)
+        if (!DRY) await logScan(sb, { accession: f.accessionNumber, filer_id: hostId, form: f.form, filing_date: f.filingDate, prefilter_hit: false, documents_read: 0, chars_read: 0, extracted: 0, extractor: null, error: msg.slice(0, 500), scanned_at: new Date().toISOString() })
+        await sleep(300)
+        continue
+      }
       const text = docs.map(d => d.text).join('\n\n')
       const pf = prefilter(text)
       const label = `  ${f.filingDate} ${f.form.padEnd(5)} items=${f.items || '-'} docs=${docs.length} chars=${text.length}`
