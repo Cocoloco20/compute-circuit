@@ -83,7 +83,7 @@ export default async function LandingPage() {
                 <h2 className="text-label uppercase tracking-wider text-[#6B6F7A]">
                   By provider
                 </h2>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                   {topProviders.map(p => (
                     <Link
                       key={p.providerId ?? p.provider}

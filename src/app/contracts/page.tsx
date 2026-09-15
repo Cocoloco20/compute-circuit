@@ -142,7 +142,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: SP
             <h2 className="text-label uppercase tracking-wider text-[#6B6F7A]">
               Customer concentration · by provider · {filters.provider ? 'filtered' : 'top 8'}
             </h2>
-            <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
               {(filters.provider ? conc : conc.slice(0, 8)).map(p => (
                 <div key={p.providerId ?? p.provider} className="rounded-lg border border-[#1B1E26] bg-[#0D0E13] p-3">
                   <div className="flex items-baseline justify-between gap-2">
