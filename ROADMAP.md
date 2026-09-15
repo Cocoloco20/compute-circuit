@@ -16,11 +16,15 @@ in Supabase. If an item is blocked, write why under it and move on.
 - [ ] Backfill the ledger from 2024-01-01 across all 34 filers in
       `src/lib/contracts/universe.ts` (`npx tsx scripts/backfill-contracts.ts`,
       dry run first). Report rows, cost, and any filings that errored.
-- [ ] Review pass: for every row with `review_status = 'auto'`, re-open the
+- [x] Review pass: for every row with `review_status = 'auto'`, re-open the
       excerpt against the source URL. Mark `verified` when the numbers match,
       `rejected` when the row is not a contract disclosure. Write a
       `scripts/review-contracts.ts` that samples 30 rows and prints them with
       their excerpts for a human to check quickly.
+      Shipped 2026-09-14: `scripts/review-contracts.ts` (print a seeded
+      sample of `auto` rows as cards; `--verified=`/`--rejected=` records
+      verdicts by id prefix, nothing is deleted). The verdicts themselves are
+      a standing human task: run it after each backfill batch.
 - [ ] Extractor eval: pick 25 filings with known contracts (the CoreWeave
       OpenAI/Meta 8-Ks, IREN/Microsoft, Cipher/Fluidstack, TeraWulf/Google
       backstop, Core Scientific/CoreWeave, Applied Digital/CoreWeave). Run

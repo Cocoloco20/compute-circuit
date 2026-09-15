@@ -18,6 +18,7 @@ import { computeCapexTTM } from '../src/lib/capex'
 import type { Fundamental } from '../src/types/db'
 import { isPrivateAddr } from '../src/lib/ssrf-guard'
 import { startBudget } from '../src/lib/cron-budget'
+import { sampleRows, resolveId, formatReviewCard, wrap, type ReviewableRow } from '../src/lib/contracts/review'
 
 let passed = 0
 let failed = 0
@@ -146,6 +147,42 @@ console.log('capex')
   check('empty input → nulls', computeCapexTTM([], 'x').ttm === null)
   const stale = [{ company_id: 'x', period: '2020-12-31', period_type: 'FY', metric: 'capex', value: 1e9 }] as Fundamental[]
   check('stale data (>18mo) → nulls', computeCapexTTM(stale, 'x').ttm === null)
+}
+
+// ---------- contracts/review ----------
+console.log('contracts/review')
+{
+  const rows = Array.from({ length: 100 }, (_, i) => i)
+  const a = sampleRows(rows, 30, 7)
+  const b = sampleRows(rows, 30, 7)
+  check('sample is deterministic per seed', a.join() === b.join())
+  check('sample has no duplicates and right size', new Set(a).size === 30)
+  check('different seed → different sample', sampleRows(rows, 30, 8).join() !== a.join())
+  check('sample larger than population returns everything once', sampleRows([1, 2, 3], 10, 1).sort().join() === '1,2,3')
+  const ids = ['3f9a1c2e-0000', '3f9a1c2f-0000', '91ee0000-0000']
+  check('resolveId: unique prefix resolves', resolveId('91ee', ids) === '91ee0000-0000')
+  let threw = ''
+  try { resolveId('3f9a1c2', ids) } catch (e) { threw = (e as Error).message }
+  check('resolveId: ambiguous prefix throws', /ambiguous/.test(threw), threw)
+  try { resolveId('zzzz', ids) } catch (e) { threw = (e as Error).message }
+  check('resolveId: unknown prefix throws', /no row/.test(threw), threw)
+  check('wrap keeps every word and respects width', (() => {
+    const w = wrap('a '.repeat(200).trim(), 40, '')
+    return w.split('\n').every(l => l.length <= 40) && w.replace(/\n/g, ' ') === 'a '.repeat(200).trim()
+  })())
+  const row = {
+    id: 'abcdef12-3456', provider_id: 'crwv', provider_name: 'CoreWeave', customer_id: 'openai', customer_name: 'OpenAI',
+    customer_disclosed: true, guarantor_id: null, guarantor_name: null, kind: 'gpu_cloud_capacity', site: null,
+    capacity_mw: 250, gpu_count: null, gpu_model: null, term_months: 60, start_date: '2026-01-01', end_date: null,
+    total_value_usd: 11.9e9, annual_value_usd: null, prepayment_usd: null, has_extension_option: null, extension_note: null,
+    escalator_pct: null, status: 'definitive', source_form: '8-K', source_accession: '0001-26-1', source_url: 'https://www.sec.gov/x',
+    source_note: null, filing_date: '2026-03-10', filer_id: 'crwv', excerpt: 'a five-year, $11.9 billion agreement', extractor: 'm',
+    confidence: 0.9, review_status: 'auto', dedupe_key: 'k', updated_at: 'now',
+  } as ReviewableRow
+  const card = formatReviewCard(row, 3)
+  check('card carries id prefix, parties, money, term, excerpt and URL',
+    card.includes('#3  abcdef12') && card.includes('CoreWeave  →  OpenAI') && card.includes('$11.90B') &&
+    card.includes('term 60mo') && card.includes('$11.9 billion agreement') && card.includes('https://www.sec.gov/x'))
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

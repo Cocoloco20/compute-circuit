@@ -15,6 +15,8 @@ npm run seed     # tsx supabase/seed/seed.ts
 npm run backfill:ciks
 npx tsx scripts/backfill-contracts.ts --dry-run   # ledger: list candidates + cost, no model calls
 npx tsx scripts/backfill-contracts.ts --since=2024-01-01 --limit=150
+npx tsx scripts/review-contracts.ts                 # ledger: 30 random 'auto' rows with excerpts for a human check
+npx tsx scripts/review-contracts.ts --verified=<id>,<id> --rejected=<id>   # record verdicts (never deletes)
 ```
 
 ## Extractor
