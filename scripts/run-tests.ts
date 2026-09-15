@@ -22,6 +22,7 @@ import { sampleRows, resolveId, formatReviewCard, wrap, type ReviewableRow } fro
 import { splitLedgerByRole, type LedgerRow } from '../src/lib/contract-ledger-data'
 import { hasQuantityInfo, type ExtractedContract } from '../src/lib/contracts/extract'
 import { shapeRow, dedupeByKey, type DisclosureRow } from '../src/lib/contracts/ledger'
+import { formatAlertMessage } from '../src/lib/contracts/alerts'
 
 let passed = 0
 let failed = 0
@@ -248,6 +249,33 @@ console.log('contracts/ledger.shapeRow & dedupeByKey')
   const mkRow = (key: string, updated_at: string) => ({ ...named, dedupe_key: key, updated_at } as DisclosureRow)
   const deduped = dedupeByKey([mkRow('k1', 't1'), mkRow('k2', 't1'), mkRow('k1', 't2')])
   check('same-key rows collapse to the last occurrence', deduped.length === 2 && deduped.find(r => r.dedupe_key === 'k1')?.updated_at === 't2')
+}
+
+// ---------- contracts/alerts.formatAlertMessage ----------
+console.log('contracts/alerts.formatAlertMessage')
+{
+  const mkRow = (overrides: Partial<DisclosureRow> = {}): DisclosureRow => ({
+    provider_id: 'crwv', provider_name: 'CoreWeave', customer_id: 'openai', customer_name: 'OpenAI',
+    customer_disclosed: true, guarantor_id: null, guarantor_name: null, kind: 'gpu_cloud_capacity', site: null,
+    capacity_mw: 250, gpu_count: null, gpu_model: null, term_months: 60, start_date: null, end_date: null,
+    total_value_usd: 11.9e9, annual_value_usd: null, prepayment_usd: null, has_extension_option: null,
+    extension_note: null, escalator_pct: null, status: 'definitive', source_form: '8-K', source_accession: 'a1',
+    source_url: 'https://www.sec.gov/x', source_note: null, filing_date: '2026-03-10', filer_id: 'crwv',
+    excerpt: 'x', extractor: 'm', confidence: 0.9, review_status: 'auto', dedupe_key: 'k',
+    updated_at: 'now', ...overrides,
+  })
+  const one = formatAlertMessage([mkRow()])
+  check('singular row count in header', one.startsWith('1 new contract disclosure in'))
+  check('includes provider, customer, kind and value', one.includes('CoreWeave → OpenAI (gpu_cloud_capacity)') && one.includes('$11.90B'))
+
+  const undisclosed = formatAlertMessage([mkRow({ customer_disclosed: false, customer_name: null })])
+  check('undisclosed customer rendered as "undisclosed"', undisclosed.includes('→ undisclosed'))
+
+  const plural = formatAlertMessage([mkRow(), mkRow()])
+  check('plural row count in header', plural.startsWith('2 new contract disclosures in'))
+
+  const many = formatAlertMessage(Array.from({ length: 13 }, () => mkRow()))
+  check('caps at 10 lines with an overflow note', many.includes('…and 3 more') && many.split('\n').filter(l => l.startsWith('•')).length === 10)
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

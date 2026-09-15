@@ -65,8 +65,17 @@ in Supabase. If an item is blocked, write why under it and move on.
 
 - [ ] Weekly "contract wire": a page and an RSS feed of the last 7 days of
       disclosures, newest first, one line each with the excerpt.
-- [ ] Alerts: `/api/cron/contracts` posts new rows to a webhook
+- [x] Alerts: `/api/cron/contracts` posts new rows to a webhook
       (`CONTRACT_WEBHOOK_URL`) when set — Slack, Discord, or email via Resend.
+      Done 2026-09-15: `src/lib/contracts/alerts.ts` posts a plain JSON body
+      carrying both `text` (Slack incoming-webhook shape) and `content`
+      (Discord webhook shape) to `CONTRACT_WEBHOOK_URL`, one line per new
+      row, capped at 10 with an overflow count. Scoped to Slack/Discord —
+      email via Resend needs an API key and a from/to address, not a
+      webhook URL, so it's a different shape of feature; left for later if
+      wanted. No-ops silently when the env var is unset or nothing new was
+      written (most nights). Fire-and-forget: a failed POST is logged and
+      never fails the cron's own response.
 - [ ] Counterparty concentration page per provider with history: how the
       book changed filing by filing.
 - [ ] Contracted-vs-financed: join `contract_disclosures` to debt disclosed

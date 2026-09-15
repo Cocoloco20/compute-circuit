@@ -5,8 +5,9 @@ import { fetchCompanyFilings } from '@/lib/edgar'
 import { PROVIDER_IDS } from '@/lib/contracts/universe'
 import { isCandidateFiling, fetchFilingDocuments, prefilter } from '@/lib/contracts/filings'
 import { extractContractsWithRetry, EXTRACTOR_MODEL, hasQuantityInfo } from '@/lib/contracts/extract'
-import { shapeRow, upsertDisclosures, logScan, scannedAccessions } from '@/lib/contracts/ledger'
+import { shapeRow, upsertDisclosures, logScan, scannedAccessions, type DisclosureRow } from '@/lib/contracts/ledger'
 import { providerConfigured, resolveProvider } from '@/lib/llm/structured'
+import { postContractAlert } from '@/lib/contracts/alerts'
 
 /**
  * Nightly incremental scan of the contract-ledger universe.
@@ -54,6 +55,7 @@ export async function GET(req: NextRequest) {
 
   const budget = startBudget(FETCH_BUDGET_MS)
   let providersScanned = 0, candidates = 0, hits = 0, rows = 0, errors = 0
+  const newRows: DisclosureRow[] = []
 
   for (const hostId of ordered) {
     if (budget.expired()) break
@@ -86,6 +88,7 @@ export async function GET(req: NextRequest) {
         const up = await upsertDisclosures(sb, shaped)
         if (up.error) throw new Error(up.error)
         rows += shaped.length
+        newRows.push(...shaped)
         await logScan(sb, { ...base, prefilter_hit: true, extracted: shaped.length, extractor: res.model, error: shaped.length === 0 ? res.failure : null })
       } catch (err) {
         errors++
@@ -95,6 +98,8 @@ export async function GET(req: NextRequest) {
     }
     await sleep(150)
   }
+
+  await postContractAlert(newRows)
 
   return NextResponse.json({
     ok: errors === 0,
