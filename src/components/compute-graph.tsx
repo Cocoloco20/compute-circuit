@@ -33,7 +33,6 @@ import SupplyChainStrip from './supply-chain-strip'
 import WorldMap from './world-map'
 import WorldGlobe from './world-globe'
 import GlossaryView from './glossary-view'
-import ComputeFlow from './compute-flow'
 
 // ---------- visual constants ----------
 
@@ -195,7 +194,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   // the 2D world map, and the Glossary reference view. The Pulse Board,
   // Supply Chain Strip, and ⌘K render in graph + world; Glossary takes over
   // the full canvas + suppresses the floating panels (it's a tour, not a HUD).
-  const [viewMode, setViewMode] = useState<'graph' | 'globe' | 'world' | 'flow' | 'glossary'>('graph')
+  const [viewMode, setViewMode] = useState<'graph' | 'globe' | 'world' | 'glossary'>('graph')
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
 
   const positions = useMemo(() => computePositions(data), [data])
@@ -1017,9 +1016,6 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           <WorldMap data={data} onSelect={(s) => setSelected(s)} />
         </div>
       )}
-      {viewMode === 'flow' && (
-        <ComputeFlow data={data} onSelect={(s) => setSelected(s)} />
-      )}
       {viewMode === 'glossary' && (
         <GlossaryView data={data} onSelect={(s) => setSelected(s)} />
       )}
@@ -1053,7 +1049,6 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
             <ViewSeg active={viewMode === 'graph'}    onClick={() => setViewMode('graph')}    icon="📊" label="Graph"    aria="Switch to 3D graph view" />
             <ViewSeg active={viewMode === 'globe'}    onClick={() => setViewMode('globe')}    icon="🌍" label="Globe"    aria="Switch to 3D Earth globe view" />
             <ViewSeg active={viewMode === 'world'}    onClick={() => setViewMode('world')}    icon="🌐" label="World"    aria="Switch to 2D world map view" />
-            <ViewSeg active={viewMode === 'flow'}     onClick={() => setViewMode('flow')}     icon="🔀" label="Flow"     aria="Switch to compute contract flow view" />
             <ViewSeg active={viewMode === 'glossary'} onClick={() => setViewMode('glossary')} icon="📖" label="Glossary" aria="Switch to Glossary reference view" />
           </div>
           <button
@@ -1089,7 +1084,7 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
           orthogonal to the graph/world canvas but doesn't make sense over
           the Glossary's full-page scroll. Suppress the whole HUD in glossary
           mode — the drawer + ⌘K still work because they're below this. */}
-      {viewMode !== 'glossary' && viewMode !== 'flow' && <>
+      {viewMode !== 'glossary' && <>
 
       {/* ----- Layer key — left rail (top), desktop only -----
           Per-layer co count + today's signal count (8-K + news for cos in

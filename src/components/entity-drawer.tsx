@@ -407,7 +407,6 @@ function CompanyOverview({ company, data }: { company: GraphData['companies'][nu
         <Stat label="Share" value={company.share != null ? `${(company.share * 100).toFixed(0)}%` : '—'} />
       </div>
       <SignalChips companyId={company.id} data={data} />
-      <ComputeDealsSection companyId={company.id} data={data} />
       {company.layer_id === 'labs' && (
         <ModelLeaderboardSection companyId={company.id} data={data} />
       )}
@@ -1937,48 +1936,6 @@ function ArxivOutput({ companyId, data }: { companyId: string; data: GraphData }
   )
 }
 
-
-// ---------- Phase 8: compute contract ledger entries for this co ----------
-//
-// Shows the publicly reported mega-deals where this company is the buyer or
-// the seller (OpenAI↔NVIDIA, Anthropic↔Google TPU, …). Values are reported
-// commitments/ceilings, not recognized revenue — the source string on each
-// row says who reported it. Full system view lives in the Flow tab.
-function ComputeDealsSection({ companyId, data }: { companyId: string; data: GraphData }) {
-  const deals = data.computeContracts.filter(
-    c => c.buyer_id === companyId || c.seller_id === companyId,
-  )
-  if (deals.length === 0) return null
-  const nameOf = (id: string) => data.companies.find(c => c.id === id)?.name ?? id
-  return (
-    <Section title={`Compute deals (${deals.length})`}>
-      <ul className="space-y-2">
-        {deals
-          .sort((a, b) => (b.value_usd_b ?? 0) - (a.value_usd_b ?? 0))
-          .slice(0, 6)
-          .map(d => {
-            const isBuyer = d.buyer_id === companyId
-            const counterparty = nameOf(isBuyer ? d.seller_id : d.buyer_id)
-            return (
-              <li key={d.id} className="rounded border border-border-default p-2 text-[11.5px] leading-snug">
-                <div className="flex items-baseline justify-between gap-2">
-                  <span className="font-medium text-zinc-200">
-                    {isBuyer ? 'Buys from' : 'Sells to'} {counterparty}
-                  </span>
-                  <span className="shrink-0 font-mono text-zinc-100">
-                    {d.value_usd_b ? `$${d.value_usd_b}B` : '—'}
-                    {d.gigawatts ? ` · ${d.gigawatts}GW` : ''}
-                  </span>
-                </div>
-                <div className="mt-0.5 text-fg-muted">{d.headline}</div>
-                <div className="mt-0.5 font-mono text-[10px] text-zinc-600">{d.announced} · {d.source}</div>
-              </li>
-            )
-          })}
-      </ul>
-    </Section>
-  )
-}
 
 // ---------- Phase 9: investor layer — track / position controls ----------
 //

@@ -30,7 +30,6 @@ import type {
   ArxivPaper,
   ArxivSnapshot,
   Agency,
-  ComputeContract,
 } from '@/types/db'
 
 export interface SignalCompanyLink {
@@ -70,7 +69,6 @@ export interface GraphData {
   eiaInternational: EiaInternationalSnapshot[]  // Fab-country electricity stats
   aeoProjections: AeoProjection[]           // AEO 2026 long-term forecast (data center demand)
   agencies: Agency[]
-  computeContracts: ComputeContract[]
   lastUpdates: {                  // GasCity-style "instrument is live" telemetry
     price: string | null          // ISO of most-recent companies.price_updated_at
     news: string | null           // most-recent signals.date where source='google-news'
@@ -224,7 +222,7 @@ export async function fetchGraph(): Promise<GraphData> {
   const [
     sc, fnd, h, ins, fr, tr, gpu, gpuHs, hf, gh,
     gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers,
-    ag, cc,
+    ag,
   ] = await Promise.all([
     fetchSignalCompanies(),
     fetchFundamentals(),
@@ -304,13 +302,11 @@ export async function fetchGraph(): Promise<GraphData> {
       .order('published_date', { ascending: false }).limit(500),
     // Phase 7A — agencies (regulators / export-control bodies). Tiny table.
     sb.from('agencies').select('*').order('name').limit(50),
-    // Phase 8 — compute contracts ledger (hand-curated, <100 rows).
-    sb.from('compute_contracts').select('*').order('announced', { ascending: false }).limit(200),
   ])
 
   // Non-fatal reads — table may be empty / missing migration / RLS-denied.
   // Warn instead of failing the whole page.
-  for (const r of [gpuHs, ag, cc, gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] as Array<{ error: { message: string } | null }>) {
+  for (const r of [gpuHs, ag, gd, pat, jb, ml, eiaCom, eiaFmx, eiaIntl, aeo, sm, intSig, axSnap, axPapers] as Array<{ error: { message: string } | null }>) {
     if (r.error) {
       // eslint-disable-next-line no-console
       console.warn('[graph-data] optional table read failed:', r.error.message)
@@ -358,7 +354,6 @@ export async function fetchGraph(): Promise<GraphData> {
     eiaInternational: (eiaIntl.data ?? []) as EiaInternationalSnapshot[],
     aeoProjections: (aeo.data ?? []) as AeoProjection[],
     agencies: (ag.data ?? []) as Agency[],
-    computeContracts: (cc.data ?? []) as ComputeContract[],
     lastUpdates: {
       price: placed
         .map(co => co.price_updated_at)

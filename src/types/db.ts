@@ -165,22 +165,6 @@ export interface WatchlistEntry {
   updated_at: string
 }
 
-export interface ComputeContract {
-  id: string
-  buyer_id: string
-  seller_id: string
-  kind: 'gpu_purchase' | 'cloud_capacity' | 'custom_silicon' | 'equity_compute' | 'jv_program'
-  value_usd_b: number | null   // reported headline $B ("up to"), null = undisclosed
-  gigawatts: number | null
-  announced: string
-  status: 'announced' | 'reported'
-  headline: string
-  source: string
-  source_url: string | null
-  notes: string | null
-  created_at: string
-}
-
 export interface GridDemandSnapshot {
   id: string
   company_id: string
