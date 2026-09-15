@@ -84,8 +84,18 @@ in Supabase. If an item is blocked, write why under it and move on.
       wanted. No-ops silently when the env var is unset or nothing new was
       written (most nights). Fire-and-forget: a failed POST is logged and
       never fails the cron's own response.
-- [ ] Counterparty concentration page per provider with history: how the
+- [x] Counterparty concentration page per provider with history: how the
       book changed filing by filing.
+      Done 2026-09-15: not a separate page — a new "Concentration over
+      time" section on `/company/[id]`, right under "Contracts as
+      provider", since that's where a provider's ledger rows already live
+      and a history view only makes sense next to the current snapshot.
+      `concentrationHistory()` in `contract-ledger-data.ts` (shares its
+      per-customer reduction logic with `concentrationByProvider` via a new
+      `reduceConcentration` helper, so the two can't disagree) returns one
+      cumulative snapshot per distinct filing date the company appears on
+      as provider. Hidden when there's only one filing date — that's just
+      the current snapshot the page already shows elsewhere, not history.
 - [ ] Contracted-vs-financed: join `contract_disclosures` to debt disclosed
       in the same filers' 8-Ks (item 2.03) so a host's contracted revenue can
       be read against its obligations.

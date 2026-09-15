@@ -19,7 +19,7 @@ import type { Fundamental } from '../src/types/db'
 import { isPrivateAddr } from '../src/lib/ssrf-guard'
 import { startBudget } from '../src/lib/cron-budget'
 import { sampleRows, resolveId, formatReviewCard, wrap, type ReviewableRow } from '../src/lib/contracts/review'
-import { splitLedgerByRole, lastNDaysRows, type LedgerRow } from '../src/lib/contract-ledger-data'
+import { splitLedgerByRole, lastNDaysRows, concentrationHistory, type LedgerRow } from '../src/lib/contract-ledger-data'
 import { hasQuantityInfo, type ExtractedContract } from '../src/lib/contracts/extract'
 import { shapeRow, dedupeByKey, type DisclosureRow } from '../src/lib/contracts/ledger'
 import { formatAlertMessage } from '../src/lib/contracts/alerts'
@@ -320,6 +320,50 @@ console.log('rss.escapeXml / rss.toRfc822')
   check('escapes the five XML entities', escapeXml(`AT&T <deal> "big" 'co'`) === 'AT&amp;T &lt;deal&gt; &quot;big&quot; &apos;co&apos;')
   check('leaves plain text untouched', escapeXml('CoreWeave to OpenAI') === 'CoreWeave to OpenAI')
   check('RFC 822 date from YYYY-MM-DD', toRfc822('2026-09-10') === 'Thu, 10 Sep 2026 00:00:00 GMT')
+}
+
+// ---------- contract-ledger-data.concentrationHistory ----------
+// A lender wants to see concentration risk building, not just today's
+// number — one snapshot per filing date, cumulative through that date.
+console.log('contract-ledger-data.concentrationHistory')
+{
+  const mk = (overrides: Partial<LedgerRow>): LedgerRow => ({
+    id: 'x', provider_id: 'crwv', provider_name: 'CoreWeave', customer_id: null, customer_name: null,
+    customer_disclosed: false, guarantor_id: null, guarantor_name: null, kind: 'gpu_cloud_capacity', site: null,
+    capacity_mw: null, gpu_count: null, gpu_model: null, term_months: null, start_date: null, end_date: null,
+    total_value_usd: null, annual_value_usd: null, prepayment_usd: null, has_extension_option: null,
+    extension_note: null, escalator_pct: null, status: 'definitive', source_form: '8-K', source_accession: 'a',
+    source_url: null, source_note: null, filing_date: '2026-01-01', filer_id: 'crwv', excerpt: null,
+    extractor: 'm', confidence: 0.9, review_status: 'auto', ...overrides,
+  })
+
+  // Day 1: OpenAI alone (100% concentrated). Day 2: Meta joins at equal
+  // size, diluting OpenAI to 50%.
+  const rows = [
+    mk({ filing_date: '2026-01-01', customer_id: 'openai', customer_name: 'OpenAI', customer_disclosed: true, total_value_usd: 10e9 }),
+    mk({ filing_date: '2026-06-01', customer_id: 'meta', customer_name: 'Meta', customer_disclosed: true, total_value_usd: 10e9 }),
+  ]
+  const hist = concentrationHistory(rows)
+  check('one snapshot per distinct filing date', hist.length === 2)
+  check('snapshots are date-ordered', hist[0].asOfDate === '2026-01-01' && hist[1].asOfDate === '2026-06-01')
+  check('day 1 is fully concentrated in the only customer', hist[0].topCustomer === 'OpenAI' && hist[0].topShare === 1)
+  check('day 2 cumulative value includes both filings', hist[1].valueUsd === 20e9)
+  check('day 2 concentration dilutes to 50/50 (topShare 0.5)', hist[1].topShare === 0.5)
+
+  const sameDate = [
+    mk({ filing_date: '2026-03-01', customer_id: 'a', customer_name: 'A', customer_disclosed: true, total_value_usd: 1e9 }),
+    mk({ filing_date: '2026-03-01', customer_id: 'b', customer_name: 'B', customer_disclosed: true, total_value_usd: 1e9 }),
+  ]
+  check('rows filed the same day collapse into one snapshot', concentrationHistory(sameDate).length === 1)
+
+  const withTerminated = [...rows, mk({ filing_date: '2026-09-01', status: 'terminated', customer_id: 'x', total_value_usd: 999e9 })]
+  check('terminated rows are excluded, matching concentrationByProvider', concentrationHistory(withTerminated).length === 2)
+
+  check('fewer than 2 filing dates → still returns what it has (page hides it, not this function)',
+    concentrationHistory([rows[0]]).length === 1)
+
+  const outOfOrder = [rows[1], rows[0]]
+  check('input order does not matter — sorted internally', concentrationHistory(outOfOrder).map(s => s.asOfDate).join() === '2026-01-01,2026-06-01')
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

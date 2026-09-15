@@ -151,6 +151,36 @@ export interface ProviderConcentration {
   topShare: number | null
 }
 
+/** One provider's book, reduced to its per-customer breakdown and totals.
+ *  Shared by concentrationByProvider (the current book) and
+ *  concentrationHistory (the book as of each past filing date) so the two
+ *  can never disagree on what "concentration" means. */
+function reduceConcentration(providerRows: LedgerRow[]): Omit<ProviderConcentration, 'providerId' | 'provider'> {
+  const byCust = new Map<string, ConcentrationRow>()
+  let valueUsd = 0, mw = 0
+  for (const r of providerRows) {
+    const ck = r.customer_id ?? (r.customer_disclosed && r.customer_name ? `name:${r.customer_name}` : 'undisclosed')
+    const cur = byCust.get(ck) ?? { customer: r.customer_disclosed ? (r.customer_name ?? 'Unnamed') : 'Undisclosed', customerId: r.customer_id, valueUsd: 0, mw: 0, contracts: 0, shareOfValue: null, shareOfMw: null }
+    cur.contracts++
+    cur.valueUsd += r.total_value_usd ?? 0
+    cur.mw += r.capacity_mw ?? 0
+    valueUsd += r.total_value_usd ?? 0
+    mw += r.capacity_mw ?? 0
+    byCust.set(ck, cur)
+  }
+  const customers = [...byCust.values()].map(c => ({
+    ...c,
+    shareOfValue: valueUsd > 0 ? c.valueUsd / valueUsd : null,
+    shareOfMw: mw > 0 ? c.mw / mw : null,
+  })).sort((a, b) => (b.valueUsd - a.valueUsd) || (b.mw - a.mw) || (b.contracts - a.contracts))
+  const top = customers[0]
+  return {
+    contracts: providerRows.length,
+    valueUsd, mw, customers,
+    topShare: top ? (top.shareOfValue ?? top.shareOfMw) : null,
+  }
+}
+
 /**
  * Customer concentration per provider, from disclosed totals. The number
  * a lender asks first: how much of this host's book is one counterparty.
@@ -166,33 +196,49 @@ export function concentrationByProvider(rows: LedgerRow[]): ProviderConcentratio
   }
   const out: ProviderConcentration[] = []
   for (const [, prs] of byProv) {
-    const byCust = new Map<string, ConcentrationRow>()
-    let valueUsd = 0, mw = 0
-    for (const r of prs) {
-      const ck = r.customer_id ?? (r.customer_disclosed && r.customer_name ? `name:${r.customer_name}` : 'undisclosed')
-      const cur = byCust.get(ck) ?? { customer: r.customer_disclosed ? (r.customer_name ?? 'Unnamed') : 'Undisclosed', customerId: r.customer_id, valueUsd: 0, mw: 0, contracts: 0, shareOfValue: null, shareOfMw: null }
-      cur.contracts++
-      cur.valueUsd += r.total_value_usd ?? 0
-      cur.mw += r.capacity_mw ?? 0
-      valueUsd += r.total_value_usd ?? 0
-      mw += r.capacity_mw ?? 0
-      byCust.set(ck, cur)
-    }
-    const customers = [...byCust.values()].map(c => ({
-      ...c,
-      shareOfValue: valueUsd > 0 ? c.valueUsd / valueUsd : null,
-      shareOfMw: mw > 0 ? c.mw / mw : null,
-    })).sort((a, b) => (b.valueUsd - a.valueUsd) || (b.mw - a.mw) || (b.contracts - a.contracts))
-    const top = customers[0]
-    out.push({
-      providerId: prs[0].provider_id,
-      provider: prs[0].provider_name,
-      contracts: prs.length,
-      valueUsd, mw, customers,
-      topShare: top ? (top.shareOfValue ?? top.shareOfMw) : null,
-    })
+    out.push({ providerId: prs[0].provider_id, provider: prs[0].provider_name, ...reduceConcentration(prs) })
   }
   return out.sort((a, b) => (b.valueUsd - a.valueUsd) || (b.mw - a.mw) || (b.contracts - a.contracts))
+}
+
+export interface ConcentrationSnapshot {
+  /** The filing date this snapshot reflects — cumulative through this date. */
+  asOfDate: string
+  contracts: number
+  valueUsd: number
+  mw: number
+  topCustomer: string | null
+  topCustomerId: string | null
+  topShare: number | null
+}
+
+/**
+ * How one provider's book changed filing by filing — one snapshot per
+ * distinct filing_date it appears on, each cumulative through that date, so
+ * a lender can see concentration risk building (or easing) over time rather
+ * than only the current-day number concentrationByProvider gives. Takes
+ * rows already scoped to one provider (e.g. fetchCompanyLedger's asProvider)
+ * — it doesn't filter by provider itself, only by status and date.
+ */
+export function concentrationHistory(providerRows: LedgerRow[]): ConcentrationSnapshot[] {
+  const sorted = [...providerRows]
+    .filter(r => r.status !== 'terminated')
+    .sort((a, b) => a.filing_date.localeCompare(b.filing_date))
+  const dates = [...new Set(sorted.map(r => r.filing_date))]
+  return dates.map(asOfDate => {
+    const upTo = sorted.filter(r => r.filing_date <= asOfDate)
+    const c = reduceConcentration(upTo)
+    const top = c.customers[0]
+    return {
+      asOfDate,
+      contracts: c.contracts,
+      valueUsd: c.valueUsd,
+      mw: c.mw,
+      topCustomer: top?.customer ?? null,
+      topCustomerId: top?.customerId ?? null,
+      topShare: c.topShare,
+    }
+  })
 }
 
 /** Rows filed within the last `days` days (inclusive of today), newest

@@ -11,7 +11,7 @@ import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { fetchCompany } from '@/lib/company-data'
 import type { SignalItem } from '@/lib/company-data'
-import { fetchCompanyLedger, ledgerTotals, KIND_LABEL, STATUS_LABEL, type LedgerRow } from '@/lib/contract-ledger-data'
+import { fetchCompanyLedger, ledgerTotals, concentrationHistory, KIND_LABEL, STATUS_LABEL, type LedgerRow } from '@/lib/contract-ledger-data'
 import { usd } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
@@ -174,6 +174,7 @@ export default async function CompanyPage({ params }: { params: { id: string } }
           moreHref={`/contracts?provider=${encodeURIComponent(h.id)}`}
           empty={`No filing on file discloses ${h.name} as the party delivering capacity, hosting, power or equipment.`}
         />
+        <ConcentrationHistorySection asProvider={ledger.asProvider} />
         <LedgerSection
           title="Contracts as customer"
           rows={ledger.asCustomer}
@@ -255,6 +256,56 @@ const STATUS_TONE: Record<string, string> = {
 function Party({ id, name, muted }: { id: string | null; name: string; muted?: boolean }) {
   if (id) return <Link href={`/company/${id}`} className="hover:underline">{name}</Link>
   return <span className={muted ? 'text-[#6B6F7A]' : ''}>{name}</span>
+}
+
+function pct(n: number | null): string {
+  return n == null ? '—' : `${Math.round(n * 100)}%`
+}
+
+/**
+ * How this company's book (as a provider) has concentrated or diversified
+ * filing by filing — one row per distinct filing date, cumulative through
+ * that date. Only worth showing once there's an actual "over time" to see;
+ * one data point is just the current snapshot ledgerSection already gives.
+ */
+function ConcentrationHistorySection({ asProvider }: { asProvider: LedgerRow[] }) {
+  const history = concentrationHistory(asProvider)
+  if (history.length < 2) return null
+  return (
+    <Section title="Concentration over time" meta={`${history.length} filing dates`}>
+      <Panel className="overflow-x-auto">
+        <table className="w-full text-left text-xs">
+          <thead className="text-[10px] uppercase tracking-[0.12em] text-[#43474F]">
+            <tr>
+              <th className="px-3 py-2 font-medium">As of</th>
+              <th className="px-3 py-2 text-right font-medium">Contracts</th>
+              <th className="px-3 py-2 text-right font-medium">Value</th>
+              <th className="px-3 py-2 font-medium">Top customer</th>
+              <th className="px-3 py-2 text-right font-medium">Top share</th>
+            </tr>
+          </thead>
+          <tbody>
+            {history.map(s => (
+              <tr key={s.asOfDate} className="border-t border-[#131519]">
+                <td className="whitespace-nowrap px-3 py-2 text-[#A5A8B0]">{fmtIso(s.asOfDate)}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{s.contracts}</td>
+                <td className="whitespace-nowrap px-3 py-2 text-right tabular-nums">{s.valueUsd > 0 ? usd(s.valueUsd) : mw(s.mw)}</td>
+                <td className="px-3 py-2">
+                  <Party id={s.topCustomerId} name={s.topCustomer ?? '—'} />
+                </td>
+                <td className={
+                  'whitespace-nowrap px-3 py-2 text-right tabular-nums font-semibold ' +
+                  (s.topShare != null && s.topShare >= 0.5 ? 'text-[#F87171]' : s.topShare != null && s.topShare >= 0.3 ? 'text-[#FBBF24]' : 'text-[#34D399]')
+                }>
+                  {pct(s.topShare)}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </Panel>
+    </Section>
+  )
 }
 
 /**
