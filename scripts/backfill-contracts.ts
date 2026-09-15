@@ -91,7 +91,7 @@ async function main() {
         totalRows += rows.length
         console.log(`${label} — ${rows.length} contract(s)${res.retried ? ' [retried]' : ''}${res.failure ? ` [${res.failure}]` : ''} in=${res.inputTokens} cached=${res.cacheReadTokens} out=${res.outputTokens}${res.output.notes ? ` · ${res.output.notes.slice(0, 120)}` : ''}`)
         for (const r of rows) console.log(`      ${r.status.padEnd(10)} ${r.kind.padEnd(18)} ${(r.provider_name).slice(0, 24).padEnd(24)} -> ${(r.customer_name ?? '(undisclosed)').slice(0, 24).padEnd(24)} ${r.capacity_mw ?? '-'}MW $${r.total_value_usd ? (r.total_value_usd / 1e9).toFixed(2) + 'B' : '-'} ${r.term_months ?? '-'}mo conf=${r.confidence}`)
-        await logScan(sb, { accession: f.accessionNumber, filer_id: hostId, form: f.form, filing_date: f.filingDate, prefilter_hit: true, documents_read: docs.length, chars_read: text.length, extracted: rows.length, extractor: res.model, error: null, scanned_at: new Date().toISOString() })
+        await logScan(sb, { accession: f.accessionNumber, filer_id: hostId, form: f.form, filing_date: f.filingDate, prefilter_hit: true, documents_read: docs.length, chars_read: text.length, extracted: rows.length, extractor: res.model, error: rows.length === 0 ? res.failure : null, scanned_at: new Date().toISOString() })
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err)
         console.error(`${label} — ERROR ${msg}`)

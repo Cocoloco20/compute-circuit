@@ -104,7 +104,7 @@ export async function extractContracts(
     user: buildUserMessage(ctx),
     schema: OutputSchema,
     schemaName: 'contract_disclosures',
-    maxTokens: 12000,
+    maxTokens: 16000,
     override,
   })
   return {

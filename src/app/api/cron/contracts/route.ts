@@ -86,7 +86,7 @@ export async function GET(req: NextRequest) {
         const up = await upsertDisclosures(sb, shaped)
         if (up.error) throw new Error(up.error)
         rows += shaped.length
-        await logScan(sb, { ...base, prefilter_hit: true, extracted: shaped.length, extractor: res.model, error: null })
+        await logScan(sb, { ...base, prefilter_hit: true, extracted: shaped.length, extractor: res.model, error: shaped.length === 0 ? res.failure : null })
       } catch (err) {
         errors++
         await logScan(sb, { ...base, prefilter_hit: true, extracted: 0, extractor: EXTRACTOR_MODEL, error: (err instanceof Error ? err.message : String(err)).slice(0, 500) })
