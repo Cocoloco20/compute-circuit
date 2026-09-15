@@ -17,7 +17,12 @@ export const PROVIDER_IDS: readonly string[] = [
   // Neoclouds / GPU cloud
   'crwv', 'nbis', 'iren', 'wyfi',
   // Powered shell / HPC hosting (mostly ex-bitcoin miners)
-  'cifr', 'wulf', 'apld', 'corz', 'hut', 'glxy', 'btbt', 'riot', 'mara',
+  // 'riot-mining', not 'riot': the id 'riot' belongs to Riot Games (private,
+  // no CIK), an unrelated seed row. Riot Platforms — ticker RIOT, the miner
+  // pivoting to HPC — sits at 'riot-mining'. Same shape as the Astro/Lucid
+  // collisions elsewhere in this repo: using 'riot' silently scanned zero
+  // filings for a company with no CIK instead of erroring.
+  'cifr', 'wulf', 'apld', 'corz', 'hut', 'glxy', 'btbt', 'riot-mining', 'mara',
   'clsk', 'bitf', 'slnh', 'btdr', 'hive',
   // Data-center REITs
   'dlr', 'eqix',
@@ -46,7 +51,7 @@ export const COUNTERPARTY_ALIASES: ReadonlyArray<readonly [string, string]> = [
   ['hut 8', 'hut'],
   ['galaxy digital', 'glxy'], ['galaxy', 'glxy'],
   ['bit digital', 'btbt'],
-  ['riot platforms', 'riot'],
+  ['riot platforms', 'riot-mining'],
   ['mara holdings', 'mara'], ['marathon digital', 'mara'],
   ['cleanspark', 'clsk'],
   ['bitfarms', 'bitf'],
