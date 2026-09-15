@@ -81,6 +81,7 @@ Rules.
 - Convert money to absolute US dollars: "$9.7 billion" is 9700000000. If a figure is in another currency, leave the USD field null and mention it in notes.
 - MW: use critical IT load when the document distinguishes it from gross or utility power; otherwise the figure as stated.
 - One row per distinct contract. Two leases at two sites in one filing are two rows. An amendment to a prior contract is its own row with status amended or expanded.
+- kind describes what THIS specific contract is for, not other topics the same filing happens to also cover. A filing often bundles a power/capacity buildout update together with a separate hardware purchase in the same paragraph — a contract to buy GPUs or miners is equipment_purchase even when the surrounding text also discusses electricity or MW capacity; do not let nearby power-related language pull the kind toward power_supply for a row that is actually about buying hardware.
 - provider_name is the party delivering; customer_name the party paying. The filer may be either. Names exactly as the document writes them.
 - The excerpt must be a verbatim passage (or two passages joined with " ... ") that contains the key figures, at most 800 characters.
 - confidence below 0.5 means you are unsure this is a contract disclosure at all.`
