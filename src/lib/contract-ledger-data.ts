@@ -86,6 +86,10 @@ export function parseLedgerFilters(sp: SP): LedgerFilters {
   }
 }
 
+/** source_accession IS NOT NULL excludes rows with no filing to check them
+ *  against — the ledger's whole premise is that every figure traces back
+ *  to a document, so an unsourced row (e.g. a press-reported headline
+ *  number entered by hand) can't be shown as if it were. */
 export async function fetchAllLedgerRows(): Promise<{ rows: LedgerRow[]; error: string | null }> {
   const sb = supabaseServiceRole()
   const rows: LedgerRow[] = []
@@ -93,6 +97,7 @@ export async function fetchAllLedgerRows(): Promise<{ rows: LedgerRow[]; error: 
   for (let from = 0; ; from += PAGE) {
     const r = await sb.from('contract_disclosures').select('*')
       .neq('review_status', 'rejected')
+      .not('source_accession', 'is', null)
       .order('filing_date', { ascending: false }).order('created_at', { ascending: false })
       .range(from, from + PAGE - 1)
     if (r.error) return { rows, error: r.error.message }
@@ -235,6 +240,7 @@ export async function fetchCompanyLedger(companyId: string): Promise<CompanyLedg
     const sb = supabaseServiceRole()
     const r = await sb.from('contract_disclosures').select('*')
       .neq('review_status', 'rejected')
+      .not('source_accession', 'is', null)
       .or(`provider_id.eq.${companyId},customer_id.eq.${companyId},guarantor_id.eq.${companyId}`)
       .order('filing_date', { ascending: false }).order('created_at', { ascending: false })
       .limit(500)
