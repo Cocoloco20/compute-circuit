@@ -112,17 +112,29 @@ async function viaOpenRouter<S extends z.ZodType>(req: StructuredRequest<S>, mod
   }
   let lastErr = ''
   for (let attempt = 0; attempt < 3; attempt++) {
-    const r = await fetch(OPENROUTER_URL, {
-      method: 'POST',
-      signal: upstreamSignal(240_000),
-      headers: {
-        Authorization: `Bearer ${key}`,
-        'Content-Type': 'application/json',
-        'HTTP-Referer': 'https://compute-circuit.vercel.app',
-        'X-Title': 'Offtake contract ledger',
-      },
-      body: JSON.stringify(body),
-    })
+    let r: Response
+    try {
+      r = await fetch(OPENROUTER_URL, {
+        method: 'POST',
+        signal: upstreamSignal(240_000),
+        headers: {
+          Authorization: `Bearer ${key}`,
+          'Content-Type': 'application/json',
+          'HTTP-Referer': 'https://compute-circuit.vercel.app',
+          'X-Title': 'Offtake contract ledger',
+        },
+        body: JSON.stringify(body),
+      })
+    } catch (err) {
+      // A request-level failure (the 240s upstream timeout firing, a
+      // network reset) never reaches an HTTP status to check below --
+      // previously this threw straight out uncaught, burning the whole
+      // filing on what is usually transient upstream slowness. Worth a
+      // retry, same as a 429/5xx.
+      lastErr = err instanceof Error ? err.message : String(err)
+      await new Promise(res => setTimeout(res, 2_000 * (attempt + 1)))
+      continue
+    }
     if (r.status === 429 || r.status >= 500) {
       lastErr = `HTTP ${r.status}`
       await new Promise(res => setTimeout(res, 2_000 * (attempt + 1)))
