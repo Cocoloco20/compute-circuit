@@ -13,9 +13,24 @@ const geistMono = localFont({
   weight: '100 900',
 })
 
+const description = 'Offtake — the ledger of disclosed AI compute, colocation, hosting and power contracts, read from SEC filings with the source excerpt on every row.'
+
 export const metadata: Metadata = {
+  metadataBase: new URL('https://offtake-ledger.vercel.app'),
   title: 'Offtake',
-  description: 'Offtake — the ledger of disclosed AI compute, colocation, hosting and power contracts, read from SEC filings with the source excerpt on every row.',
+  description,
+  openGraph: {
+    title: 'Offtake',
+    description,
+    url: 'https://offtake-ledger.vercel.app',
+    siteName: 'Offtake',
+    type: 'website',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Offtake',
+    description,
+  },
 }
 
 export default function RootLayout({
