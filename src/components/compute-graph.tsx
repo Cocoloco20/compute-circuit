@@ -28,10 +28,8 @@ import type { GraphData } from '@/lib/graph-data'
 import { getLogoUrl } from '@/lib/logo'
 import EntityDrawer from './entity-drawer'
 import CommandPalette from './command-palette'
-import PulseBoard from './pulse-board'
 import SupplyChainStrip from './supply-chain-strip'
 import WorldMap from './world-map'
-import WorldGlobe from './world-globe'
 import GlossaryView from './glossary-view'
 
 // ---------- visual constants ----------
@@ -188,13 +186,13 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
   // Mobile bottom-sheet shell. On phones the floating chrome collapses into a
   // bottom tab bar; tapping a tab slides up a sheet with that panel's content.
   // Desktop layout uses `md:` breakpoints to ignore this entirely.
-  const [mobileSheet, setMobileSheet] = useState<'pulse' | 'chain' | 'search' | null>(null)
+  const [mobileSheet, setMobileSheet] = useState<'chain' | 'search' | null>(null)
 
   // Phase 7C-lite + Glossary: top-bar toggle between the 3D ecosystem graph,
   // the 2D world map, and the Glossary reference view. The Pulse Board,
   // Supply Chain Strip, and ⌘K render in graph + world; Glossary takes over
   // the full canvas + suppresses the floating panels (it's a tour, not a HUD).
-  const [viewMode, setViewMode] = useState<'graph' | 'globe' | 'world' | 'glossary'>('graph')
+  const [viewMode, setViewMode] = useState<'graph' | 'world' | 'glossary'>('graph')
   const [visibleCounts, setVisibleCounts] = useState<Record<string, number>>({})
 
   const positions = useMemo(() => computePositions(data), [data])
@@ -1001,16 +999,6 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       {viewMode === 'graph' && (
         <div ref={mountRef} className="absolute inset-0" />
       )}
-      {viewMode === 'globe' && (
-        <div className="absolute inset-0">
-          <WorldGlobe
-            data={data}
-            onSelect={(s) => setSelected(s)}
-            selected={selected}
-            filterSet={filterSet}
-          />
-        </div>
-      )}
       {viewMode === 'world' && (
         <div className="absolute inset-0">
           <WorldMap data={data} onSelect={(s) => setSelected(s)} />
@@ -1047,7 +1035,6 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
             aria-label="View mode"
           >
             <ViewSeg active={viewMode === 'graph'}    onClick={() => setViewMode('graph')}    icon="📊" label="Graph"    aria="Switch to 3D graph view" />
-            <ViewSeg active={viewMode === 'globe'}    onClick={() => setViewMode('globe')}    icon="🌍" label="Globe"    aria="Switch to 3D Earth globe view" />
             <ViewSeg active={viewMode === 'world'}    onClick={() => setViewMode('world')}    icon="🌐" label="World"    aria="Switch to 2D world map view" />
             <ViewSeg active={viewMode === 'glossary'} onClick={() => setViewMode('glossary')} icon="📖" label="Glossary" aria="Switch to Glossary reference view" />
           </div>
@@ -1190,10 +1177,6 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
       {/* ----- Chrome telemetry — bottom-center "instrument live" bar, desktop only ----- */}
       <ChromeTelemetry lastUpdates={data.lastUpdates} />
 
-      {/* ----- Pulse Board — top-right panel, desktop only.
-          Mobile users reach the same content via the bottom-nav "Pulse" tab. */}
-      <PulseBoard data={data} onSelect={(s) => setSelected(s)} />
-
       {/* ----- Supply Chain Strip — top-center, desktop only.
           Mobile users reach the same content via the bottom-nav "Chain" tab. */}
       <SupplyChainStrip data={data} />
@@ -1223,11 +1206,6 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 
       {/* Mobile bottom sheets — Pulse + Chain content presented as a 70vh
           sheet sliding up from the bottom. */}
-      {mobileSheet === 'pulse' && (
-        <MobileSheet title="Pulse Board" onClose={() => setMobileSheet(null)}>
-          <PulseBoard data={data} onSelect={(s) => { setSelected(s); setMobileSheet(null) }} variant="mobile" />
-        </MobileSheet>
-      )}
       {mobileSheet === 'chain' && (
         <MobileSheet title="Supply Chain" onClose={() => setMobileSheet(null)}>
           <SupplyChainStrip data={data} variant="mobile" />
@@ -1261,15 +1239,14 @@ export default function ComputeGraph({ data }: { data: GraphData }) {
 // ---------- Mobile bottom nav + sheet (phone only, < md) ----------
 
 interface MobileBottomNavProps {
-  active: 'pulse' | 'chain' | 'search' | null
-  onChange: (id: 'pulse' | 'chain' | 'search') => void
+  active: 'chain' | 'search' | null
+  onChange: (id: 'chain' | 'search') => void
 }
 
 function MobileBottomNav({ active, onChange }: MobileBottomNavProps) {
   // Each tab is a 44×44 target (per WCAG 2.5.5 / Apple HIG).
-  const tabs: Array<{ id: 'pulse' | 'chain' | 'search' | 'graph'; label: string; icon: string }> = [
+  const tabs: Array<{ id: 'chain' | 'search' | 'graph'; label: string; icon: string }> = [
     { id: 'graph',  label: 'Graph',  icon: '🌐' },
-    { id: 'pulse',  label: 'Pulse',  icon: '📊' },
     { id: 'chain',  label: 'Chain',  icon: '🔗' },
     { id: 'search', label: 'Search', icon: '🔍' },
   ]
