@@ -262,12 +262,12 @@ function Row({ r }: { r: LedgerRow }) {
   )
 }
 
-const inputCls = 'w-40 rounded border border-[#262A33] bg-[#13151C] px-2 py-1 text-xs text-[#F2F3F5] placeholder:text-[#43474F] focus:border-[#A78BFA] focus:outline-none'
-const selectCls = 'rounded border border-[#262A33] bg-[#13151C] px-2 py-1 text-xs text-[#F2F3F5] focus:border-[#A78BFA] focus:outline-none'
+const inputCls = 'w-40 max-w-full rounded border border-[#262A33] bg-[#13151C] px-2 py-1 text-xs text-[#F2F3F5] placeholder:text-[#43474F] focus:border-[#A78BFA] focus:outline-none'
+const selectCls = 'w-40 max-w-full rounded border border-[#262A33] bg-[#13151C] px-2 py-1 text-xs text-[#F2F3F5] focus:border-[#A78BFA] focus:outline-none'
 
 function Control({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <label className="flex flex-col gap-1 text-[10px] uppercase tracking-wider text-[#6B6F7A]">
+    <label className="flex min-w-0 flex-col gap-1 text-[10px] uppercase tracking-wider text-[#6B6F7A]">
       {label}
       {children}
     </label>
