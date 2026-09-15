@@ -71,7 +71,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: SP
             </p>
           </div>
           <nav className="flex items-center gap-3 text-xs text-[#6B6F7A]">
-            <Link href="/" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Graph</Link>
+            <Link href="/graph" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Graph</Link>
             <a href={`/api/contracts/export${qs ? `?${qs}` : ''}`} className="rounded border border-[#262A33] bg-[#13151C] px-2.5 py-1 text-[#A5A8B0] hover:border-[#3A3F4B] hover:text-[#F2F3F5]">
               Export CSV
             </a>

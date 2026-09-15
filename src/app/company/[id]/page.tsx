@@ -37,7 +37,7 @@ export default async function CompanyPage({ params }: { params: { id: string } }
 
         <nav className="flex items-center gap-3 text-xs text-[#6B6F7A]">
           <Link href="/contracts" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Ledger</Link>
-          <Link href="/" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Graph</Link>
+          <Link href="/graph" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Graph</Link>
         </nav>
 
         {/* header ------------------------------------------------------- */}

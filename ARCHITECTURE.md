@@ -10,7 +10,7 @@ The architecture operates on an **overnight batch-ingestion model** that feeds a
 
 1. **Ingestion (Overnight)**: Vercel Cron triggers the master dispatcher (`/api/cron/daily`) at 22:00 UTC, which sequentially invokes 17 distinct sub-crons to fetch from downstream APIs and databases.
 2. **Storage**: Data is processed and upserted into **Supabase Postgres** using the `service_role` key (bypassing RLS rules).
-3. **Delivery (SSR)**: When a user requests the app, Next.js server-fetches (`src/app/page.tsx`) the entire graph taxonomy and 35-day historical telemetry in a single parallel query (`fetchGraph()`), streaming the serialized JSON directly into the client page.
+3. **Delivery (SSR)**: When a user requests the app, Next.js server-fetches (`src/app/graph/page.tsx`) the entire graph taxonomy and 35-day historical telemetry in a single parallel query (`fetchGraph()`), streaming the serialized JSON directly into the client page.
 4. **Presentation**: The browser renders the nodes and layers using **Three.js** (3D Graph & World Globe views) and displays detailed telemetry charts and news signals in the slide-over metadata drawer.
 5. **Digest (Morning)**: A dedicated cron job at 12:00 UTC (8:00 AM ET) compiles the watchlist signals and emails a daily brief using the **Resend API**.
 
@@ -36,7 +36,7 @@ graph TD
     end
 
     subgraph Next.js SSR / App
-        ServerPage[src/app/page.tsx Server Fetch]
+        ServerPage[src/app/graph/page.tsx Server Fetch]
         ClientComp[ComputeGraph Client Component]
     end
 
