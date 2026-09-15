@@ -146,7 +146,7 @@ export default async function ContractsPage({ searchParams }: { searchParams: SP
               {(filters.provider ? conc : conc.slice(0, 8)).map(p => (
                 <div key={p.providerId ?? p.provider} className="rounded-lg border border-[#1B1E26] bg-[#0D0E13] p-3">
                   <div className="flex items-baseline justify-between gap-2">
-                    <Link href={`/contracts?provider=${encodeURIComponent(p.providerId ?? p.provider)}`} className="truncate text-sm font-semibold hover:underline">{p.provider}</Link>
+                    <Link href={`/contracts?provider=${encodeURIComponent(p.providerId ?? p.provider)}`} className="min-w-0 truncate text-sm font-semibold hover:underline">{p.provider}</Link>
                     <span className="shrink-0 text-xs text-[#6B6F7A]">{p.contracts} contract{p.contracts === 1 ? '' : 's'}</span>
                   </div>
                   <div className="mt-0.5 text-xs text-[#A5A8B0]">

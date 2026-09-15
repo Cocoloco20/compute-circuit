@@ -88,10 +88,10 @@ export default async function LandingPage() {
                     <Link
                       key={p.providerId ?? p.provider}
                       href={`/contracts?provider=${encodeURIComponent(p.providerId ?? p.provider)}`}
-                      className="flex items-baseline justify-between rounded-lg border border-[#1B1E26] bg-[#0D0E13] px-4 py-3 hover:border-[#262A33]"
+                      className="flex items-baseline justify-between gap-2 rounded-lg border border-[#1B1E26] bg-[#0D0E13] px-4 py-3 hover:border-[#262A33]"
                     >
-                      <span className="font-medium">{p.provider}</span>
-                      <span className="font-mono text-sm text-[#A5A8B0]">
+                      <span className="min-w-0 truncate font-medium">{p.provider}</span>
+                      <span className="shrink-0 font-mono text-sm text-[#A5A8B0]">
                         {p.valueUsd > 0 ? usd(p.valueUsd) : mw(p.mw)}
                       </span>
                     </Link>
