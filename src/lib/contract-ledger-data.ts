@@ -195,6 +195,16 @@ export function concentrationByProvider(rows: LedgerRow[]): ProviderConcentratio
   return out.sort((a, b) => (b.valueUsd - a.valueUsd) || (b.mw - a.mw) || (b.contracts - a.contracts))
 }
 
+/** Rows filed within the last `days` days (inclusive of today), newest
+ *  first. Used by the /wire page and its RSS feed — both want the same
+ *  "what disclosed this week" slice. `rows` need not already be sorted. */
+export function lastNDaysRows(rows: LedgerRow[], days: number, now: Date = new Date()): LedgerRow[] {
+  const cutoff = new Date(now.getTime() - days * 24 * 60 * 60 * 1000).toISOString().slice(0, 10)
+  return rows
+    .filter(r => r.filing_date >= cutoff)
+    .sort((a, b) => b.filing_date.localeCompare(a.filing_date))
+}
+
 export function ledgerTotals(rows: LedgerRow[]) {
   const live = rows.filter(r => r.status !== 'terminated')
   return {

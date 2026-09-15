@@ -63,8 +63,16 @@ in Supabase. If an item is blocked, write why under it and move on.
 
 ## Next
 
-- [ ] Weekly "contract wire": a page and an RSS feed of the last 7 days of
+- [x] Weekly "contract wire": a page and an RSS feed of the last 7 days of
       disclosures, newest first, one line each with the excerpt.
+      Done 2026-09-15: `src/app/wire/page.tsx` (server component, reads
+      `fetchAllLedgerRows()`, filters with the new `lastNDaysRows()`
+      helper in `contract-ledger-data.ts`, one row per line — date,
+      provider → customer, kind, value/MW, truncated excerpt — plain empty
+      state when nothing filed in the window) and
+      `src/app/wire/feed.xml/route.ts` (RSS 2.0, same 7-day slice, escaped
+      via the new `src/lib/rss.ts` helpers). Linked from the landing page
+      CTA row as "Contract wire".
 - [x] Alerts: `/api/cron/contracts` posts new rows to a webhook
       (`CONTRACT_WEBHOOK_URL`) when set — Slack, Discord, or email via Resend.
       Done 2026-09-15: `src/lib/contracts/alerts.ts` posts a plain JSON body

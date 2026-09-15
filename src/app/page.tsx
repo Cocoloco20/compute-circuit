@@ -57,6 +57,12 @@ export default async function LandingPage() {
               Export CSV
             </a>
             <Link
+              href="/wire"
+              className="rounded-md border border-[#262A33] bg-[#13151C] px-4 py-2 text-sm text-[#A5A8B0] hover:border-[#3A3F4B] hover:text-[#F2F3F5]"
+            >
+              Contract wire
+            </Link>
+            <Link
               href="/graph"
               className="px-2 py-2 text-sm text-[#6B6F7A] hover:text-[#A5A8B0]"
             >
