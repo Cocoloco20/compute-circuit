@@ -163,3 +163,14 @@ in Supabase. If an item is blocked, write why under it and move on.
       IREN's home-market disclosures.
 - [ ] Pricing page and a paid tier: CSV/API for free with a 30-day lag, live
       access paid.
+- [ ] Two-stage extraction pipeline: separate the EDGAR fetch (must stay
+      paced under SEC's 10 req/sec ceiling — a single stream already uses
+      ~6-7 of that) from the model extraction calls (OpenRouter handles
+      real concurrency fine) so many filings can be extracted in parallel
+      once their text is queued, instead of one filing at a time end to
+      end. Naive parallelization of the whole backfill script across
+      multiple processes doesn't work — that just multiplies EDGAR
+      requests and risks SEC throttling the whole site's access, not only
+      the backfill. Worth doing properly: this helps the nightly cron's
+      ongoing incremental scans as much as any future historical backfill,
+      since the cron runs forever and a faster pipeline compounds.
