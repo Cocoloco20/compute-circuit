@@ -4,7 +4,7 @@ import { startBudget } from '@/lib/cron-budget'
 import { fetchCompanyFilings } from '@/lib/edgar'
 import { PROVIDER_IDS } from '@/lib/contracts/universe'
 import { isCandidateFiling, fetchFilingDocuments, prefilter } from '@/lib/contracts/filings'
-import { extractContracts, EXTRACTOR_MODEL } from '@/lib/contracts/extract'
+import { extractContractsWithRetry, EXTRACTOR_MODEL } from '@/lib/contracts/extract'
 import { shapeRow, upsertDisclosures, logScan, scannedAccessions } from '@/lib/contracts/ledger'
 import { providerConfigured, resolveProvider } from '@/lib/llm/structured'
 
@@ -80,7 +80,7 @@ export async function GET(req: NextRequest) {
       // the budget cannot absorb.
       if (budget.remaining() < 25_000) break
       try {
-        const res = await extractContracts({ filerName: co.name, form: f.form, filingDate: f.filingDate, documents: docs })
+        const res = await extractContractsWithRetry({ filerName: co.name, form: f.form, filingDate: f.filingDate, documents: docs })
         const sourceUrl = docs[0]?.url ?? `https://www.sec.gov/Archives/edgar/data/${parseInt(co.cik, 10)}/${f.accessionNumber.replace(/-/g, '')}/`
         const shaped = res.output.contracts.map(c => shapeRow(c, { filerId: hostId, form: f.form, accession: f.accessionNumber, filingDate: f.filingDate, sourceUrl, extractor: res.model }))
         const up = await upsertDisclosures(sb, shaped)

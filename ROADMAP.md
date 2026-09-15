@@ -25,12 +25,28 @@ in Supabase. If an item is blocked, write why under it and move on.
       sample of `auto` rows as cards; `--verified=`/`--rejected=` records
       verdicts by id prefix, nothing is deleted). The verdicts themselves are
       a standing human task: run it after each backfill batch.
-- [ ] Extractor eval: pick 25 filings with known contracts (the CoreWeave
+- [x] Extractor eval: pick 25 filings with known contracts (the CoreWeave
       OpenAI/Meta 8-Ks, IREN/Microsoft, Cipher/Fluidstack, TeraWulf/Google
       backstop, Core Scientific/CoreWeave, Applied Digital/CoreWeave). Run
       DeepSeek V4 Flash and Claude on the same 25 and diff the rows. Record
       precision per field in `docs/extractor-eval.md`. Switch the default
       model if the cheap one misses material terms.
+      Done 2026-09-15, 14/25 available at run time (rerun with `npx tsx
+      scripts/eval-extractor.ts` once the backfill has populated more
+      filers). Compared against DeepSeek V4 Pro, not Claude — no
+      ANTHROPIC_API_KEY is configured. Verdict: **keep Flash as default.**
+      When both models extract a contract at all, the money fields (MW,
+      term, total value) agree closely. Pro's extra rows were mostly
+      customer names lifted from marketing-style "key wins" bullet lists
+      with no $ / MW / term attached — noise, not signal; switching to Pro
+      would add junk rows, not fix missing ones. The real finding: Flash is
+      **non-deterministic** — 3 of 14 filings that had previously yielded a
+      real contract came back empty on a fresh, identical call. Fixed with
+      `extractContractsWithRetry` (retry once, same model, when a
+      prefilter-approved filing returns zero) in both the backfill script
+      and the nightly cron. Also noted: `customer_disclosed` disagreed on
+      both sides inconsistently — a candidate to derive from `customer_name
+      != null` in code rather than ask the model, left for `Next`.
 - [x] Archive the VC terminal: tag `vc-terminal-final`, then remove
       `/terminal`, `/screen`, `/pipeline`, `/decisions`, `/fund`, their API
       routes and lib modules, and the terminal components. Keep the tables.
@@ -61,6 +77,15 @@ in Supabase. If an item is blocked, write why under it and move on.
       10-K/10-Q commitment tables (purchase obligations) as a source.
 - [ ] Public API: `/api/contracts` JSON with the same filters as the CSV,
       rate-limited, with an `X-Data-License` header naming the terms.
+- [ ] `customer_disclosed` (`docs/extractor-eval.md`): stop asking the
+      extractor to judge this — derive it as `customer_name != null` in
+      `shapeRow`. Both models disagreed with themselves on it, in both
+      directions, even on rows where `customer_name` was filled correctly.
+- [ ] Minimum-information filter: extraction sometimes emits a row for a
+      bare customer-name mention (a marketing "customer wins" list item)
+      with no MW, GPU count, term or dollar figure at all. A named party and
+      nothing else isn't a contract disclosure. Reject or downgrade rows
+      where every quantity field is null before they reach the ledger.
 
 ## Later
 

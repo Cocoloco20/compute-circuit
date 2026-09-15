@@ -95,13 +95,17 @@ export function buildUserMessage(ctx: FilingContext): string {
   return `Filer: ${ctx.filerName}\nForm: ${ctx.form}\nFiling date: ${ctx.filingDate}\n\n${docs}`
 }
 
-export async function extractContracts(ctx: FilingContext): Promise<ExtractionResult> {
+export async function extractContracts(
+  ctx: FilingContext,
+  override?: { provider?: 'openrouter' | 'anthropic'; model?: string },
+): Promise<ExtractionResult> {
   const r = await structured({
     system: SYSTEM_PROMPT,
     user: buildUserMessage(ctx),
     schema: OutputSchema,
     schemaName: 'contract_disclosures',
     maxTokens: 12000,
+    override,
   })
   return {
     output: r.parsed ?? { contracts: [], notes: r.failure },
@@ -111,5 +115,44 @@ export async function extractContracts(ctx: FilingContext): Promise<ExtractionRe
     cacheReadTokens: r.cacheReadTokens,
     refused: r.refused,
     failure: r.failure,
+  }
+}
+
+/**
+ * extractContracts, with one retry when a prefilter-approved filing comes
+ * back empty.
+ *
+ * The eval in docs/extractor-eval.md found the cheap model non-
+ * deterministic on identical input: 3 of 14 filings that had previously
+ * yielded a real contract came back with zero on a fresh, identical call
+ * (temperature 0 does not make these APIs fully reproducible run to run).
+ * A filing only reaches here after the prefilter already found capacity
+ * vocabulary AND a quantity, so an empty result is more likely a missed
+ * extraction than a true negative. One retry, same model, catches that at
+ * negligible extra cost — the alternative is silently losing real
+ * contracts to API-level variance.
+ */
+export async function extractContractsWithRetry(
+  ctx: FilingContext,
+  override?: { provider?: 'openrouter' | 'anthropic'; model?: string },
+): Promise<ExtractionResult & { retried: boolean }> {
+  const first = await extractContracts(ctx, override)
+  if (first.output.contracts.length > 0 || first.refused) return { ...first, retried: false }
+  const second = await extractContracts(ctx, override)
+  if (second.output.contracts.length > 0) {
+    return {
+      ...second,
+      inputTokens: first.inputTokens + second.inputTokens,
+      outputTokens: first.outputTokens + second.outputTokens,
+      cacheReadTokens: first.cacheReadTokens + second.cacheReadTokens,
+      retried: true,
+    }
+  }
+  return {
+    ...first,
+    inputTokens: first.inputTokens + second.inputTokens,
+    outputTokens: first.outputTokens + second.outputTokens,
+    cacheReadTokens: first.cacheReadTokens + second.cacheReadTokens,
+    retried: true,
   }
 }

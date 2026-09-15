@@ -29,7 +29,8 @@ export const DEFAULT_MODEL: Record<Provider, string> = {
 export const PRICE_PER_M: Record<string, [number, number, number]> = {
   'deepseek/deepseek-v4-flash-0731': [0.06, 0.12, 0.01],
   'deepseek/deepseek-v4-flash': [0.076, 0.153, 0.01],
-  'deepseek/deepseek-v4-pro': [0.58, 1.74, 0.02],
+  'deepseek/deepseek-v4-pro': [1.6, 3.2, 0.135],
+  'deepseek/deepseek-v4-pro-0813': [0.9834, 2.9502, 0.03278],
   'moonshotai/kimi-k2.5': [0.45, 2.25, 0.45],
   'claude-opus-5': [5, 25, 0.5],
   'claude-sonnet-5': [2, 10, 0.2],
@@ -61,6 +62,13 @@ export interface StructuredRequest<S extends z.ZodType> {
   schema: S
   schemaName: string
   maxTokens?: number
+  /**
+   * Force a specific provider/model for this call, bypassing LLM_PROVIDER /
+   * LLM_MODEL. Only consumer today is scripts/eval-extractor.ts, which needs
+   * two different models in one process — every other caller omits this and
+   * gets the environment's configured default.
+   */
+  override?: { provider?: Provider; model?: string }
 }
 
 export interface StructuredResult<T> {
@@ -76,7 +84,9 @@ export interface StructuredResult<T> {
 }
 
 export async function structured<S extends z.ZodType>(req: StructuredRequest<S>): Promise<StructuredResult<z.infer<S>>> {
-  const { provider, model } = resolveProvider()
+  const resolved = resolveProvider()
+  const provider = req.override?.provider ?? resolved.provider
+  const model = req.override?.model ?? (req.override?.provider ? DEFAULT_MODEL[provider] : resolved.model)
   return provider === 'openrouter' ? viaOpenRouter(req, model) : viaAnthropic(req, model)
 }
 

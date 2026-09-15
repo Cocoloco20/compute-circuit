@@ -20,7 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import { fetchCompanyFilings } from '../src/lib/edgar'
 import { PROVIDER_IDS } from '../src/lib/contracts/universe'
 import { isCandidateFiling, fetchFilingDocuments, prefilter } from '../src/lib/contracts/filings'
-import { extractContracts, EXTRACTOR_MODEL } from '../src/lib/contracts/extract'
+import { extractContractsWithRetry, EXTRACTOR_MODEL } from '../src/lib/contracts/extract'
 import { estimateCost, providerConfigured, resolveProvider } from '../src/lib/llm/structured'
 import { shapeRow, upsertDisclosures, logScan, scannedAccessions } from '../src/lib/contracts/ledger'
 
@@ -82,14 +82,14 @@ async function main() {
       if (DRY) { console.log(`${label} — HIT (vocab=${pf.vocabHits})`); await sleep(200); continue }
 
       try {
-        const res = await extractContracts({ filerName: co.name, form: f.form, filingDate: f.filingDate, documents: docs })
+        const res = await extractContractsWithRetry({ filerName: co.name, form: f.form, filingDate: f.filingDate, documents: docs })
         totalIn += res.inputTokens; totalOut += res.outputTokens; totalCacheRead += res.cacheReadTokens
         const sourceUrl = docs[0]?.url ?? `https://www.sec.gov/Archives/edgar/data/${parseInt(co.cik, 10)}/${f.accessionNumber.replace(/-/g, '')}/`
         const rows = res.output.contracts.map(c => shapeRow(c, { filerId: hostId, form: f.form, accession: f.accessionNumber, filingDate: f.filingDate, sourceUrl, extractor: res.model }))
         const up = await upsertDisclosures(sb, rows)
         if (up.error) throw new Error(up.error)
         totalRows += rows.length
-        console.log(`${label} — ${rows.length} contract(s)${res.failure ? ` [${res.failure}]` : ''} in=${res.inputTokens} cached=${res.cacheReadTokens} out=${res.outputTokens}${res.output.notes ? ` · ${res.output.notes.slice(0, 120)}` : ''}`)
+        console.log(`${label} — ${rows.length} contract(s)${res.retried ? ' [retried]' : ''}${res.failure ? ` [${res.failure}]` : ''} in=${res.inputTokens} cached=${res.cacheReadTokens} out=${res.outputTokens}${res.output.notes ? ` · ${res.output.notes.slice(0, 120)}` : ''}`)
         for (const r of rows) console.log(`      ${r.status.padEnd(10)} ${r.kind.padEnd(18)} ${(r.provider_name).slice(0, 24).padEnd(24)} -> ${(r.customer_name ?? '(undisclosed)').slice(0, 24).padEnd(24)} ${r.capacity_mw ?? '-'}MW $${r.total_value_usd ? (r.total_value_usd / 1e9).toFixed(2) + 'B' : '-'} ${r.term_months ?? '-'}mo conf=${r.confidence}`)
         await logScan(sb, { accession: f.accessionNumber, filer_id: hostId, form: f.form, filing_date: f.filingDate, prefilter_hit: true, documents_read: docs.length, chars_read: text.length, extracted: rows.length, extractor: res.model, error: null, scanned_at: new Date().toISOString() })
       } catch (err) {
