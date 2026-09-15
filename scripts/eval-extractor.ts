@@ -64,7 +64,7 @@ function sampleDiverse(rows: ScanRow[], n: number): ScanRow[] {
 interface FieldDiff { field: string; cheap: unknown; strong: unknown; agree: boolean }
 const COMPARE_FIELDS: Array<keyof ExtractedContract> = [
   'kind', 'status', 'capacity_mw', 'gpu_count', 'term_months', 'total_value_usd',
-  'annual_value_usd', 'customer_name', 'customer_disclosed',
+  'annual_value_usd', 'customer_name',
 ]
 
 function diffContracts(cheap: ExtractedContract[], strong: ExtractedContract[]): { rows: FieldDiff[][]; countsMatch: boolean } {

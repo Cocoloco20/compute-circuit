@@ -92,9 +92,15 @@ export function shapeRow(c: ExtractedContract, s: ShapeInput): DisclosureRow {
   return {
     provider_id: resolvePartyId(c.provider_name),
     provider_name: c.provider_name,
-    customer_id: c.customer_disclosed ? resolvePartyId(c.customer_name) : null,
+    customer_id: c.customer_name != null ? resolvePartyId(c.customer_name) : null,
     customer_name: c.customer_name,
-    customer_disclosed: c.customer_disclosed,
+    // Derived, not asked of the model: the eval (docs/extractor-eval.md)
+    // found the extractor's own customer_disclosed judgment disagreed with
+    // itself run to run, in both directions, even on rows where
+    // customer_name was filled in correctly. customer_name is null exactly
+    // when the customer isn't named (see its schema description), so it's
+    // the reliable signal.
+    customer_disclosed: c.customer_name != null,
     guarantor_id: resolvePartyId(c.guarantor_name),
     guarantor_name: c.guarantor_name,
     kind: c.kind,
@@ -135,7 +141,7 @@ export function shapeRow(c: ExtractedContract, s: ShapeInput): DisclosureRow {
  *  filing and lost every row in it, not just the colliding one. Collapsing
  *  same-key rows to the last occurrence before the upsert trades losing one
  *  duplicate-keyed row for keeping the rest. */
-function dedupeByKey(rows: DisclosureRow[]): DisclosureRow[] {
+export function dedupeByKey(rows: DisclosureRow[]): DisclosureRow[] {
   const byKey = new Map<string, DisclosureRow>()
   for (const row of rows) byKey.set(row.dedupe_key, row)
   return [...byKey.values()]

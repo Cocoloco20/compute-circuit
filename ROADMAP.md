@@ -77,15 +77,36 @@ in Supabase. If an item is blocked, write why under it and move on.
       10-K/10-Q commitment tables (purchase obligations) as a source.
 - [ ] Public API: `/api/contracts` JSON with the same filters as the CSV,
       rate-limited, with an `X-Data-License` header naming the terms.
-- [ ] `customer_disclosed` (`docs/extractor-eval.md`): stop asking the
+- [x] `customer_disclosed` (`docs/extractor-eval.md`): stop asking the
       extractor to judge this — derive it as `customer_name != null` in
       `shapeRow`. Both models disagreed with themselves on it, in both
       directions, even on rows where `customer_name` was filled correctly.
-- [ ] Minimum-information filter: extraction sometimes emits a row for a
+      Done 2026-09-15. Removed the field from `ExtractedContractSchema`
+      entirely (one fewer thing for the model to get inconsistent about,
+      one fewer output token); `customer_name`'s own description now says
+      to leave it null for a generic mention rather than write the generic
+      phrase into it. `shapeRow` derives both `customer_disclosed` and
+      `customer_id` from `customer_name != null`.
+- [x] Minimum-information filter: extraction sometimes emits a row for a
       bare customer-name mention (a marketing "customer wins" list item)
       with no MW, GPU count, term or dollar figure at all. A named party and
       nothing else isn't a contract disclosure. Reject or downgrade rows
       where every quantity field is null before they reach the ledger.
+      Done 2026-09-15: `hasQuantityInfo()` in `src/lib/contracts/extract.ts`
+      (true when at least one of MW, GPU count, term, total/annual value or
+      prepayment is non-null), applied as a `.filter()` before `shapeRow` in
+      both the backfill script and the nightly cron. A filing that yields
+      only bare-name rows now correctly logs zero extracted with no error
+      (not a failure to retry — a correct decision not to write junk).
+      Also fixed in passing while touching this code: a filing whose two
+      extracted contracts landed on the same `dedupe_key` (same customer,
+      kind, site) was failing its *entire* upsert with Postgres's "ON
+      CONFLICT DO UPDATE command cannot affect row a second time" — seen
+      live during the running backfill — which meant every real row from
+      that filing was lost, and since the retry re-extracts the same
+      duplicate, it would fail forever. `dedupeByKey()` in
+      `src/lib/contracts/ledger.ts` collapses same-key rows to the last
+      occurrence before the upsert call.
 
 ## Later
 

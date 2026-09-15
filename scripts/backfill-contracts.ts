@@ -20,7 +20,7 @@ import { createClient } from '@supabase/supabase-js'
 import { fetchCompanyFilings } from '../src/lib/edgar'
 import { PROVIDER_IDS } from '../src/lib/contracts/universe'
 import { isCandidateFiling, fetchFilingDocuments, prefilter } from '../src/lib/contracts/filings'
-import { extractContractsWithRetry, EXTRACTOR_MODEL } from '../src/lib/contracts/extract'
+import { extractContractsWithRetry, EXTRACTOR_MODEL, hasQuantityInfo } from '../src/lib/contracts/extract'
 import { estimateCost, providerConfigured, resolveProvider } from '../src/lib/llm/structured'
 import { shapeRow, upsertDisclosures, logScan, scannedAccessions } from '../src/lib/contracts/ledger'
 
@@ -85,7 +85,7 @@ async function main() {
         const res = await extractContractsWithRetry({ filerName: co.name, form: f.form, filingDate: f.filingDate, documents: docs })
         totalIn += res.inputTokens; totalOut += res.outputTokens; totalCacheRead += res.cacheReadTokens
         const sourceUrl = docs[0]?.url ?? `https://www.sec.gov/Archives/edgar/data/${parseInt(co.cik, 10)}/${f.accessionNumber.replace(/-/g, '')}/`
-        const rows = res.output.contracts.map(c => shapeRow(c, { filerId: hostId, form: f.form, accession: f.accessionNumber, filingDate: f.filingDate, sourceUrl, extractor: res.model }))
+        const rows = res.output.contracts.filter(hasQuantityInfo).map(c => shapeRow(c, { filerId: hostId, form: f.form, accession: f.accessionNumber, filingDate: f.filingDate, sourceUrl, extractor: res.model }))
         const up = await upsertDisclosures(sb, rows)
         if (up.error) throw new Error(up.error)
         totalRows += rows.length

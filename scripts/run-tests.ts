@@ -20,6 +20,8 @@ import { isPrivateAddr } from '../src/lib/ssrf-guard'
 import { startBudget } from '../src/lib/cron-budget'
 import { sampleRows, resolveId, formatReviewCard, wrap, type ReviewableRow } from '../src/lib/contracts/review'
 import { splitLedgerByRole, type LedgerRow } from '../src/lib/contract-ledger-data'
+import { hasQuantityInfo, type ExtractedContract } from '../src/lib/contracts/extract'
+import { shapeRow, dedupeByKey, type DisclosureRow } from '../src/lib/contracts/ledger'
 
 let passed = 0
 let failed = 0
@@ -201,6 +203,51 @@ console.log('contract-ledger-data.splitLedgerByRole')
   check('guarantor rows', s.asGuarantor.map(r => r.id).join() === 'd')
   check('unrelated rows dropped', s.asProvider.length + s.asCustomer.length + s.asGuarantor.length === 4)
   check('unknown company → all empty', (() => { const e = splitLedgerByRole(rows, 'nobody'); return !e.asProvider.length && !e.asCustomer.length && !e.asGuarantor.length })())
+}
+
+// ---------- contracts/extract.hasQuantityInfo ----------
+// A named party with no MW, GPU count, term, or dollar figure at all isn't
+// a contract disclosure -- often a marketing "customer wins" bullet lifted
+// into a row by mistake. Reject it before it reaches the ledger.
+console.log('contracts/extract.hasQuantityInfo')
+{
+  const mkContract = (overrides: Partial<ExtractedContract> = {}): ExtractedContract => ({
+    provider_name: 'CoreWeave', customer_name: 'OpenAI', guarantor_name: null,
+    kind: 'gpu_cloud_capacity', site: null, capacity_mw: null, gpu_count: null, gpu_model: null,
+    term_months: null, start_date: null, end_date: null, total_value_usd: null, annual_value_usd: null,
+    prepayment_usd: null, has_extension_option: null, extension_note: null, escalator_pct: null,
+    status: 'definitive', excerpt: 'a five-year agreement', confidence: 0.9, ...overrides,
+  })
+  check('bare name, no numbers → rejected', hasQuantityInfo(mkContract()) === false)
+  check('capacity_mw alone → kept', hasQuantityInfo(mkContract({ capacity_mw: 250 })))
+  check('total_value_usd alone → kept', hasQuantityInfo(mkContract({ total_value_usd: 1e9 })))
+  check('gpu_count alone → kept', hasQuantityInfo(mkContract({ gpu_count: 1000 })))
+}
+
+// ---------- contracts/ledger.shapeRow & dedupeByKey ----------
+console.log('contracts/ledger.shapeRow & dedupeByKey')
+{
+  const ctx = { filerId: 'crwv', form: '8-K', accession: '0001-26-1', filingDate: '2026-03-10', sourceUrl: 'https://www.sec.gov/x', extractor: 'm' }
+  const named = shapeRow({
+    provider_name: 'CoreWeave', customer_name: 'OpenAI', guarantor_name: null, kind: 'gpu_cloud_capacity',
+    site: null, capacity_mw: 250, gpu_count: null, gpu_model: null, term_months: 60, start_date: null, end_date: null,
+    total_value_usd: 11.9e9, annual_value_usd: null, prepayment_usd: null, has_extension_option: null,
+    extension_note: null, escalator_pct: null, status: 'definitive', excerpt: 'x', confidence: 0.9,
+  }, ctx)
+  check('customer_disclosed derived true when customer_name present', named.customer_disclosed === true)
+  check('customer_id resolved when customer_name present', named.customer_id === 'openai')
+  const undisclosed = shapeRow({
+    provider_name: 'CoreWeave', customer_name: null, guarantor_name: null, kind: 'gpu_cloud_capacity',
+    site: null, capacity_mw: 250, gpu_count: null, gpu_model: null, term_months: 60, start_date: null, end_date: null,
+    total_value_usd: null, annual_value_usd: null, prepayment_usd: null, has_extension_option: null,
+    extension_note: null, escalator_pct: null, status: 'definitive', excerpt: 'x', confidence: 0.9,
+  }, ctx)
+  check('customer_disclosed derived false when customer_name null', undisclosed.customer_disclosed === false)
+  check('customer_id null when customer_name null', undisclosed.customer_id === null)
+
+  const mkRow = (key: string, updated_at: string) => ({ ...named, dedupe_key: key, updated_at } as DisclosureRow)
+  const deduped = dedupeByKey([mkRow('k1', 't1'), mkRow('k2', 't1'), mkRow('k1', 't2')])
+  check('same-key rows collapse to the last occurrence', deduped.length === 2 && deduped.find(r => r.dedupe_key === 'k1')?.updated_at === 't2')
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)

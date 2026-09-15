@@ -27,8 +27,7 @@ export const CONTRACT_STATUSES = [
 
 export const ExtractedContractSchema = z.object({
   provider_name: z.string().describe('Party delivering the capacity, space, power, hosting or equipment, as named in the document'),
-  customer_name: z.string().nullable().describe('Party paying for it, as named. Null if not disclosed.'),
-  customer_disclosed: z.boolean().describe('False when the customer is described only generically ("a hyperscaler", "an investment-grade counterparty")'),
+  customer_name: z.string().nullable().describe('Party paying for it, as named. Null if not disclosed OR only described generically ("a hyperscaler", "an investment-grade counterparty") -- do not put the generic description here.'),
   guarantor_name: z.string().nullable().describe('Party guaranteeing or backstopping the customer obligations, if any'),
   kind: z.enum(CONTRACT_KINDS),
   site: z.string().nullable().describe('Campus or location as stated, e.g. "Lake Mariner, NY" or "Ellendale, ND"'),
@@ -49,6 +48,19 @@ export const ExtractedContractSchema = z.object({
   confidence: z.number().describe('0 to 1: how confident you are that this row is a real contract disclosure with the figures attributed correctly'),
 })
 export type ExtractedContract = z.infer<typeof ExtractedContractSchema>
+
+/**
+ * A named party and nothing else isn't a contract disclosure -- extraction
+ * sometimes turns a marketing "customer wins" bullet list into a row with
+ * no MW, GPU count, term or dollar figure at all. True when at least one
+ * quantity the ledger actually reports on is present.
+ */
+export function hasQuantityInfo(c: ExtractedContract): boolean {
+  return [
+    c.capacity_mw, c.gpu_count, c.term_months,
+    c.total_value_usd, c.annual_value_usd, c.prepayment_usd,
+  ].some(v => v != null)
+}
 
 const OutputSchema = z.object({
   contracts: z.array(ExtractedContractSchema),
