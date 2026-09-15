@@ -1,6 +1,6 @@
 # Offtake (repo: compute-circuit) — project rules
 
-**Product (since 2026-09-14): the contract ledger** — every disclosed AI compute, colocation, hosting, power and equipment contract, read from SEC filings, one row per disclosure with the source excerpt. Buyers: credit desks, GPU lenders, equity analysts. `/contracts` is the surface; `src/lib/contracts/` the pipeline; `ROADMAP.md` the work queue. The 3D graph and the 25 data feeds remain as the research backbone. The VC terminal pages (/terminal, /screen, /pipeline, /decisions, /fund) are scheduled for archival.
+**Product (since 2026-09-14): the contract ledger** — every disclosed AI compute, colocation, hosting, power and equipment contract, read from SEC filings, one row per disclosure with the source excerpt. Buyers: credit desks, GPU lenders, equity analysts. `/contracts` is the surface; `src/lib/contracts/` the pipeline; `ROADMAP.md` the work queue. The 3D graph and the 25 data feeds remain as the research backbone. The VC terminal (/terminal, /screen, /pipeline, /decisions, /fund) was archived 2026-09-14 at git tag `vc-terminal-final`; its tables (decisions, pipeline_cards, notes, funds, investments, marks, decision_resurfacings) stay in Supabase untouched.
 
 Free data sources, open source (public repo).
 

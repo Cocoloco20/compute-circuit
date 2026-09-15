@@ -152,10 +152,11 @@ export async function GET(req: NextRequest) {
 
   // ---- persist observed status changes -----------------------------------
   // A status transition is the highest-value thing in this feed: it is how a
-  // company we passed on later shows up as Acquired, Public or Inactive, which
-  // is exactly what /api/cron/resurface watches. Recording the OBSERVED
-  // transition (not the current value) is what lets that job distinguish "this
-  // changed after the decision" from "this was already true".
+  // company later shows up as Acquired, Public or Inactive. Recording the
+  // OBSERVED transition (not the current value) is what lets a reader
+  // distinguish "this changed after we first saw it" from "this was already
+  // true". (The decision-resurfacing cron that consumed these is archived at
+  // tag vc-terminal-final; the yc_status_changes table stays.)
   let statusChangesRecorded = 0
   if (statusChanges.length) {
     const rows = statusChanges.map(c => ({

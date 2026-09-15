@@ -12,7 +12,7 @@ import {
   fetchAllLedgerRows, applyLedgerFilters, parseLedgerFilters, concentrationByProvider,
   ledgerTotals, KIND_LABEL, STATUS_LABEL, type LedgerRow,
 } from '@/lib/contract-ledger-data'
-import { usd } from '@/lib/fund-data'
+import { usd } from '@/lib/format'
 
 export const dynamic = 'force-dynamic'
 export const metadata = {

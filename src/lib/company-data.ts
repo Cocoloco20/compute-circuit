@@ -1,14 +1,11 @@
 import { supabaseServiceRole } from '@/lib/supabase/service-role'
-import type {
-  Decision, DecisionResurfacing, PipelineCard, Note, YcCompany, ResurfaceVerdict,
-  CompanyBrief,
-} from '@/types/db'
+import type { YcCompany, CompanyBrief } from '@/types/db'
 
 /**
  * Data for /company/[id] — everything known about one company, in one read.
  *
- * SERVICE ROLE ONLY: decisions, notes and pipeline_cards are RLS-locked with
- * zero policies. Server components only.
+ * SERVICE ROLE ONLY (bypasses RLS on the reference tables). Server
+ * components only.
  *
  * Every section is independently non-fatal. A company with no funding rounds
  * and no signals is the common case for the 10k reference-layer names, and it
@@ -41,21 +38,12 @@ export interface SignalItem {
   url: string | null
 }
 
-export interface DecisionWithVerdicts extends Decision {
-  resurfacings: Array<Pick<DecisionResurfacing,
-    'id' | 'trigger_kind' | 'trigger_summary' | 'trigger_date' | 'trigger_url'
-    | 'verdict' | 'verdict_at' | 'created_at'>>
-}
-
 export interface CompanyPage {
   header: CompanyHeader
   brief: CompanyBrief | null
   backers: Backer[]
   yc: YcCompany | null
-  card: PipelineCard | null
-  decisions: DecisionWithVerdicts[]
   signals: SignalItem[]
-  notes: Note[]
 }
 
 function usd(n: number | null): string {
@@ -84,7 +72,7 @@ export async function fetchCompany(id: string): Promise<CompanyPage | null> {
     discovered_via: string | null
   }
 
-  const [backers, yc, card, decisions, notes, funding, filings, brief] = await Promise.all([
+  const [backers, yc, funding, filings, brief] = await Promise.all([
     // ---- who else is in -------------------------------------------------
     safe<Backer[]>(async () => {
       const { data } = await sb.from('company_backers').select('investor_id').eq('company_id', id)
@@ -98,32 +86,6 @@ export async function fetchCompany(id: string): Promise<CompanyPage | null> {
       const { data } = await sb.from('yc_companies').select('*').eq('company_id', id).maybeSingle()
       return (data as unknown as YcCompany) ?? null
     }, null),
-
-    safe<PipelineCard | null>(async () => {
-      const { data } = await sb.from('pipeline_cards').select('*').eq('company_id', id).maybeSingle()
-      return (data as unknown as PipelineCard) ?? null
-    }, null),
-
-    // ---- decision history, with how each one turned out ------------------
-    safe<DecisionWithVerdicts[]>(async () => {
-      const { data } = await sb.from('decisions').select('*')
-        .eq('company_id', id).order('decided_at', { ascending: false })
-      const ds = (data ?? []) as unknown as Decision[]
-      if (!ds.length) return []
-      const { data: rs } = await sb.from('decision_resurfacings').select('*')
-        .in('decision_id', ds.map(d => d.id)).order('created_at', { ascending: false })
-      const byDecision = new Map<string, DecisionResurfacing[]>()
-      for (const r of ((rs ?? []) as unknown as DecisionResurfacing[])) {
-        byDecision.set(r.decision_id, [...(byDecision.get(r.decision_id) ?? []), r])
-      }
-      return ds.map(d => ({ ...d, resurfacings: byDecision.get(d.id) ?? [] }))
-    }, []),
-
-    safe<Note[]>(async () => {
-      const { data } = await sb.from('notes').select('*')
-        .eq('company_id', id).order('created_at', { ascending: false }).limit(20)
-      return (data ?? []) as unknown as Note[]
-    }, []),
 
     // ---- funding rounds --------------------------------------------------
     safe<SignalItem[]>(async () => {
@@ -192,13 +154,7 @@ export async function fetchCompany(id: string): Promise<CompanyPage | null> {
       thesisRisk: co.thesis_risk_ai,
       discoveredVia: co.discovered_via,
     },
-    backers, yc, card, decisions, notes, signals, brief,
+    backers, yc, signals, brief,
   }
 }
 
-export function verdictLabel(v: ResurfaceVerdict | null): string {
-  return v === 'No' ? 'reasoning was wrong'
-    : v === 'Partially' ? 'partly right'
-    : v === 'Yes' ? 'reasoning held'
-    : 'awaiting verdict'
-}

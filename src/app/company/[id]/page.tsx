@@ -1,18 +1,15 @@
 /**
- * /company/[id] — everything known about one company, before you decide.
+ * /company/[id] — everything known about one company, in one read.
  *
- * The ordering is the argument: who else is in, what the world has done
- * lately, and what YOU already concluded — with how each conclusion turned
- * out. Your own decision history sits above the signal feed on purpose. The
- * most useful thing before deciding again is what you thought last time and
- * whether it held.
+ * The ordering is the argument: who backs it, what it says it does, then
+ * what the world has done lately. (The decision-capture layer that used to
+ * sit above the signals is archived at tag vc-terminal-final.)
  */
 
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { fetchCompany, verdictLabel } from '@/lib/company-data'
-import type { SignalItem, DecisionWithVerdicts } from '@/lib/company-data'
-import DecisionCapture from '@/components/terminal/decision-capture'
+import { fetchCompany } from '@/lib/company-data'
+import type { SignalItem } from '@/lib/company-data'
 
 export const dynamic = 'force-dynamic'
 
@@ -29,16 +26,15 @@ function fmtDate(d: string): string {
 export default async function CompanyPage({ params }: { params: { id: string } }) {
   const data = await fetchCompany(params.id)
   if (!data) notFound()
-  const { header: h, backers, yc, card, decisions, signals, notes, brief } = data
+  const { header: h, backers, yc, signals, brief } = data
 
   return (
     <main className="min-h-screen bg-[#05060a] px-4 py-6 text-[#F2F3F5] sm:px-8 sm:py-8">
       <div className="mx-auto max-w-4xl space-y-6">
 
         <nav className="flex items-center gap-3 text-xs text-[#6B6F7A]">
-          <Link href="/terminal" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Terminal</Link>
-          <Link href="/pipeline" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Pipeline</Link>
-          <Link href="/decisions" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Decisions</Link>
+          <Link href="/contracts" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Ledger</Link>
+          <Link href="/" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Graph</Link>
         </nav>
 
         {/* header ------------------------------------------------------- */}
@@ -53,7 +49,6 @@ export default async function CompanyPage({ params }: { params: { id: string } }
               )}
               <span className="text-[11px] text-[#6B6F7A]">{h.isPrivate ? 'private' : 'public'}</span>
             </div>
-            <DecisionCapture presetCompany={{ id: h.id, name: h.name }} />
           </div>
 
           <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-[#6B6F7A]">
@@ -66,11 +61,6 @@ export default async function CompanyPage({ params }: { params: { id: string } }
             )}
             {h.lastPrice != null && (
               <span className="tabular-nums text-[#A5A8B0]">${h.lastPrice.toFixed(2)}</span>
-            )}
-            {card && (
-              <span className="rounded bg-[#A78BFA]/15 px-1.5 py-0.5 text-[#F2F3F5]">
-                pipeline: {card.stage}
-              </span>
             )}
             {h.discoveredVia && (
               <span className="text-[#43474F]">surfaced via {h.discoveredVia}</span>
@@ -173,22 +163,6 @@ export default async function CompanyPage({ params }: { params: { id: string } }
           </Section>
         )}
 
-        {/* your own record, above the news ------------------------------- */}
-        <Section
-          title="Your decisions"
-          meta={decisions.length ? `${decisions.length} recorded` : undefined}
-        >
-          {decisions.length ? (
-            <div className="space-y-2">{decisions.map(d => <DecisionCard key={d.id} d={d} />)}</div>
-          ) : (
-            <Empty>
-              Nothing recorded on {h.name} yet. Capture one with{' '}
-              <kbd className="rounded border border-[#262A33] px-1">d</kbd> — the reasoning is
-              only worth anything if it is written down before the outcome is known.
-            </Empty>
-          )}
-        </Section>
-
         <Section title="Signals" meta={signals.length ? `${signals.length} most recent` : undefined}>
           {signals.length ? (
             <Panel className="divide-y divide-[#131519]">
@@ -199,20 +173,6 @@ export default async function CompanyPage({ params }: { params: { id: string } }
           )}
         </Section>
 
-        {notes.length > 0 && (
-          <Section title="Notes">
-            <Panel className="divide-y divide-[#131519]">
-              {notes.map(n => (
-                <div key={n.id} className="px-4 py-2.5">
-                  <p className="text-sm text-[#A5A8B0]">{n.body}</p>
-                  <p className="mt-1 text-[10px] text-[#43474F]">
-                    {n.author} · {fmtDate(n.created_at)}
-                  </p>
-                </div>
-              ))}
-            </Panel>
-          </Section>
-        )}
       </div>
     </main>
   )
@@ -242,53 +202,6 @@ function Empty({ children }: { children: React.ReactNode }) {
   return <Panel className="px-4 py-4 text-xs leading-relaxed text-[#6B6F7A]">{children}</Panel>
 }
 
-function DecisionCard({ d }: { d: DecisionWithVerdicts }) {
-  return (
-    <Panel className="p-4">
-      <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <span className={
-          d.outcome === 'Invest' ? 'text-sm font-medium text-[#34D399]'
-          : d.outcome === 'Pass' ? 'text-sm font-medium text-[#A5A8B0]'
-          : 'text-sm font-medium text-[#22D3EE]'
-        }>{d.outcome}</span>
-        <span className="text-[11px] tabular-nums text-[#6B6F7A]">{fmtDate(d.decided_at)}</span>
-      </div>
-
-      <p className="mt-2 text-sm leading-relaxed text-[#F2F3F5]">{d.reasoning}</p>
-      {d.what_would_change_mind && (
-        <p className="mt-1.5 text-xs text-[#6B6F7A]">
-          <span className="text-[#43474F]">Would change my mind: </span>
-          {d.what_would_change_mind}
-        </p>
-      )}
-      <p className="mt-2 text-[11px] text-[#6B6F7A]">
-        {d.primary_factor} · confidence <span className="tabular-nums">{d.confidence}</span>/5
-        {d.dissent && <span className="ml-2 text-[#FBBF24]">team disagreed</span>}
-      </p>
-
-      {d.resurfacings.length > 0 && (
-        <div className="mt-3 space-y-1.5 border-t border-[#1B1E26] pt-2.5">
-          {d.resurfacings.map(r => (
-            <div key={r.id} className="text-xs">
-              <span className={
-                r.verdict === 'No' ? 'text-[#F87171]'
-                : r.verdict === 'Partially' ? 'text-[#FBBF24]'
-                : r.verdict === 'Yes' ? 'text-[#34D399]' : 'text-[#6B6F7A]'
-              }>{verdictLabel(r.verdict)}</span>
-              <span className="text-[#6B6F7A]"> — {r.trigger_summary}</span>
-              {r.trigger_date && <span className="text-[#43474F]"> ({fmtDate(r.trigger_date)})</span>}
-              {r.trigger_url && (
-                <a href={r.trigger_url} target="_blank" rel="noreferrer" className="ml-1.5 text-[#22D3EE] hover:underline">
-                  source
-                </a>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-    </Panel>
-  )
-}
 
 function SignalRow({ s }: { s: SignalItem }) {
   const tone = s.kind === 'FundingRound' ? 'text-[#34D399]'

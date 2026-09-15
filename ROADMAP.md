@@ -31,9 +31,13 @@ in Supabase. If an item is blocked, write why under it and move on.
       DeepSeek V4 Flash and Claude on the same 25 and diff the rows. Record
       precision per field in `docs/extractor-eval.md`. Switch the default
       model if the cheap one misses material terms.
-- [ ] Archive the VC terminal: tag `vc-terminal-final`, then remove
+- [x] Archive the VC terminal: tag `vc-terminal-final`, then remove
       `/terminal`, `/screen`, `/pipeline`, `/decisions`, `/fund`, their API
       routes and lib modules, and the terminal components. Keep the tables.
+      Done 2026-09-14. Also removed: `/api/cron/resurface` (the decision
+      layer's cron) and the decision/pipeline/notes sections of
+      `/company/[id]`. Kept: `/api/watchlist` (the graph uses it), every
+      migration and table. `usd()` moved to `src/lib/format.ts`.
 - [ ] Company pages (`/company/[id]`) show the company's ledger rows (as
       provider and as customer) above the signals list.
 
