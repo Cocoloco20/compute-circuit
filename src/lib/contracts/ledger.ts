@@ -127,9 +127,23 @@ export function shapeRow(c: ExtractedContract, s: ShapeInput): DisclosureRow {
   }
 }
 
+/** Two contracts from the same filing can land on the same dedupe_key (same
+ *  customer, kind and site) even when they're genuinely distinct -- e.g. an
+ *  initial agreement and its same-day amendment. A single upsert statement
+ *  can't update one conflict target twice ("ON CONFLICT DO UPDATE command
+ *  cannot affect row a second time"), which previously failed the whole
+ *  filing and lost every row in it, not just the colliding one. Collapsing
+ *  same-key rows to the last occurrence before the upsert trades losing one
+ *  duplicate-keyed row for keeping the rest. */
+function dedupeByKey(rows: DisclosureRow[]): DisclosureRow[] {
+  const byKey = new Map<string, DisclosureRow>()
+  for (const row of rows) byKey.set(row.dedupe_key, row)
+  return [...byKey.values()]
+}
+
 export async function upsertDisclosures(sb: Sb, rows: DisclosureRow[]): Promise<{ error: string | null }> {
   if (!rows.length) return { error: null }
-  const r = await sb.from('contract_disclosures').upsert(rows, { onConflict: 'dedupe_key' })
+  const r = await sb.from('contract_disclosures').upsert(dedupeByKey(rows), { onConflict: 'dedupe_key' })
   return { error: r.error?.message ?? null }
 }
 
