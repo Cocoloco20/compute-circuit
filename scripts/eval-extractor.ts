@@ -110,43 +110,53 @@ async function main() {
   let fieldAgree = 0, fieldTotal = 0, countMismatches = 0
   let cheapIn = 0, cheapOut = 0, strongIn = 0, strongOut = 0
 
+  let skipped = 0
   for (const row of sample) {
-    const cik = cikCache.get(row.filer_id)
-    if (!cik) { console.log(`skip ${row.filer_id}/${row.accession}: no CIK cached`); continue }
-    const subs = await fetchCompanyFilings(cik)
-    const f = subs.filings.find(x => x.accessionNumber === row.accession)
-    if (!f) { console.log(`skip ${row.filer_id}/${row.accession}: filing not found in current submissions`); continue }
+    try {
+      const cik = cikCache.get(row.filer_id)
+      if (!cik) { console.log(`skip ${row.filer_id}/${row.accession}: no CIK cached`); continue }
+      const subs = await fetchCompanyFilings(cik)
+      const f = subs.filings.find(x => x.accessionNumber === row.accession)
+      if (!f) { console.log(`skip ${row.filer_id}/${row.accession}: filing not found in current submissions`); continue }
 
-    const docs = await fetchFilingDocuments(cik, f.accessionNumber, f.primaryDocument)
-    const ctx = { filerName: row.filer_id, form: f.form, filingDate: f.filingDate, documents: docs }
+      const docs = await fetchFilingDocuments(cik, f.accessionNumber, f.primaryDocument)
+      const ctx = { filerName: row.filer_id, form: f.form, filingDate: f.filingDate, documents: docs }
 
-    const [cheap, strong] = await Promise.all([
-      extractContracts(ctx, { provider: 'openrouter', model: CHEAP.model }),
-      extractContracts(ctx, STRONG),
-    ])
-    cheapIn += cheap.inputTokens; cheapOut += cheap.outputTokens
-    strongIn += strong.inputTokens; strongOut += strong.outputTokens
+      const [cheap, strong] = await Promise.all([
+        extractContracts(ctx, { provider: 'openrouter', model: CHEAP.model }),
+        extractContracts(ctx, STRONG),
+      ])
+      cheapIn += cheap.inputTokens; cheapOut += cheap.outputTokens
+      strongIn += strong.inputTokens; strongOut += strong.outputTokens
 
-    const { rows: diffRows, countsMatch } = diffContracts(cheap.output.contracts, strong.output.contracts)
-    if (!countsMatch) countMismatches++
-    for (const dr of diffRows) for (const fd of dr) { fieldTotal++; if (fd.agree) fieldAgree++ }
+      const { rows: diffRows, countsMatch } = diffContracts(cheap.output.contracts, strong.output.contracts)
+      if (!countsMatch) countMismatches++
+      for (const dr of diffRows) for (const fd of dr) { fieldTotal++; if (fd.agree) fieldAgree++ }
 
-    console.log(`${row.filer_id} ${row.filing_date} ${row.accession} — cheap:${cheap.output.contracts.length} strong:${strong.output.contracts.length} rows${countsMatch ? '' : ' [COUNT MISMATCH]'}`)
+      console.log(`${row.filer_id} ${row.filing_date} ${row.accession} — cheap:${cheap.output.contracts.length} strong:${strong.output.contracts.length} rows${countsMatch ? '' : ' [COUNT MISMATCH]'}`)
 
-    sections.push([
-      `### ${row.filer_id} — ${row.filing_date} — ${row.form} — \`${row.accession}\``,
-      `[Filing index](https://www.sec.gov/Archives/edgar/data/${parseInt(cik, 10)}/${row.accession.replace(/-/g, '')}/)`,
-      '',
-      `Flash found ${cheap.output.contracts.length} contract(s); Pro found ${strong.output.contracts.length}.${countsMatch ? '' : ' **Count mismatch.**'}`,
-      '',
-      '| field | Flash (cheap) | Pro (strong) | agree |',
-      '|---|---|---|---|',
-      ...diffRows.flat().map(fd => `| ${fd.field} | ${fmt(fd.cheap)} | ${fmt(fd.strong)} | ${fd.agree ? '✓' : '✗'} |`),
-      '',
-    ].join('\n'))
+      sections.push([
+        `### ${row.filer_id} — ${row.filing_date} — ${row.form} — \`${row.accession}\``,
+        `[Filing index](https://www.sec.gov/Archives/edgar/data/${parseInt(cik, 10)}/${row.accession.replace(/-/g, '')}/)`,
+        '',
+        `Flash found ${cheap.output.contracts.length} contract(s); Pro found ${strong.output.contracts.length}.${countsMatch ? '' : ' **Count mismatch.**'}`,
+        '',
+        '| field | Flash (cheap) | Pro (strong) | agree |',
+        '|---|---|---|---|',
+        ...diffRows.flat().map(fd => `| ${fd.field} | ${fmt(fd.cheap)} | ${fmt(fd.strong)} | ${fd.agree ? '✓' : '✗'} |`),
+        '',
+      ].join('\n'))
+    } catch (err) {
+      // One bad filing (an upstream timeout, a network hiccup) must not
+      // cost the whole eval run -- log it and move on, same fix already
+      // applied to the backfill script's own per-filing calls.
+      skipped++
+      console.error(`skip ${row.filer_id}/${row.accession}: ${err instanceof Error ? err.message : String(err)}`)
+    }
 
     await new Promise(r => setTimeout(r, 300))
   }
+  if (skipped) console.log(`\n${skipped} filing(s) skipped due to errors`)
 
   const pct = fieldTotal ? ((fieldAgree / fieldTotal) * 100).toFixed(1) : 'n/a'
   const cheapCost = estimateCost(CHEAP.model, cheapIn, cheapOut, 0)
