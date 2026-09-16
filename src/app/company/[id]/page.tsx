@@ -13,6 +13,7 @@ import { fetchCompany } from '@/lib/company-data'
 import type { SignalItem } from '@/lib/company-data'
 import { fetchCompanyLedger, ledgerTotals, concentrationHistory, KIND_LABEL, STATUS_LABEL, type LedgerRow } from '@/lib/contract-ledger-data'
 import { usd } from '@/lib/format'
+import { SiteNav } from '@/components/site-nav'
 
 export const dynamic = 'force-dynamic'
 
@@ -35,10 +36,7 @@ export default async function CompanyPage({ params }: { params: { id: string } }
     <main className="min-h-screen bg-[#05060a] px-4 py-6 text-[#F2F3F5] sm:px-8 sm:py-8">
       <div className="mx-auto max-w-4xl space-y-6">
 
-        <nav className="flex items-center gap-3 text-xs text-[#6B6F7A]">
-          <Link href="/contracts" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Ledger</Link>
-          <Link href="/graph" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Graph</Link>
-        </nav>
+        <SiteNav />
 
         {/* header ------------------------------------------------------- */}
         <header className="space-y-2">

@@ -10,6 +10,7 @@
 import Link from 'next/link'
 import { fetchAllLedgerRows, lastNDaysRows, KIND_LABEL, type LedgerRow } from '@/lib/contract-ledger-data'
 import { usd } from '@/lib/format'
+import { SiteNav } from '@/components/site-nav'
 
 export const dynamic = 'force-dynamic'
 export const metadata = {
@@ -49,13 +50,12 @@ export default async function WirePage() {
                 last {WINDOW_DAYS} days, newest first, with the source excerpt.
               </p>
             </div>
-            <nav className="flex items-center gap-3 text-xs text-[#6B6F7A]">
-              <a href="/wire/feed.xml" className="rounded border border-[#262A33] bg-[#13151C] px-2.5 py-1 text-[#A5A8B0] hover:border-[#3A3F4B] hover:text-[#F2F3F5]">
+            <div className="flex items-center gap-4">
+              <SiteNav current="/wire" />
+              <a href="/wire/feed.xml" className="rounded border border-[#262A33] bg-[#13151C] px-2.5 py-1 text-xs text-[#A5A8B0] hover:border-[#3A3F4B] hover:text-[#F2F3F5]">
                 RSS
               </a>
-              <Link href="/contracts" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Full ledger</Link>
-              <Link href="/" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Home</Link>
-            </nav>
+            </div>
           </div>
         </header>
 

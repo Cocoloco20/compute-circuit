@@ -62,12 +62,6 @@ export default async function LandingPage() {
             >
               Contract wire
             </Link>
-            <Link
-              href="/graph"
-              className="px-2 py-2 text-sm text-[#6B6F7A] hover:text-[#A5A8B0]"
-            >
-              Explore the supply-chain graph →
-            </Link>
           </div>
         </header>
 

@@ -13,6 +13,32 @@ in Supabase. If an item is blocked, write why under it and move on.
 
 ## Now
 
+- [x] Archive the /graph economy-map, its ~22 nightly cron jobs, and its
+      client components (world-map, compute-graph, entity-drawer,
+      command-palette, glossary-view, supply-chain-strip); add one
+      consistent SiteNav (Home / Ledger / Wire) across every remaining page.
+      Done 2026-09-16. Found live testing the site: the graph's 14,844
+      companies, 216 flows and "bottlenecks" were a one-time batch insert
+      from 2026-05-24, never refreshed, with no citation on any claim --
+      the opposite of the ledger's own standard (every row quotes its
+      SEC excerpt). It didn't share a data model, a pipeline, or a
+      sourcing bar with Offtake; keeping it reachable read as verified
+      research when it wasn't. Tagged `graph-archive-final` before
+      deleting so nothing is unrecoverable. Tables and their data were
+      kept (never delete data) -- only the routes, the daily dispatcher's
+      ~22 graph-only sub-cron entries, the `digest` cron, and now-orphaned
+      lib modules (graph-data, context-graph, world-outline, capex,
+      signal-priority, geo, email, digest, and the per-source fetchers:
+      arxiv, btc, company-brief, eia(-catalog), github, google-trends,
+      gpu-hyperscaler/spot, hf, jobs, leaderboard, market, news, social,
+      uspto, wikipedia, yc, youtube-transcripts, cron-window) came out.
+      `daily` now dispatches only `logo-maintenance` and `contracts` --
+      Offtake's own two jobs. Also fixed while auditing the ledger UI
+      itself: `/contracts`' customer-concentration cards showed a
+      provider as its own "top customer" (a self-dealing row never
+      excluded from `reduceConcentration`) -- same bug class
+      `splitLedgerByRole` already guarded against on company pages,
+      now fixed there too.
 - [ ] Backfill the ledger from 2024-01-01 across all 34 filers in
       `src/lib/contracts/universe.ts` (`npx tsx scripts/backfill-contracts.ts`,
       dry run first). Report rows, cost, and any filings that errored.

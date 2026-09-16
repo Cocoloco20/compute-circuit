@@ -5,17 +5,12 @@
  * Each case here encodes a bug that actually shipped and got fixed; if one
  * fails, you are about to re-ship a known regression:
  *
- *   - rotatingWindow coverage hole (fixed-slot wrap duplicated window 0)
  *   - pickEarningsExhibit anchored-regex bug (Mag5 8-K cover pages scored
  *     as zero-mention press releases for weeks)
  *   - extractTranscriptSignal vendor-term lexicon (Mag5 counts 5-10x low)
- *   - computeCapexTTM YTD-cumulative semantics
  */
-import { rotatingWindow } from '../src/lib/cron-window'
 import { pickEarningsExhibit } from '../src/lib/edgar'
 import { extractTranscriptSignal, stripHtml, totalMentions } from '../src/lib/transcripts'
-import { computeCapexTTM } from '../src/lib/capex'
-import type { Fundamental } from '../src/types/db'
 import { isPrivateAddr } from '../src/lib/ssrf-guard'
 import { startBudget } from '../src/lib/cron-budget'
 import { sampleRows, resolveId, formatReviewCard, wrap, type ReviewableRow } from '../src/lib/contracts/review'
@@ -70,26 +65,6 @@ console.log('cron-budget')
   check('remaining never goes negative', b.remaining() === 0 && b.elapsed() === 8_999)
 }
 
-// ---------- rotatingWindow ----------
-console.log('cron-window')
-{
-  const items = Array.from({ length: 363 }, (_, i) => ({ id: `co${String(i).padStart(3, '0')}` }))
-  let allCovered = true
-  for (const phase of [0, 1, 2, 3, 7, 100, 9999]) {
-    const seen = new Set<string>()
-    for (let d = phase; d < phase + Math.ceil(363 / 120); d++) {
-      rotatingWindow(items, 120, new Date(d * 86_400_000)).forEach(x => seen.add(x.id))
-    }
-    if (seen.size !== 363) allCovered = false
-  }
-  check('any ⌈N/size⌉ consecutive days cover every item', allCovered)
-  check('window size is exact', rotatingWindow(items, 120, new Date(0)).length === 120)
-  check('small sets pass through whole', rotatingWindow([{ id: 'a' }, { id: 'b' }], 120).length === 2)
-  const w1 = rotatingWindow(items, 120, new Date(5 * 86_400_000))
-  const w2 = rotatingWindow([...items].reverse(), 120, new Date(5 * 86_400_000))
-  check('window is stable regardless of input order', JSON.stringify(w1) === JSON.stringify(w2))
-}
-
 // ---------- pickEarningsExhibit ----------
 console.log('edgar.pickEarningsExhibit')
 {
@@ -131,28 +106,6 @@ console.log('transcripts')
   const xbrlCover = '8-K 0000789019 false 0000789019 msft:NotesThreePointOneTwoFivePercent 2026-04-29'
   check('XBRL cover page scores zero', totalMentions(extractTranscriptSignal(xbrlCover)) === 0)
   check('stripHtml removes script/style', stripHtml('<style>p{}</style><p>AI &amp; GPUs</p><script>x()</script>') === 'AI & GPUs')
-}
-
-// ---------- computeCapexTTM ----------
-console.log('capex')
-{
-  // SEC XBRL capex is YTD-cumulative within each fiscal year:
-  // FY2025 (ends 12-31) = 40B. Q1-2026 YTD = 12B; Q1-2025 YTD was 8B.
-  // TTM at Q1-2026 = FY25 + Q1'26 − Q1'25 = 44B.
-  const now = new Date()
-  const y = now.getUTCFullYear()
-  const rows = [
-    { company_id: 'x', period: `${y - 1}-12-31`, period_type: 'FY', metric: 'capex', value: 40e9 },
-    { company_id: 'x', period: `${y}-03-31`, period_type: 'Q', metric: 'capex', value: 12e9 },
-    { company_id: 'x', period: `${y - 1}-03-31`, period_type: 'Q', metric: 'capex', value: 8e9 },
-    { company_id: 'x', period: `${y - 2}-12-31`, period_type: 'FY', metric: 'capex', value: 30e9 },
-  ] as Fundamental[]
-  const r = computeCapexTTM(rows, 'x')
-  check('TTM = FY + newest-YTD − year-ago-YTD', r.ttm === 44e9, `got ${r.ttm}`)
-  check('YoY vs prior FY', r.yoy_pct !== null && Math.abs(r.yoy_pct - (44 - 30) / 30 * 100) < 0.01, `got ${r.yoy_pct}`)
-  check('empty input → nulls', computeCapexTTM([], 'x').ttm === null)
-  const stale = [{ company_id: 'x', period: '2020-12-31', period_type: 'FY', metric: 'capex', value: 1e9 }] as Fundamental[]
-  check('stale data (>18mo) → nulls', computeCapexTTM(stale, 'x').ttm === null)
 }
 
 // ---------- contracts/review ----------

@@ -13,6 +13,7 @@ import {
   ledgerTotals, KIND_LABEL, STATUS_LABEL, type LedgerRow,
 } from '@/lib/contract-ledger-data'
 import { usd } from '@/lib/format'
+import { SiteNav } from '@/components/site-nav'
 
 export const dynamic = 'force-dynamic'
 export const metadata = {
@@ -70,12 +71,12 @@ export default async function ContractsPage({ searchParams }: { searchParams: SP
               Nothing is estimated.
             </p>
           </div>
-          <nav className="flex items-center gap-3 text-xs text-[#6B6F7A]">
-            <Link href="/graph" className="underline-offset-2 hover:text-[#A5A8B0] hover:underline">Graph</Link>
-            <a href={`/api/contracts/export${qs ? `?${qs}` : ''}`} className="rounded border border-[#262A33] bg-[#13151C] px-2.5 py-1 text-[#A5A8B0] hover:border-[#3A3F4B] hover:text-[#F2F3F5]">
+          <div className="flex items-center gap-4">
+            <SiteNav current="/contracts" />
+            <a href={`/api/contracts/export${qs ? `?${qs}` : ''}`} className="rounded border border-[#262A33] bg-[#13151C] px-2.5 py-1 text-xs text-[#A5A8B0] hover:border-[#3A3F4B] hover:text-[#F2F3F5]">
               Export CSV
             </a>
-          </nav>
+          </div>
         </header>
 
         {error && (

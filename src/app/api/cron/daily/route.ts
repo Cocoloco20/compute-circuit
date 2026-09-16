@@ -4,32 +4,21 @@ import { NextRequest, NextResponse } from 'next/server'
 /**
  * Single daily cron dispatcher.
  *
- * Vercel Hobby plan caps cron jobs at 2 — to fit all trackers under one
- * entry, this route fires daily and decides what to invoke based on the
- * current UTC date (13F on Sundays, portfolio scraper on the 1st).
+ * Down to two jobs since the /graph economy-map archive (2026-09-16):
+ * logo-maintenance (shared with Offtake's own company pages) and contracts
+ * (the ledger's own incremental backfill). Everything else this dispatcher
+ * used to fan out to (prices, 8k-tracker, transcripts, news, insider,
+ * form-d, hf-activity, github, eia, patents, jobs, btc, gpu-spot,
+ * leaderboard, social, interest, arxiv, yc-directory, briefs, fundamentals,
+ * 13f-tracker, portfolio-scraper, digest) fed that page and nothing else --
+ * see the archive commit for why it came down.
  *
- * LAUNCH MODEL — parallel, not serial. Each sub-route is its own Vercel
- * invocation with its own 60s budget; once its request is accepted it runs
- * to completion regardless of what happens to this dispatcher. The old
- * serial `await` chain broke after Phase 7B: with 18 sub-crons where prices
- * alone takes ~40s and news ~30s, the dispatcher hit its own 60s cap
- * mid-sequence and every cron after the cutoff (social, gpu-spot,
- * logo-maintenance, digest, …) silently never fired.
- *
- * Now all sub-crons launch at t=0 and we wait up to DISPATCH_BUDGET_MS for
- * results purely for REPORTING — tasks still running at the deadline are
- * reported as 'started' and finish on their own.
- *
- * Trade-offs accepted with the parallel model:
- *   - logo-maintenance no longer runs strictly after form-d/portfolio-scraper,
- *     so a co inserted tonight gets its logo tomorrow night. It's idempotent
- *     and bounded, so this only costs one day of monogram fallback.
- *   - digest fires alongside the data crons instead of after them, so it
- *     reflects yesterday's data. The dedicated 12:00 UTC digest cron (14h
- *     after this 22:00 UTC run) is the fresh-data send.
- *   - SEC-walking crons (8k, insider, transcripts, form-d) overlap. Each
- *     paces itself to ~3-7 req/s and they egress from separate lambdas, so
- *     aggregate load on sec.gov stays within tolerance.
+ * LAUNCH MODEL — parallel, not serial, kept from the multi-cron era: each
+ * sub-route is its own Vercel invocation with its own 60s budget; once its
+ * request is accepted it runs to completion regardless of what happens to
+ * this dispatcher. We wait up to DISPATCH_BUDGET_MS for results purely for
+ * REPORTING — a task still running at the deadline is reported as
+ * 'started' and finishes on its own.
  *
  * Each sub-route remains independently callable via curl with CRON_SECRET.
  */
@@ -87,40 +76,19 @@ export async function GET(req: NextRequest) {
     }
   }
 
+  // Everything the old /graph economy-map (prices, 8k-tracker, transcripts,
+  // news, insider, form-d, hf-activity, github, eia, patents, jobs, btc,
+  // gpu-spot, leaderboard, social, interest, arxiv, yc-directory, briefs,
+  // fundamentals, 13f-tracker, portfolio-scraper, digest) fed was archived
+  // 2026-09-16 -- unsourced, 14,844-company snapshot with no citation
+  // trail, dropped once and never verified again. Offtake's own two jobs
+  // are what's left: company logos (shared with the ledger's company
+  // pages) and the ledger's own incremental cron.
   const tasks: Array<{ task: string; path: string }> = [
-    { task: 'prices', path: '/api/cron/prices' },
-    { task: '8k-tracker', path: '/api/cron/8k-tracker' },
-    { task: 'transcripts', path: '/api/cron/transcripts' },
-    { task: 'news', path: '/api/cron/news' },
-    { task: 'insider', path: '/api/cron/insider' },
-    { task: 'form-d', path: '/api/cron/form-d' },
-    { task: 'hf-activity', path: '/api/cron/hf-activity' },
-    { task: 'github', path: '/api/cron/github' },
-    { task: 'eia', path: '/api/cron/eia' },
-    { task: 'patents', path: '/api/cron/patents' },
-    { task: 'jobs', path: '/api/cron/jobs' },
-    { task: 'btc', path: '/api/cron/btc' },
-    { task: 'gpu-spot', path: '/api/cron/gpu-spot' },
-    { task: 'leaderboard', path: '/api/cron/leaderboard' },
-    { task: 'social', path: '/api/cron/social' },
-    { task: 'interest', path: '/api/cron/interest' },
-    { task: 'arxiv', path: '/api/cron/arxiv' },
-    { task: 'yc-directory', path: '/api/cron/yc-directory' },
-    { task: 'briefs', path: '/api/cron/briefs' },
-    // Daily over a rotating 120-co window since Phase 7B (was Tuesdays-only
-    // over the full set, which now blows the sub-cron's own 60s budget).
-    { task: 'fundamentals', path: '/api/cron/fundamentals' },
-    // Bounded + idempotent; see header for why it no longer waits on form-d.
     { task: 'logo-maintenance', path: '/api/cron/logo-maintenance' },
     // Contract ledger: last 10 days of provider filings, budgeted.
     { task: 'contracts', path: '/api/cron/contracts' },
   ]
-  // Weekly: 13F holdings (Sundays). Monthly: VC portfolio scraper (1st).
-  if (day === 0) tasks.push({ task: '13f-tracker', path: '/api/cron/13f-tracker' })
-  if (date === 1) tasks.push({ task: 'portfolio-scraper', path: '/api/cron/portfolio-scraper' })
-  // Digest only when Resend is configured — the dedicated 12:00 UTC cron is
-  // the primary send; this nightly copy is best-effort.
-  if (process.env.RESEND_API_KEY) tasks.push({ task: 'digest', path: '/api/cron/digest' })
 
   // Launch everything NOW. Each fetch hits an independent lambda that runs
   // to completion on its own; we only race the deadline for reporting.
