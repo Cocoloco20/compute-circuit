@@ -82,7 +82,7 @@ interface Totals { rows: number; inTok: number; outTok: number; cacheTok: number
 async function extractOne(sb: Sb, filerName: string, item: QueuedExtraction, totals: Totals): Promise<void> {
   const { hostId, cik, accession, form, filingDate, docs, text, label } = item
   try {
-    const res = await extractContractsWithRetry({ filerName, form, filingDate, documents: docs })
+    const res = await extractContractsWithRetry({ filerName, form, filingDate, documents: docs }, { timeoutMs: 480_000 })
     totals.inTok += res.inputTokens; totals.outTok += res.outputTokens; totals.cacheTok += res.cacheReadTokens
     const sourceUrl = docs[0]?.url ?? `https://www.sec.gov/Archives/edgar/data/${parseInt(cik, 10)}/${accession.replace(/-/g, '')}/`
     const rows = res.output.contracts.filter(hasQuantityInfo).map(c => shapeRow(c, { filerId: hostId, form, accession, filingDate, sourceUrl, extractor: res.model }))

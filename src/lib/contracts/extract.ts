@@ -110,7 +110,7 @@ export function buildUserMessage(ctx: FilingContext): string {
 
 export async function extractContracts(
   ctx: FilingContext,
-  override?: { provider?: 'openrouter' | 'anthropic'; model?: string },
+  override?: { provider?: 'openrouter' | 'anthropic'; model?: string; timeoutMs?: number },
   maxTokens = 16000,
 ): Promise<ExtractionResult> {
   const r = await structured({
@@ -120,6 +120,7 @@ export async function extractContracts(
     schemaName: 'contract_disclosures',
     maxTokens,
     override,
+    timeoutMs: override?.timeoutMs,
   })
   return {
     output: r.parsed ?? { contracts: [], notes: r.failure },
@@ -154,7 +155,7 @@ export async function extractContracts(
  */
 export async function extractContractsWithRetry(
   ctx: FilingContext,
-  override?: { provider?: 'openrouter' | 'anthropic'; model?: string },
+  override?: { provider?: 'openrouter' | 'anthropic'; model?: string; timeoutMs?: number },
 ): Promise<ExtractionResult & { retried: boolean }> {
   const first = await extractContracts(ctx, override)
   if (first.output.contracts.length > 0 || first.refused) return { ...first, retried: false }

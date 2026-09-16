@@ -69,6 +69,13 @@ export interface StructuredRequest<S extends z.ZodType> {
    * gets the environment's configured default.
    */
   override?: { provider?: Provider; model?: string }
+  /**
+   * OpenRouter request timeout in ms (default 240s). The nightly cron runs
+   * inside a Vercel function with its own wall-clock budget and must keep
+   * the default; a local script with no such limit can raise it to ride out
+   * upstream latency instead of aborting and burning the filing on a retry.
+   */
+  timeoutMs?: number
 }
 
 export interface StructuredResult<T> {
@@ -116,7 +123,7 @@ async function viaOpenRouter<S extends z.ZodType>(req: StructuredRequest<S>, mod
     try {
       r = await fetch(OPENROUTER_URL, {
         method: 'POST',
-        signal: upstreamSignal(240_000),
+        signal: upstreamSignal(req.timeoutMs ?? 240_000),
         headers: {
           Authorization: `Bearer ${key}`,
           'Content-Type': 'application/json',
