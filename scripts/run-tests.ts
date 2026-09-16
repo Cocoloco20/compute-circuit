@@ -205,6 +205,10 @@ console.log('contracts/extract.looksLikeCryptoMining')
   check('EH/s hashrate unit → flagged', looksLikeCryptoMining(mkContract({ excerpt: 'adding 5.2 EH/s of hashrate' })))
   check('kind=equipment_purchase does not exempt a crypto excerpt', looksLikeCryptoMining(mkContract({ kind: 'equipment_purchase', excerpt: 'Bitmain Antminer purchase agreement' })))
   check('unrelated equipment purchase → not flagged', !looksLikeCryptoMining(mkContract({ kind: 'equipment_purchase', excerpt: 'purchase of NVIDIA GB300 NVL72 servers' })))
+  // Real leak found by the 102-row review pass (2026-09-16): "digital asset
+  // mining" is a euphemism for bitcoin mining that slipped past every
+  // existing marker.
+  check('"digital asset mining" euphemism → flagged', looksLikeCryptoMining(mkContract({ excerpt: 'development of a 100 megawatt digital asset mining operation' })))
 }
 
 // ---------- contracts/ledger.shapeRow & dedupeByKey ----------

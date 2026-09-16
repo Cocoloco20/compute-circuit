@@ -77,6 +77,7 @@ const CRYPTO_MINING_MARKERS = [
   /\bbitmain\b/i, /\bantminer\b/i, /\bmicrobt\b/i, /\bwhatsminer\b/i,
   /\bcanaan\b/i, /\bavalon\s*miner/i, /\bblockware\b/i,
   /\bbitcoin mining\b/i, /\bcrypto(?:currency)? mining\b/i,
+  /\bdigital asset mining\b/i,
   /\bASIC miners?\b/i, /\bmining fleet\b/i, /\bhashrate\b/i,
   /\b\d+(?:\.\d+)?\s*EH\/s\b/i,
 ]
