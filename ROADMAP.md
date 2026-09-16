@@ -96,6 +96,20 @@ in Supabase. If an item is blocked, write why under it and move on.
       and the nightly cron. Also noted: `customer_disclosed` disagreed on
       both sides inconsistently — a candidate to derive from `customer_name
       != null` in code rather than ask the model, left for `Next`.
+      Reran 2026-09-16 at n=60 (up from 14) now that the backfill covers
+      more filers. Fixed a real bug found running it: an unhandled error
+      in one filing crashed the whole eval before it could write a report
+      -- same class of bug as the backfill's own earlier fix, just never
+      applied here. Result: 46.9% raw field agreement, worse-looking than
+      the earlier run -- but the worst mismatch (crwv 2025-10-02, Flash 0
+      vs. Pro 3 contracts) turned out to be an artifact of the eval script
+      itself, not a real gap: it calls the model once with no retry, so it
+      re-exposes the exact non-determinism `extractContractsWithRetry`
+      already fixes in production. Checked `contract_filing_scans` for
+      that accession -- the live backfill (which does retry) actually
+      got all 3, matching Pro. Verdict stands: **keep Flash as default.**
+      Next eval run should call the retry-wrapped path so the number
+      reflects what actually reaches the ledger.
 - [x] Archive the VC terminal: tag `vc-terminal-final`, then remove
       `/terminal`, `/screen`, `/pipeline`, `/decisions`, `/fund`, their API
       routes and lib modules, and the terminal components. Keep the tables.
