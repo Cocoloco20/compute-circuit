@@ -154,12 +154,20 @@ export interface ProviderConcentration {
 /** One provider's book, reduced to its per-customer breakdown and totals.
  *  Shared by concentrationByProvider (the current book) and
  *  concentrationHistory (the book as of each past filing date) so the two
- *  can never disagree on what "concentration" means. */
-function reduceConcentration(providerRows: LedgerRow[]): Omit<ProviderConcentration, 'providerId' | 'provider'> {
+ *  can never disagree on what "concentration" means.
+ *
+ *  providerKey excludes self-dealing rows (a provider disclosed as its own
+ *  customer, e.g. an internal restructuring between subsidiaries that
+ *  resolve to the same company) -- otherwise a provider shows up as its
+ *  own "top customer," which is meaningless for the credit-risk question
+ *  this view exists to answer. Same class of fix as splitLedgerByRole's
+ *  self-dealing dedup, applied to this aggregation instead. */
+function reduceConcentration(providerRows: LedgerRow[], providerKey: string): Omit<ProviderConcentration, 'providerId' | 'provider'> {
   const byCust = new Map<string, ConcentrationRow>()
   let valueUsd = 0, mw = 0
   for (const r of providerRows) {
     const ck = r.customer_id ?? (r.customer_disclosed && r.customer_name ? `name:${r.customer_name}` : 'undisclosed')
+    if (ck === providerKey) continue
     const cur = byCust.get(ck) ?? { customer: r.customer_disclosed ? (r.customer_name ?? 'Unnamed') : 'Undisclosed', customerId: r.customer_id, valueUsd: 0, mw: 0, contracts: 0, shareOfValue: null, shareOfMw: null }
     cur.contracts++
     cur.valueUsd += r.total_value_usd ?? 0
@@ -195,8 +203,8 @@ export function concentrationByProvider(rows: LedgerRow[]): ProviderConcentratio
     byProv.set(key, [...(byProv.get(key) ?? []), r])
   }
   const out: ProviderConcentration[] = []
-  for (const [, prs] of byProv) {
-    out.push({ providerId: prs[0].provider_id, provider: prs[0].provider_name, ...reduceConcentration(prs) })
+  for (const [key, prs] of byProv) {
+    out.push({ providerId: prs[0].provider_id, provider: prs[0].provider_name, ...reduceConcentration(prs, key) })
   }
   return out.sort((a, b) => (b.valueUsd - a.valueUsd) || (b.mw - a.mw) || (b.contracts - a.contracts))
 }
@@ -225,9 +233,11 @@ export function concentrationHistory(providerRows: LedgerRow[]): ConcentrationSn
     .filter(r => r.status !== 'terminated')
     .sort((a, b) => a.filing_date.localeCompare(b.filing_date))
   const dates = [...new Set(sorted.map(r => r.filing_date))]
+  const first = sorted[0]
+  const providerKey = first ? (first.provider_id ?? `name:${first.provider_name}`) : ''
   return dates.map(asOfDate => {
     const upTo = sorted.filter(r => r.filing_date <= asOfDate)
-    const c = reduceConcentration(upTo)
+    const c = reduceConcentration(upTo, providerKey)
     const top = c.customers[0]
     return {
       asOfDate,

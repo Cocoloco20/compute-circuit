@@ -391,6 +391,19 @@ console.log('contract-ledger-data.concentrationHistory')
 
   const outOfOrder = [rows[1], rows[0]]
   check('input order does not matter — sorted internally', concentrationHistory(outOfOrder).map(s => s.asOfDate).join() === '2026-01-01,2026-06-01')
+
+  // A provider disclosed as its own customer (e.g. an internal
+  // restructuring between subsidiaries resolving to the same company)
+  // must never show up as its own "top customer" -- meaningless for the
+  // credit-risk question this view answers. Real bug found live: TeraWulf
+  // appeared as its own top customer on /contracts.
+  const selfDealing = [
+    mk({ filing_date: '2026-01-01', customer_id: 'crwv', customer_name: 'CoreWeave', customer_disclosed: true, total_value_usd: 999e9 }),
+    mk({ filing_date: '2026-02-01', customer_id: 'openai', customer_name: 'OpenAI', customer_disclosed: true, total_value_usd: 1e9 }),
+  ]
+  const selfHist = concentrationHistory(selfDealing)
+  check('self-dealing row excluded from concentration entirely', selfHist[selfHist.length - 1].topCustomer === 'OpenAI')
+  check('self-dealing row does not inflate valueUsd', selfHist[selfHist.length - 1].valueUsd === 1e9)
 }
 
 console.log(`\n${passed} passed, ${failed} failed`)
