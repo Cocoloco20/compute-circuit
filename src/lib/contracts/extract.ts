@@ -62,6 +62,29 @@ export function hasQuantityInfo(c: ExtractedContract): boolean {
   ].some(v => v != null)
 }
 
+/**
+ * Deterministic backstop for the crypto-mining scope exclusion in
+ * SYSTEM_PROMPT. A 252-row manual review pass (2026-09-16) found the model
+ * does not reliably self-police this: ASIC-miner purchases and bitcoin-
+ * hosting deals leaked through tagged as equipment_purchase, power_supply,
+ * hosting_services, colocation_lease, financing, and other -- every kind,
+ * not just "other" (which got its own prompt fix earlier and still wasn't
+ * enough). Rather than trust the model's judgment alone, reject any row
+ * whose own excerpt or party names carry an unambiguous bitcoin-mining
+ * marker, regardless of what kind it was tagged.
+ */
+const CRYPTO_MINING_MARKERS = [
+  /\bbitmain\b/i, /\bantminer\b/i, /\bmicrobt\b/i, /\bwhatsminer\b/i,
+  /\bcanaan\b/i, /\bavalon\s*miner/i, /\bblockware\b/i,
+  /\bbitcoin mining\b/i, /\bcrypto(?:currency)? mining\b/i,
+  /\bASIC miners?\b/i, /\bmining fleet\b/i, /\bhashrate\b/i,
+  /\b\d+(?:\.\d+)?\s*EH\/s\b/i,
+]
+export function looksLikeCryptoMining(c: ExtractedContract): boolean {
+  const text = [c.excerpt, c.provider_name, c.customer_name, c.site].filter(Boolean).join(' ')
+  return CRYPTO_MINING_MARKERS.some(re => re.test(text))
+}
+
 const OutputSchema = z.object({
   contracts: z.array(ExtractedContractSchema),
   notes: z.string().nullable().describe('Anything a reviewer should know: ambiguity, figures that were stated in a non-USD currency, etc.'),

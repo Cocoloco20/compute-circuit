@@ -20,7 +20,7 @@ import { isPrivateAddr } from '../src/lib/ssrf-guard'
 import { startBudget } from '../src/lib/cron-budget'
 import { sampleRows, resolveId, formatReviewCard, wrap, type ReviewableRow } from '../src/lib/contracts/review'
 import { splitLedgerByRole, lastNDaysRows, concentrationHistory, type LedgerRow } from '../src/lib/contract-ledger-data'
-import { hasQuantityInfo, type ExtractedContract } from '../src/lib/contracts/extract'
+import { hasQuantityInfo, looksLikeCryptoMining, type ExtractedContract } from '../src/lib/contracts/extract'
 import { shapeRow, dedupeByKey, type DisclosureRow } from '../src/lib/contracts/ledger'
 import { formatAlertMessage } from '../src/lib/contracts/alerts'
 import { clientIp, hourWindow } from '../src/lib/rate-limit'
@@ -225,6 +225,33 @@ console.log('contracts/extract.hasQuantityInfo')
   check('capacity_mw alone → kept', hasQuantityInfo(mkContract({ capacity_mw: 250 })))
   check('total_value_usd alone → kept', hasQuantityInfo(mkContract({ total_value_usd: 1e9 })))
   check('gpu_count alone → kept', hasQuantityInfo(mkContract({ gpu_count: 1000 })))
+}
+
+// ---------- contracts/extract.looksLikeCryptoMining ----------
+// Backstop for the crypto-mining scope exclusion: a 252-row manual review
+// found ASIC-miner and bitcoin-hosting content leaking through tagged as
+// equipment_purchase, power_supply, hosting_services, colocation_lease,
+// financing and other -- every kind, not just the "other" loophole fixed
+// earlier. This filter rejects on the excerpt/party text itself, so it
+// catches a leak regardless of what kind the model assigned.
+console.log('contracts/extract.looksLikeCryptoMining')
+{
+  const mkContract = (overrides: Partial<ExtractedContract> = {}): ExtractedContract => ({
+    provider_name: 'CoreWeave', customer_name: 'OpenAI', guarantor_name: null,
+    kind: 'gpu_cloud_capacity', site: null, capacity_mw: null, gpu_count: null, gpu_model: null,
+    term_months: null, start_date: null, end_date: null, total_value_usd: null, annual_value_usd: null,
+    prepayment_usd: null, has_extension_option: null, extension_note: null, escalator_pct: null,
+    status: 'definitive', excerpt: 'a five-year agreement', confidence: 0.9, ...overrides,
+  })
+  check('AI/HPC contract → not flagged', !looksLikeCryptoMining(mkContract()))
+  check('Bitmain in excerpt → flagged', looksLikeCryptoMining(mkContract({ excerpt: '27,000 Bitmain S19J XP miners' })))
+  check('Antminer in excerpt → flagged', looksLikeCryptoMining(mkContract({ excerpt: 'purchase of Antminer units' })))
+  check('MicroBT provider name → flagged', looksLikeCryptoMining(mkContract({ provider_name: 'MicroBT' })))
+  check('Blockware customer name → flagged', looksLikeCryptoMining(mkContract({ customer_name: 'Blockware Solutions' })))
+  check('"bitcoin mining" phrase → flagged', looksLikeCryptoMining(mkContract({ excerpt: 'expand its bitcoin mining fleet' })))
+  check('EH/s hashrate unit → flagged', looksLikeCryptoMining(mkContract({ excerpt: 'adding 5.2 EH/s of hashrate' })))
+  check('kind=equipment_purchase does not exempt a crypto excerpt', looksLikeCryptoMining(mkContract({ kind: 'equipment_purchase', excerpt: 'Bitmain Antminer purchase agreement' })))
+  check('unrelated equipment purchase → not flagged', !looksLikeCryptoMining(mkContract({ kind: 'equipment_purchase', excerpt: 'purchase of NVIDIA GB300 NVL72 servers' })))
 }
 
 // ---------- contracts/ledger.shapeRow & dedupeByKey ----------

@@ -4,7 +4,7 @@ import { startBudget } from '@/lib/cron-budget'
 import { fetchCompanyFilings } from '@/lib/edgar'
 import { PROVIDER_IDS } from '@/lib/contracts/universe'
 import { isCandidateFiling, fetchFilingDocuments, prefilter } from '@/lib/contracts/filings'
-import { extractContractsWithRetry, EXTRACTOR_MODEL, hasQuantityInfo } from '@/lib/contracts/extract'
+import { extractContractsWithRetry, EXTRACTOR_MODEL, hasQuantityInfo, looksLikeCryptoMining } from '@/lib/contracts/extract'
 import { shapeRow, upsertDisclosures, logScan, scannedAccessions, type DisclosureRow } from '@/lib/contracts/ledger'
 import { providerConfigured, resolveProvider } from '@/lib/llm/structured'
 import { postContractAlert } from '@/lib/contracts/alerts'
@@ -84,7 +84,7 @@ export async function GET(req: NextRequest) {
       try {
         const res = await extractContractsWithRetry({ filerName: co.name, form: f.form, filingDate: f.filingDate, documents: docs })
         const sourceUrl = docs[0]?.url ?? `https://www.sec.gov/Archives/edgar/data/${parseInt(co.cik, 10)}/${f.accessionNumber.replace(/-/g, '')}/`
-        const shaped = res.output.contracts.filter(hasQuantityInfo).map(c => shapeRow(c, { filerId: hostId, form: f.form, accession: f.accessionNumber, filingDate: f.filingDate, sourceUrl, extractor: res.model }))
+        const shaped = res.output.contracts.filter(c => hasQuantityInfo(c) && !looksLikeCryptoMining(c)).map(c => shapeRow(c, { filerId: hostId, form: f.form, accession: f.accessionNumber, filingDate: f.filingDate, sourceUrl, extractor: res.model }))
         const up = await upsertDisclosures(sb, shaped)
         if (up.error) throw new Error(up.error)
         rows += shaped.length

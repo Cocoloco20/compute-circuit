@@ -37,7 +37,7 @@ import { createClient } from '@supabase/supabase-js'
 import { fetchCompanyFilings } from '../src/lib/edgar'
 import { PROVIDER_IDS } from '../src/lib/contracts/universe'
 import { isCandidateFiling, fetchFilingDocuments, prefilter, type FilingDocument } from '../src/lib/contracts/filings'
-import { extractContractsWithRetry, EXTRACTOR_MODEL, hasQuantityInfo } from '../src/lib/contracts/extract'
+import { extractContractsWithRetry, EXTRACTOR_MODEL, hasQuantityInfo, looksLikeCryptoMining } from '../src/lib/contracts/extract'
 import { estimateCost, providerConfigured, resolveProvider } from '../src/lib/llm/structured'
 import { shapeRow, upsertDisclosures, logScan, scannedAccessions, type Sb } from '../src/lib/contracts/ledger'
 
@@ -85,7 +85,7 @@ async function extractOne(sb: Sb, filerName: string, item: QueuedExtraction, tot
     const res = await extractContractsWithRetry({ filerName, form, filingDate, documents: docs }, { timeoutMs: 480_000 })
     totals.inTok += res.inputTokens; totals.outTok += res.outputTokens; totals.cacheTok += res.cacheReadTokens
     const sourceUrl = docs[0]?.url ?? `https://www.sec.gov/Archives/edgar/data/${parseInt(cik, 10)}/${accession.replace(/-/g, '')}/`
-    const rows = res.output.contracts.filter(hasQuantityInfo).map(c => shapeRow(c, { filerId: hostId, form, accession, filingDate, sourceUrl, extractor: res.model }))
+    const rows = res.output.contracts.filter(c => hasQuantityInfo(c) && !looksLikeCryptoMining(c)).map(c => shapeRow(c, { filerId: hostId, form, accession, filingDate, sourceUrl, extractor: res.model }))
     const up = await upsertDisclosures(sb, rows)
     if (up.error) throw new Error(up.error)
     totals.rows += rows.length
