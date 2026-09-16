@@ -39,6 +39,35 @@ in Supabase. If an item is blocked, write why under it and move on.
       excluded from `reduceConcentration`) -- same bug class
       `splitLedgerByRole` already guarded against on company pages,
       now fixed there too.
+- [x] The wrong-number playbook: what happens the day a customer catches a
+      wrong figure in the ledger. Decide before it happens, not after.
+      Done 2026-09-16: there was no way for anyone outside this repo to
+      flag a bad row -- closed that first. Every excerpt block on
+      `/contracts` and `/company/[id]` now has a "Report an issue with
+      this row" mailto link, pre-filled with the row id and accession so
+      triage doesn't start from scratch. The correction process itself
+      stays deliberately manual for now (337 rows, no volume yet): a
+      report gets the excerpt re-checked against the source URL, the row
+      corrected via `scripts/review-contracts.ts` if wrong, and set back
+      to `auto` (not silently left `verified`) so it re-enters the
+      standing review queue. No public changelog yet -- worth adding once
+      an actual correction happens and this stops being hypothetical.
+- [x] Resolve the free-vs-paid conflict: the public API is licensed
+      CC-BY-4.0 (free, attribution only) while this file's own "Later"
+      section has a paid tier. Both can't be true forever.
+      Decided 2026-09-16, no code change: **don't build the paywall yet.**
+      Checked freemium-API practice first -- the standard failure mode is
+      restricting before the free tier has proven anyone wants the paid
+      tier's answer to a real problem, which is exactly our situation
+      (zero paying customers, zero confirmed demand as of tonight). The
+      real risk isn't indecision, it's sequencing: if a live/paid tier
+      ever ships, it must never retroactively lag or paywall something
+      early adopters already had free -- that's how you turn a first
+      customer into a public complaint. So: keep the API fully free and
+      live during discovery. If real demand shows up, the paid tier is
+      "new live access above what's already public," not "we took away
+      what you had." Revisit only after actual customer signal, not on a
+      timer.
 - [ ] Backfill the ledger from 2024-01-01 across all 34 filers in
       `src/lib/contracts/universe.ts` (`npx tsx scripts/backfill-contracts.ts`,
       dry run first). Report rows, cost, and any filings that errored.
@@ -218,5 +247,8 @@ in Supabase. If an item is blocked, write why under it and move on.
       pulls Exhibit 99 text): contract mentions that never got their own 8-K.
 - [ ] Non-US filers via SEDAR (Canada) and ASX (Australia) for Bitfarms, HIVE,
       IREN's home-market disclosures.
-- [ ] Pricing page and a paid tier: CSV/API for free with a 30-day lag, live
-      access paid.
+- [ ] Pricing page and a paid tier. Explicitly gated on real customer
+      signal (see the resolved "free-vs-paid conflict" item in Now) --
+      not scheduled, don't build it on a timer. When it happens: new live
+      access on top of what's already free, never a retroactive lag on
+      what early adopters already had.

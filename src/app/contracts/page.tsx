@@ -255,6 +255,12 @@ function Row({ r }: { r: LedgerRow }) {
               <blockquote className="mt-1 max-w-4xl border-l-2 border-[#262A33] pl-3 text-[11px] leading-relaxed text-[#A5A8B0]">{r.excerpt}</blockquote>
               {r.extension_note && <p className="mt-1 text-[11px] text-[#6B6F7A]">Extension: {r.extension_note}</p>}
               {r.source_note && <p className="mt-1 text-[11px] text-[#6B6F7A]">Source: {r.source_note}</p>}
+              <a
+                href={`mailto:luigui.h2002@gmail.com?subject=${encodeURIComponent(`Offtake row ${r.id.slice(0, 8)}: ${r.provider_name}${r.customer_name ? ` → ${r.customer_name}` : ''}`)}&body=${encodeURIComponent(`Row id: ${r.id}\nAccession: ${r.source_accession ?? 'n/a'}\n\nWhat looks wrong:\n`)}`}
+                className="mt-1 inline-block text-[10px] text-[#6B6F7A] underline-offset-2 hover:text-[#A5A8B0] hover:underline"
+              >
+                Report an issue with this row
+              </a>
             </details>
           </td>
         </tr>
